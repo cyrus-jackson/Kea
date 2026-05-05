@@ -3,6 +3,8 @@ import random
 import math
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, DARK_BLUE, WHITE
 from states.base_state import State
+from ui.glow_text import GlowText
+from current_affairs import CurrentAffairs
 
 class AmbientState(State):
     def __init__(self, state_manager):
@@ -20,8 +22,9 @@ class AmbientState(State):
         self.traffic = self.gen_traffic(num_cars=36, speed=20)
         self.traffic.extend(self.gen_sky_traffic(num_cars=5, speed=10))
         
-        # 4. Timer for water reflection animation
+        # 4. Timer for water reflection animation & side scrolling
         self.reflection_timer = 0.0
+        self.scroll_x = 0.0
 
         # 5. Weather variables (Configurable via set_weather)
         self.rain_intensity = 0.0 # 0.0 (off) to 1.0 (heavy storm)
@@ -31,9 +34,24 @@ class AmbientState(State):
         self.lightning_timer = random.uniform(5.0, 15.0)
         self.lightning_flash_alpha = 0.1
         
+        # 6. Cached surfaces to avoid memory allocation every frame (Optimized for Raspberry Pi)
+        self.cached_darken_surf = pygame.Surface((SCREEN_WIDTH, int(SCREEN_HEIGHT * 0.75)), pygame.SRCALPHA)
+        self.cached_darken_surf.fill((0, 20, 50, 100)) # Dark transparent blue
+        
+        self.cached_flash_surf = pygame.Surface((SCREEN_WIDTH, int(SCREEN_HEIGHT * 0.75)), pygame.SRCALPHA)
+        self.cached_weather_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+
+        # 7. Glowing Text UI
+        pygame.font.init()    
+
+        # Current affairs feed (message service) + display GlowText (small font)
+        self.current_affairs = CurrentAffairs()
+        affairs_font = pygame.font.Font(None, 20)
+        self.affairs_text = GlowText(affairs_font, self.current_affairs.get_current_message(), (255, 200, 120), (255, 120, 20), glow_radius=2, max_width=SCREEN_WIDTH - 80)
+
         # --- TO TEST THE WEATHER --- 
         # Uncomment the line below to test a full storm with lightning and heavy wind!
-        # self.set_weather(rain_intensity=0.4, wind_speed=-200.0)
+        self.set_weather(rain_intensity=0.1, wind_speed=-10.0)
 
     def set_weather(self, rain_intensity, wind_speed):
         """Can be called externally to configure weather."""
@@ -328,7 +346,7 @@ class AmbientState(State):
     def gen_sky_traffic(self, num_cars, speed):
         """Generates Star Wars style flying vehicles."""
         cars = []
-        surf_h = int(SCREEN_HEIGHT * 0.75)
+        surf_h = int(SCREEN_HEIGHT * 0.95)
         for _ in range(num_cars):
             cars.append({
                 'x': random.uniform(0, SCREEN_WIDTH),
@@ -410,13 +428,38 @@ class AmbientState(State):
 
     def update(self, dt):
         """All animation math happens here."""
+        # Scroll the background (parallax)
+        self.scroll_x += dt * 0.0
+
         # Move traffic
         for car in self.traffic:
             car['x'] += car['speed'] * dt
+            
+            respawn = False
             if car['x'] > SCREEN_WIDTH + 20:
-                car['x'] = -20 # Reset offscreen
+                car['x'] = -20 # Reset offscreen on left
+                respawn = True
             elif car['x'] < -20:
-                car['x'] = SCREEN_WIDTH + 20
+                car['x'] = SCREEN_WIDTH + 20 # Reset offscreen on right
+                respawn = True
+                
+            if respawn:
+                if car.get('is_sky'):
+                    surf_h = int(SCREEN_HEIGHT * 0.75)
+                    car['y'] = random.uniform(surf_h * 0.1, surf_h * 0.75)
+                    car['layer'] = random.randint(0, 5)
+                    car['trail'] = random.randint(4, 15)
+                    car['color'] = random.choice([(255, 100, 100), (100, 255, 255), (100, 255, 100), (255, 255, 255)])
+                    # Keep same direction but randomize speed
+                    dir_mod = 1 if car['speed'] > 0 else -1
+                    car['speed'] = 40 * random.uniform(1.5, 4.0) * dir_mod
+                else:
+                    road = random.choice(self.roads) if hasattr(self, 'roads') and self.roads else {'y': int(SCREEN_HEIGHT * 0.50), 'thickness': 2, 'layer': 0}
+                    car_h = 2
+                    car['y'] = road['y'] + random.randint(0, max(0, road['thickness'] - car_h))
+                    car['layer'] = road.get('layer', 0)
+                    dir_mod = 1 if car['speed'] > 0 else -1
+                    car['speed'] = 20 * random.uniform(0.8, 1.2) * dir_mod
 
         self.reflection_timer += dt * 3.0
 
@@ -441,7 +484,7 @@ class AmbientState(State):
             # Wrap drops around the screen
             if drop['y'] > SCREEN_HEIGHT:
                 # Optimized Ripple Spawning: Only spawn sometimes to save performance on Pi
-                if random.random() < 0.15: 
+                if random.random() < 0.45: 
                     self.water_ripples.append({
                         'x': drop['x'],
                         'y': random.uniform(SCREEN_HEIGHT * 0.75, SCREEN_HEIGHT),
@@ -477,6 +520,12 @@ class AmbientState(State):
             if self.lightning_flash_alpha < 0:
                 self.lightning_flash_alpha = 0
 
+        # Update CurrentAffairs and refresh displayed text when it changes
+        if hasattr(self, 'current_affairs'):
+            changed = self.current_affairs.update(dt)
+            if changed:
+                self.affairs_text.update_text(self.current_affairs.get_current_message())
+
     def draw(self, surface):
         """Render everything to the main screen."""
         # 1. Draw the static sky background
@@ -484,13 +533,19 @@ class AmbientState(State):
         
         # --- Lightning Flash in the Sky ---
         if self.lightning_flash_alpha > 0:
-            flash_surf = pygame.Surface((SCREEN_WIDTH, int(SCREEN_HEIGHT * 0.75)), pygame.SRCALPHA)
-            flash_surf.fill((255, 255, 255, int(min(255, max(0, self.lightning_flash_alpha)))))
-            surface.blit(flash_surf, (0, 0))
+            self.cached_flash_surf.fill((255, 255, 255, int(min(255, max(0, self.lightning_flash_alpha)))))
+            surface.blit(self.cached_flash_surf, (0, 0))
         
         # 2. Draw each layer of buildings and its traffic on top
         for i, layer_surf in enumerate(self.layer_surfaces):
-            surface.blit(layer_surf, (0, 0))
+            # Parallax scroll: foreground layers move faster
+            parallax_factor = 0.1 + (i * 0.15)
+            layer_offset_x = int(self.scroll_x * parallax_factor) % SCREEN_WIDTH
+            
+            # Blit twice to seamlessly wrap horizontally
+            surface.blit(layer_surf, (-layer_offset_x, 0))
+            surface.blit(layer_surf, (-layer_offset_x + SCREEN_WIDTH, 0))
+            
             for car in self.traffic:
                 if car.get('layer', 0) == i:
                     if car.get('is_sky'):
@@ -516,9 +571,7 @@ class AmbientState(State):
         flipped_surf = pygame.transform.flip(top_surf, False, True)
         
         # Darken / tint the reflection slightly to make it look like water
-        darken = pygame.Surface((SCREEN_WIDTH, city_h), pygame.SRCALPHA)
-        darken.fill((0, 20, 50, 100)) # Dark transparent blue
-        flipped_surf.blit(darken, (0, 0))
+        flipped_surf.blit(self.cached_darken_surf, (0, 0))
 
         water_h = SCREEN_HEIGHT - city_h
         
@@ -551,7 +604,7 @@ class AmbientState(State):
 
         # 4. Draw Weather overlay (Rain)
         if self.rain_intensity > 0:
-            weather_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            self.cached_weather_surf.fill((0, 0, 0, 0)) # Clear the transparent surface
             
             # Draw rain lines
             rain_color = (200, 200, 230, 150)
@@ -560,7 +613,7 @@ class AmbientState(State):
             for drop in self.raindrops:
                 start_pos = (drop['x'], drop['y'])
                 end_pos = (drop['x'] - wind_x_offset, drop['y'] - drop['length'])
-                pygame.draw.line(weather_surf, rain_color, start_pos, end_pos, 1)
+                pygame.draw.line(self.cached_weather_surf, rain_color, start_pos, end_pos, 1)
 
             # Draw high-performance droplets/ripples on the lake surface
             for ripple in self.water_ripples:
@@ -569,8 +622,16 @@ class AmbientState(State):
                 w = int(4 + (12 * prog)) 
                 r_color = (200, 200, 230, int(150 * (1.0 - prog))) # Fades out
                 
-                pygame.draw.line(weather_surf, r_color, 
+                pygame.draw.line(self.cached_weather_surf, r_color, 
                                  (ripple['x'] - w/2, ripple['y']), 
                                  (ripple['x'] + w/2, ripple['y']), 1)
             
-            surface.blit(weather_surf, (0, 0))
+            surface.blit(self.cached_weather_surf, (0, 0))
+
+
+        # Draw current affairs at bottom-center
+        if hasattr(self, 'affairs_text'):
+            affairs_surf = self.affairs_text.get_surface()
+            ax = (SCREEN_WIDTH - affairs_surf.get_width()) // 2
+            ay = SCREEN_HEIGHT - affairs_surf.get_height() - 20
+            self.affairs_text.draw(surface, (ax, ay))
