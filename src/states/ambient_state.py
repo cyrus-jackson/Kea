@@ -18,6 +18,7 @@ class AmbientState(State):
         
         # 3. Dynamic Elements (Traffic)
         self.traffic = self.gen_traffic(num_cars=36, speed=20)
+        self.traffic.extend(self.gen_sky_traffic(num_cars=5, speed=10))
         
         # 4. Timer for water reflection animation
         self.reflection_timer = 0.0
@@ -32,7 +33,7 @@ class AmbientState(State):
         
         # --- TO TEST THE WEATHER --- 
         # Uncomment the line below to test a full storm with lightning and heavy wind!
-        # self.set_weather(rain_intensity=1.0, wind_speed=-200.0)
+        # self.set_weather(rain_intensity=0.4, wind_speed=-200.0)
 
     def set_weather(self, rain_intensity, wind_speed):
         """Can be called externally to configure weather."""
@@ -324,6 +325,22 @@ class AmbientState(State):
             })
         return cars
     
+    def gen_sky_traffic(self, num_cars, speed):
+        """Generates Star Wars style flying vehicles."""
+        cars = []
+        surf_h = int(SCREEN_HEIGHT * 0.75)
+        for _ in range(num_cars):
+            cars.append({
+                'x': random.uniform(0, SCREEN_WIDTH),
+                'y': random.uniform(surf_h * 0.1, surf_h * 0.75),
+                'speed': speed * random.uniform(1.5, 4.0) * random.choice([1, -1]),
+                'layer': random.randint(0, 5),
+                'is_sky': True,
+                'trail': random.randint(4, 15),
+                'color': random.choice([(255, 100, 100), (100, 255, 255), (100, 255, 100), (255, 255, 255)])
+            })
+        return cars
+
     def gen_road(self, surface, road_y, road_thickness, road_color):
         """Translates your Lua genRoad function."""
         canvas_w = surface.get_width()
@@ -396,10 +413,10 @@ class AmbientState(State):
         # Move traffic
         for car in self.traffic:
             car['x'] += car['speed'] * dt
-            if car['x'] > SCREEN_WIDTH:
-                car['x'] = -10 # Reset offscreen
-            elif car['x'] < -10:
-                car['x'] = SCREEN_WIDTH
+            if car['x'] > SCREEN_WIDTH + 20:
+                car['x'] = -20 # Reset offscreen
+            elif car['x'] < -20:
+                car['x'] = SCREEN_WIDTH + 20
 
         self.reflection_timer += dt * 3.0
 
@@ -476,7 +493,18 @@ class AmbientState(State):
             surface.blit(layer_surf, (0, 0))
             for car in self.traffic:
                 if car.get('layer', 0) == i:
-                    pygame.draw.rect(surface, WHITE, (int(car['x']), car['y'], 4, 2))
+                    if car.get('is_sky'):
+                        dir_mod = 1 if car['speed'] < 0 else -1
+                        end_x = int(car['x'])
+                        
+                        # Simple colored trail
+                        start_x = end_x + int(car.get('trail', 5) * dir_mod)
+                        pygame.draw.line(surface, car.get('color', WHITE), (start_x, int(car['y'])), (end_x, int(car['y'])), 1)
+                        
+                        # Engine/ship dot
+                        pygame.draw.rect(surface, WHITE, (end_x - (1 if dir_mod > 0 else 0), int(car['y']) - 1, 2, 2))
+                    else:
+                        pygame.draw.rect(surface, WHITE, (int(car['x']), car['y'], 4, 2))
             
         # 3. Draw the water reflection
         city_h = int(SCREEN_HEIGHT * 0.75)
