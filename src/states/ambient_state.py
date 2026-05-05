@@ -13,7 +13,6 @@ class AmbientState(State):
         self.layer_surfaces = []
         
         self.roads = []
-        
         # 2. Call our procedural generator to paint the layers
         self.generate_city()
         
@@ -22,6 +21,23 @@ class AmbientState(State):
         
         # 4. Timer for water reflection animation
         self.reflection_timer = 0.0
+
+        # 5. Weather variables (Configurable via set_weather)
+        self.rain_intensity = 0.0 # 0.0 (off) to 1.0 (heavy storm)
+        self.wind_speed = 0.0     # negative = left, positive = right
+        self.raindrops = []
+        self.water_ripples = []   # Ripples for the lake surface
+        self.lightning_timer = random.uniform(5.0, 15.0)
+        self.lightning_flash_alpha = 0.1
+        
+        # --- TO TEST THE WEATHER --- 
+        # Uncomment the line below to test a full storm with lightning and heavy wind!
+        # self.set_weather(rain_intensity=1.0, wind_speed=-200.0)
+
+    def set_weather(self, rain_intensity, wind_speed):
+        """Can be called externally to configure weather."""
+        self.rain_intensity = max(0.0, min(1.0, rain_intensity))
+        self.wind_speed = wind_speed
 
     def get_hsv_color(self, h, s, v):
         """Helper to create a Pygame Color from HSV values."""
@@ -387,10 +403,73 @@ class AmbientState(State):
 
         self.reflection_timer += dt * 3.0
 
+        # --- Update Weather ---
+        # Generate new raindrops according to intensity
+        target_drops = int(self.rain_intensity * 400) # Max 400 drops
+        while len(self.raindrops) < target_drops:
+            self.raindrops.append({
+                'x': random.uniform(0, SCREEN_WIDTH),
+                'y': random.uniform(-SCREEN_HEIGHT, 0),
+                'speed': random.uniform(300, 500) + (self.rain_intensity * 200),
+                'length': random.uniform(10, 20) + (self.rain_intensity * 10)
+            })
+        while len(self.raindrops) > target_drops:
+            self.raindrops.pop()
+            
+        # Move raindrops
+        for drop in self.raindrops:
+            drop['x'] += self.wind_speed * dt
+            drop['y'] += drop['speed'] * dt
+            
+            # Wrap drops around the screen
+            if drop['y'] > SCREEN_HEIGHT:
+                # Optimized Ripple Spawning: Only spawn sometimes to save performance on Pi
+                if random.random() < 0.15: 
+                    self.water_ripples.append({
+                        'x': drop['x'],
+                        'y': random.uniform(SCREEN_HEIGHT * 0.75, SCREEN_HEIGHT),
+                        'life': 0.0,
+                        'max_life': random.uniform(0.15, 0.3)
+                    })
+                    
+                drop['y'] = random.uniform(-50, 0)
+                if self.wind_speed < 0:
+                    drop['x'] = random.uniform(0, SCREEN_WIDTH + abs(self.wind_speed))
+                elif self.wind_speed > 0:
+                    drop['x'] = random.uniform(-self.wind_speed, SCREEN_WIDTH)
+                else:
+                    drop['x'] = random.uniform(0, SCREEN_WIDTH)
+
+        # Update Ripples
+        for r in self.water_ripples:
+            r['life'] += dt
+        self.water_ripples = [r for r in self.water_ripples if r['life'] < r['max_life']]
+
+        # Lightning logic (only happens at very high rain intensities)
+        if self.rain_intensity >= 0.8:
+            self.lightning_timer -= dt
+            if self.lightning_timer <= 0:
+                self.lightning_flash_alpha = 255.0 # Max flash brightness
+                self.lightning_timer = random.uniform(1.0, 5.0) # Time until next lightning strike
+        else:
+            self.lightning_timer = random.uniform(5.0, 15.0)
+            
+        # Fade out lightning flash quickly
+        if self.lightning_flash_alpha > 0:
+            self.lightning_flash_alpha -= 900 * dt
+            if self.lightning_flash_alpha < 0:
+                self.lightning_flash_alpha = 0
+
     def draw(self, surface):
         """Render everything to the main screen."""
         # 1. Draw the static sky background
         surface.blit(self.sky_surface, (0, 0))
+        
+        # --- Lightning Flash in the Sky ---
+        if self.lightning_flash_alpha > 0:
+            flash_surf = pygame.Surface((SCREEN_WIDTH, int(SCREEN_HEIGHT * 0.75)), pygame.SRCALPHA)
+            flash_surf.fill((255, 255, 255, int(min(255, max(0, self.lightning_flash_alpha)))))
+            surface.blit(flash_surf, (0, 0))
         
         # 2. Draw each layer of buildings and its traffic on top
         for i, layer_surf in enumerate(self.layer_surfaces):
@@ -441,3 +520,29 @@ class AmbientState(State):
                     surface.blit(slice_surf, (int(offset_x), city_h + y))
                 except ValueError:
                     pass
+
+        # 4. Draw Weather overlay (Rain)
+        if self.rain_intensity > 0:
+            weather_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            
+            # Draw rain lines
+            rain_color = (200, 200, 230, 150)
+            wind_x_offset = self.wind_speed * 0.05 # Determine rain angle lag
+            
+            for drop in self.raindrops:
+                start_pos = (drop['x'], drop['y'])
+                end_pos = (drop['x'] - wind_x_offset, drop['y'] - drop['length'])
+                pygame.draw.line(weather_surf, rain_color, start_pos, end_pos, 1)
+
+            # Draw high-performance droplets/ripples on the lake surface
+            for ripple in self.water_ripples:
+                prog = ripple['life'] / ripple['max_life']
+                # Calculate ripple width relative to its life
+                w = int(4 + (12 * prog)) 
+                r_color = (200, 200, 230, int(150 * (1.0 - prog))) # Fades out
+                
+                pygame.draw.line(weather_surf, r_color, 
+                                 (ripple['x'] - w/2, ripple['y']), 
+                                 (ripple['x'] + w/2, ripple['y']), 1)
+            
+            surface.blit(weather_surf, (0, 0))
