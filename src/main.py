@@ -1,9 +1,13 @@
 import pygame
 import sys
-from config import SCREEN_WIDTH, SCREEN_HEIGHT, FPS
+from config import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, FULLSCREEN, SCALED
 from states.ambient_state import AmbientState
 from states.pomodoro_state import PomodoroState
 from states.notification_state import NotificationState
+from states.street_state import StreetState
+from states.cloud_city_state import CloudCityState
+from states.telegraph_state import TelegraphState
+from states.airship_dock_state import AirshipDockState
 
 
 
@@ -43,8 +47,17 @@ def main():
     pygame.init()
     
     # 200x300 Display Surface
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    flags = 0
+    if FULLSCREEN:
+        flags |= pygame.FULLSCREEN
+    if SCALED:
+        flags |= pygame.SCALED
+
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), flags)
     pygame.display.set_caption("Smart Display")
+
+    if FULLSCREEN:
+        pygame.mouse.set_visible(False)
     
     clock = pygame.time.Clock()
     
@@ -53,6 +66,10 @@ def main():
     manager.add_state('ambient', AmbientState(manager))
     manager.add_state('pomodoro', PomodoroState(manager))
     manager.add_state('notification', NotificationState(manager))
+    manager.add_state('street', StreetState(manager))
+    manager.add_state('cloud_city', CloudCityState(manager))
+    manager.add_state('telegraph', TelegraphState(manager))
+    manager.add_state('airship_dock', AirshipDockState(manager))
     
     # Start in Ambient State
     manager.change_state('ambient')
@@ -77,6 +94,14 @@ def main():
                     manager.change_state('pomodoro')
                 elif event.key == pygame.K_3:
                     manager.change_state('notification')
+                elif event.key == pygame.K_4:
+                    manager.change_state('street')
+                elif event.key == pygame.K_5:
+                    manager.change_state('cloud_city')
+                elif event.key == pygame.K_6:
+                    manager.change_state('telegraph')
+                elif event.key == pygame.K_7:
+                    manager.change_state('airship_dock')
         
         # State-specific event handling
         manager.handle_events(events)
