@@ -1,0 +1,6 @@
+# Kea - minimal runtime dependencies
+#
+# This project only depends on Pygame. On Raspberry Pi, if `pip install` falls back to
+# building from source and fails due to missing SDL dev packages, consider installing
+# the distro package instead (e.g. `sudo apt install python3-pygame`).
+pygame>=2.5,<3
