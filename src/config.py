@@ -3,12 +3,13 @@
 import os
 import platform
 import sys
+from typing import Optional
 
 # Environment Setup
 ENVIRONMENT = os.getenv("KEA_ENVIRONMENT", "staging")  # "development" | "staging" | "production"
 
 
-def _truthy_env(name: str) -> bool | None:
+def _truthy_env(name: str) -> Optional[bool]:
     value = os.getenv(name)
     if value is None:
         return None
