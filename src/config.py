@@ -66,6 +66,14 @@ FULLSCREEN = (
 _scaled_override = _truthy_env("KEA_SCALED")
 SCALED = (FULLSCREEN if _scaled_override is None else _scaled_override)
 
+# Rotation
+# e.g., KEA_ROTATION=90 for landscape Pi screens
+_env_rotation = os.getenv("KEA_ROTATION", "0")
+try:
+    ROTATION = int(_env_rotation)
+except ValueError:
+    ROTATION = 0
+
 # --- Colors ---
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)

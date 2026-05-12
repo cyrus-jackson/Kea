@@ -3,4 +3,9 @@
 # This project only depends on Pygame. On Raspberry Pi, if `pip install` falls back to
 # building from source and fails due to missing SDL dev packages, consider installing
 # the distro package instead (e.g. `sudo apt install python3-pygame`).
+# 
+# Note: On Raspberry Pi, you may also need to install the SDL2 runtime libraries
+# if you encounter a "font module not available" (libSDL2_ttf) error.
+# Run: `sudo apt-get install libsdl2-ttf-2.0-0` or
+# `sudo apt-get install libsdl2-2.0-0 libsdl2-image-2.0-0 libsdl2-mixer-2.0-0 libsdl2-ttf-2.0-0`
 pygame>=2.5,<3

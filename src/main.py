@@ -1,6 +1,6 @@
 import pygame
 import sys
-from config import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, FULLSCREEN, SCALED
+from config import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, FULLSCREEN, SCALED, ROTATION
 from states.ambient_state import AmbientState
 from states.pomodoro_state import PomodoroState
 from states.notification_state import NotificationState
@@ -53,7 +53,15 @@ def main():
     if SCALED:
         flags |= pygame.SCALED
 
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), flags)
+    # If rotated 90 or 270, swap dimensions for the physical screen
+    if ROTATION in (90, 270):
+        physical_width, physical_height = SCREEN_HEIGHT, SCREEN_WIDTH
+    else:
+        physical_width, physical_height = SCREEN_WIDTH, SCREEN_HEIGHT
+
+    screen = pygame.display.set_mode((physical_width, physical_height), flags)
+    logical_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+    
     pygame.display.set_caption("Smart Display")
 
     if FULLSCREEN:
@@ -109,8 +117,15 @@ def main():
         # Update
         manager.update(dt)
         
-        # Draw
-        manager.draw(screen)
+        # Draw to the logical surface
+        manager.draw(logical_surface)
+        
+        # Rotate and blit to screen
+        if ROTATION != 0:
+            rotated_surface = pygame.transform.rotate(logical_surface, ROTATION)
+            screen.blit(rotated_surface, (0, 0))
+        else:
+            screen.blit(logical_surface, (0, 0))
         
         # Update the full display Surface to the screen
         pygame.display.flip()
