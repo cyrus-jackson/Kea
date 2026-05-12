@@ -30,6 +30,9 @@ class AmbientState(State):
         self.reflection_timer = 0.0
         self.scroll_x = 0.0
 
+        # 4b. Celestial bodies (planets, moons) that rotate slowly
+        self.celestial_bodies = self.generate_celestial_bodies()
+
         # 5. Weather variables (Configurable via set_weather)
         self.rain_intensity = 0.0 # 0.0 (off) to 1.0 (heavy storm)
         self.wind_speed = 0.0     # negative = left, positive = right
@@ -71,7 +74,7 @@ class AmbientState(State):
 
         # --- TO TEST THE WEATHER --- 
         # Uncomment the line below to test a full storm with lightning and heavy wind!
-        self.set_weather(rain_intensity=0.1, wind_speed=-10.0)
+        self.set_weather(rain_intensity=0.01, wind_speed=-10.0)
 
     def set_weather(self, rain_intensity, wind_speed):
         """Can be called externally to configure weather."""
@@ -84,6 +87,39 @@ class AmbientState(State):
         # Pygame uses H (0-360), S (0-100), V (0-100), A (0-100)
         c.hsva = (int(h) % 360, int(max(0, min(100, s))), int(max(0, min(100, v))), 100)
         return c
+
+    def generate_celestial_bodies(self):
+        """Generate dim background planets and a bright sun/moon orbital system."""
+        bodies = []
+        
+        # Generate 2-3 DIM background planets (won't interfere with sun/moon)
+        num_dim_planets = random.randint(2, 3)
+        for _ in range(num_dim_planets):
+            body = {
+                'x': random.randint(50, SCREEN_WIDTH - 50),
+                'y': random.randint(20, int(self.city_h * 0.4)),
+                'radius': random.randint(6, 15),
+                'color': self.get_hsv_color(random.randint(0, 360), random.randint(30, 80), random.randint(40, 60)),  # Dimmer
+                'rotation': 0.0,
+                'rotation_speed': random.uniform(0.05, 0.2),  # Slower rotation
+                'has_rings': random.random() < 0.2,  # Fewer rings
+                'ring_color': self.get_hsv_color(random.randint(0, 360), random.randint(40, 60), random.randint(40, 60)),
+                'alpha': 120,  # DIM these background planets
+            }
+            bodies.append(body)
+        
+        # Create the SUN/MOON orbital system (bright and moves across sky)
+        self.orbital_timer = 0.0
+        self.sun_moon = {
+            'radius': 20,
+            'orbit_speed': 0.15,  # Complete orbit every ~7 seconds for testing (adjust as needed)
+            'center_x': SCREEN_WIDTH / 2,
+            'center_y': int(self.city_h * 0.35),
+            'orbit_radius_x': SCREEN_WIDTH * 0.4,
+            'orbit_radius_y': int(self.city_h * 0.25),
+        }
+        
+        return bodies
 
     def gen_windows(self, surface, start_x, end_x, start_y, end_y, win_w, win_h, color1, color2):
         """Translates your Lua genWindows function."""
@@ -533,6 +569,18 @@ class AmbientState(State):
             r['life'] += dt
         self.water_ripples = [r for r in self.water_ripples if r['life'] < r['max_life']]
 
+        # Update celestial bodies (slow rotation)
+        for body in self.celestial_bodies:
+            body['rotation'] += body['rotation_speed'] * dt
+        
+        # Update sun/moon orbital position
+        self.orbital_timer += dt * self.sun_moon['orbit_speed']
+        # Use sine wave for elliptical orbit
+        sun_x = self.sun_moon['center_x'] + math.cos(self.orbital_timer) * self.sun_moon['orbit_radius_x']
+        sun_y = self.sun_moon['center_y'] + math.sin(self.orbital_timer) * self.sun_moon['orbit_radius_y']
+        self.sun_moon['x'] = sun_x
+        self.sun_moon['y'] = sun_y
+
         # Lightning logic (only happens at very high rain intensities)
         if self.rain_intensity >= 0.8:
             self.lightning_timer -= dt
@@ -569,6 +617,89 @@ class AmbientState(State):
         
         # Draw the static sky details (stars, moon)
         self.city_render_surface.blit(self.sky_surface, (0, 0))
+        
+        # Draw rotating celestial bodies (DIM background planets)
+        for body in self.celestial_bodies:
+            x, y, radius = int(body['x']), int(body['y']), body['radius']
+            color = body['color']
+            
+            # Create a temporary surface with alpha for dim planets
+            dim_surf = pygame.Surface((radius * 2 + 4, radius * 2 + 4), pygame.SRCALPHA)
+            
+            # Draw main planet/moon on temp surface
+            pygame.draw.circle(dim_surf, (*color[:3], body.get('alpha', 120)), (radius + 2, radius + 2), radius)
+            
+            # Add subtle shading/highlight
+            pygame.draw.circle(dim_surf, (255, 255, 255, 40), (radius - radius // 3 + 2, radius - radius // 3 + 2), radius // 4)
+            
+            # Draw rings if this body has them
+            if body['has_rings']:
+                ring_color = body['ring_color']
+                tilt = math.cos(math.radians(body['rotation'])) * 0.5
+                ring_w = int(radius * 2.5)
+                ring_h = int(radius * 0.8 * (1.0 - abs(tilt)))
+                
+                if ring_h > 0:
+                    pygame.draw.ellipse(dim_surf, (*ring_color[:3], body.get('alpha', 120)), 
+                                       (2 + radius - ring_w // 2, 2 + radius - ring_h // 2, ring_w, ring_h), 2)
+            
+            # Blit the dim planet to the city surface
+            self.city_render_surface.blit(dim_surf, (x - radius - 2, y - radius - 2))
+        
+        # Draw bright SUN/MOON (stays bright, orbits across sky)
+        sun_x = int(self.sun_moon['x'])
+        sun_y = int(self.sun_moon['y'])
+        sun_radius = self.sun_moon['radius']
+        sun_color = (255, 220, 100)  # Warm yellow-white
+        
+        # Draw sun glow (multiple circles with decreasing alpha for radial glow effect)
+        glow_layers = [
+            (60, 255, 200, 150, 80),   # radius, R, G, B, alpha
+            (50, 255, 210, 120, 100),
+            (40, 255, 230, 100, 60),
+            (30, 255, 240, 150, 40),
+        ]
+        for glow_radius, r, g, b, alpha in glow_layers:
+            glow_surf = pygame.Surface((glow_radius * 2 + 4, glow_radius * 2 + 4), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (r, g, b, alpha), (glow_radius + 2, glow_radius + 2), glow_radius)
+            self.city_render_surface.blit(glow_surf, (sun_x - glow_radius - 2, sun_y - glow_radius - 2))
+        
+        # Draw light rays emanating from sun (downward and outward)
+        # Rays are more visible when sun is higher in the sky
+        sun_center_y = self.sun_moon['center_y']
+        sun_height = sun_center_y - sun_y  # Positive when sun is above center
+        ray_visibility = max(0.1, min(1.0, sun_height / sun_center_y))  # Fade when sun sets
+        
+        if ray_visibility > 0.2:
+            num_rays = 12
+            ray_surf = pygame.Surface((SCREEN_WIDTH, self.city_h), pygame.SRCALPHA)
+            
+            for i in range(num_rays):
+                angle = (i / num_rays) * 2 * math.pi
+                # Bias rays to point downward and outward from sun
+                ray_angle = angle - math.pi / 2 + math.sin(angle) * 0.3
+                
+                # Ray length and opacity based on sun height
+                ray_length = 100 + sun_height * 0.5
+                ray_opacity = int(120 * ray_visibility)
+                
+                # Calculate ray endpoint
+                ray_end_x = sun_x + math.cos(ray_angle) * ray_length
+                ray_end_y = sun_y + math.sin(ray_angle) * ray_length
+                
+                # Draw ray with fade effect (thicker near sun, thinner at end)
+                pygame.draw.line(ray_surf, (255, 240, 150, ray_opacity), 
+                                (sun_x, sun_y), (int(ray_end_x), int(ray_end_y)), 3)
+                pygame.draw.line(ray_surf, (255, 250, 200, ray_opacity // 2), 
+                                (sun_x, sun_y), (int(ray_end_x), int(ray_end_y)), 1)
+            
+            self.city_render_surface.blit(ray_surf, (0, 0))
+        
+        # Draw the bright sun core
+        pygame.draw.circle(self.city_render_surface, sun_color, (sun_x, sun_y), sun_radius)
+        
+        # Add bright highlight to sun
+        pygame.draw.circle(self.city_render_surface, (255, 255, 200), (sun_x - sun_radius // 3, sun_y - sun_radius // 3), sun_radius // 3)
         
         # --- Lightning Flash in the Sky ---
         if self.lightning_flash_alpha > 0:
