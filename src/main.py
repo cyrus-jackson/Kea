@@ -117,6 +117,9 @@ def main():
         # Update
         manager.update(dt)
         
+        # Clear the logical surface to prevent trails
+        logical_surface.fill((0, 0, 0))
+        
         # Draw to the logical surface
         manager.draw(logical_surface)
         

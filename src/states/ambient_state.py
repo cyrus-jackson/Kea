@@ -9,9 +9,12 @@ from current_affairs import CurrentAffairs
 class AmbientState(State):
     def __init__(self, state_manager):
         super().__init__(state_manager)
+
+        self.city_h = int(SCREEN_HEIGHT * 0.75)
+        self.water_h = SCREEN_HEIGHT - self.city_h
         
         # 1. Create separate surfaces for sky and layers to interleave dynamic traffic
-        self.sky_surface = pygame.Surface((SCREEN_WIDTH, int(SCREEN_HEIGHT * 0.75)))
+        self.sky_surface = pygame.Surface((SCREEN_WIDTH, self.city_h), pygame.SRCALPHA)
         self.layer_surfaces = []
         
         self.roads = []
@@ -19,8 +22,9 @@ class AmbientState(State):
         self.generate_city()
         
         # 3. Dynamic Elements (Traffic)
-        self.traffic = self.gen_traffic(num_cars=36, speed=20)
-        self.traffic.extend(self.gen_sky_traffic(num_cars=5, speed=10))
+        # Optimized counts for Raspberry Pi performance
+        self.traffic = self.gen_traffic(num_cars=16, speed=20)
+        self.traffic.extend(self.gen_sky_traffic(num_cars=2, speed=10))
         
         # 4. Timer for water reflection animation & side scrolling
         self.reflection_timer = 0.0
@@ -35,11 +39,27 @@ class AmbientState(State):
         self.lightning_flash_alpha = 0.1
         
         # 6. Cached surfaces to avoid memory allocation every frame (Optimized for Raspberry Pi)
-        self.cached_darken_surf = pygame.Surface((SCREEN_WIDTH, int(SCREEN_HEIGHT * 0.75)), pygame.SRCALPHA)
-        self.cached_darken_surf.fill((0, 20, 50, 100)) # Dark transparent blue
-        
-        self.cached_flash_surf = pygame.Surface((SCREEN_WIDTH, int(SCREEN_HEIGHT * 0.75)), pygame.SRCALPHA)
+        # Lightning flash overlay in the sky area
+        self.cached_flash_surf = pygame.Surface((SCREEN_WIDTH, self.city_h), pygame.SRCALPHA)
+
+        # Weather overlay (rain + ripples)
         self.cached_weather_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+
+        # Separate surface for rendering the city (sky + buildings + traffic)
+        # This ensures we have a clean capture for the reflection without main.py's pre-fill clearing it
+        self.city_render_surface = pygame.Surface((SCREEN_WIDTH, self.city_h), pygame.SRCALPHA)
+
+        # Tint/darken overlay for reflection (applied after reflection blit)
+        self.cached_reflection_darken_surf = pygame.Surface((SCREEN_WIDTH, self.water_h), pygame.SRCALPHA)
+        self.cached_reflection_darken_surf.fill((0, 25, 60, 90))
+
+        # Vertical fade so reflection disappears into darker water
+        self.cached_reflection_fade = pygame.Surface((SCREEN_WIDTH, self.water_h), pygame.SRCALPHA)
+        if self.water_h > 0:
+            for y in range(self.water_h):
+                t = 0.0 if self.water_h <= 1 else (y / (self.water_h - 1))
+                a = int(235 * (1.0 - (t ** 1.5)))
+                pygame.draw.line(self.cached_reflection_fade, (255, 255, 255, a), (0, y), (SCREEN_WIDTH, y))
 
         # 7. Glowing Text UI
         pygame.font.init()    
@@ -62,7 +82,7 @@ class AmbientState(State):
         """Helper to create a Pygame Color from HSV values."""
         c = pygame.Color(0, 0, 0)
         # Pygame uses H (0-360), S (0-100), V (0-100), A (0-100)
-        c.hsva = (h % 360, max(0, min(100, s)), max(0, min(100, v)), 100)
+        c.hsva = (int(h) % 360, int(max(0, min(100, s))), int(max(0, min(100, v))), 100)
         return c
 
     def gen_windows(self, surface, start_x, end_x, start_y, end_y, win_w, win_h, color1, color2):
@@ -168,10 +188,15 @@ class AmbientState(State):
         base_hue = random.randint(0, 360)
         base_sat = random.randint(15, 40)
         base_val = random.randint(81, 100)
+        
+        self.sky_hue = base_hue
+        self.sky_sat = base_sat
+        self.sky_val = base_val
+        
         base_color = self.get_hsv_color(base_hue, base_sat, base_val)
 
-        # Fill the sky
-        self.sky_surface.fill(base_color)
+        # Make sky details transparent so we can draw changing color behind it
+        self.sky_surface.fill((0, 0, 0, 0))
         surf_h = int(SCREEN_HEIGHT * 0.75)
         
         # Draw stars
@@ -463,6 +488,9 @@ class AmbientState(State):
 
         self.reflection_timer += dt * 3.0
 
+        # Change sky color over time (shift hue slowly)
+        self.sky_hue = (self.sky_hue + dt * 0.5) % 360
+
         # --- Update Weather ---
         # Generate new raindrops according to intensity
         target_drops = int(self.rain_intensity * 400) # Max 400 drops
@@ -528,13 +556,24 @@ class AmbientState(State):
 
     def draw(self, surface):
         """Render everything to the main screen."""
-        # 1. Draw the static sky background
-        surface.blit(self.sky_surface, (0, 0))
+        city_h = self.city_h
+        water_h = self.water_h
+
+        # --- STEP 1: Render the city to a separate surface ---
+        # This ensures reflection can capture it cleanly (main.py fills surface with black before calling draw)
+        self.city_render_surface.fill((0, 0, 0, 0))  # Clear the city surface
+        
+        # 1. Draw the changing sky background color
+        sky_bg_color = self.get_hsv_color(self.sky_hue, self.sky_sat, self.sky_val)
+        pygame.draw.rect(self.city_render_surface, sky_bg_color, (0, 0, SCREEN_WIDTH, city_h))
+        
+        # Draw the static sky details (stars, moon)
+        self.city_render_surface.blit(self.sky_surface, (0, 0))
         
         # --- Lightning Flash in the Sky ---
         if self.lightning_flash_alpha > 0:
             self.cached_flash_surf.fill((255, 255, 255, int(min(255, max(0, self.lightning_flash_alpha)))))
-            surface.blit(self.cached_flash_surf, (0, 0))
+            self.city_render_surface.blit(self.cached_flash_surf, (0, 0))
         
         # 2. Draw each layer of buildings and its traffic on top
         for i, layer_surf in enumerate(self.layer_surfaces):
@@ -543,8 +582,8 @@ class AmbientState(State):
             layer_offset_x = int(self.scroll_x * parallax_factor) % SCREEN_WIDTH
             
             # Blit twice to seamlessly wrap horizontally
-            surface.blit(layer_surf, (-layer_offset_x, 0))
-            surface.blit(layer_surf, (-layer_offset_x + SCREEN_WIDTH, 0))
+            self.city_render_surface.blit(layer_surf, (-layer_offset_x, 0))
+            self.city_render_surface.blit(layer_surf, (-layer_offset_x + SCREEN_WIDTH, 0))
             
             for car in self.traffic:
                 if car.get('layer', 0) == i:
@@ -554,53 +593,51 @@ class AmbientState(State):
                         
                         # Simple colored trail
                         start_x = end_x + int(car.get('trail', 5) * dir_mod)
-                        pygame.draw.line(surface, car.get('color', WHITE), (start_x, int(car['y'])), (end_x, int(car['y'])), 1)
+                        pygame.draw.line(self.city_render_surface, car.get('color', WHITE), (start_x, int(car['y'])), (end_x, int(car['y'])), 1)
                         
                         # Engine/ship dot
-                        pygame.draw.rect(surface, WHITE, (end_x - (1 if dir_mod > 0 else 0), int(car['y']) - 1, 2, 2))
+                        pygame.draw.rect(self.city_render_surface, WHITE, (end_x - (1 if dir_mod > 0 else 0), int(car['y']) - 1, 2, 2))
                     else:
-                        pygame.draw.rect(surface, WHITE, (int(car['x']), car['y'], 4, 2))
-            
-        # 3. Draw the water reflection
-        city_h = int(SCREEN_HEIGHT * 0.75)
-        # Capture the top 75% we just drew
-        top_rect = pygame.Rect(0, 0, SCREEN_WIDTH, city_h)
-        top_surf = surface.subsurface(top_rect).copy()
-        
-        # Flip vertically
-        flipped_surf = pygame.transform.flip(top_surf, False, True)
-        
-        # Darken / tint the reflection slightly to make it look like water
-        flipped_surf.blit(self.cached_darken_surf, (0, 0))
+                        pygame.draw.rect(self.city_render_surface, WHITE, (int(car['x']), car['y'], 4, 2))
 
-        water_h = SCREEN_HEIGHT - city_h
-        
-        # Slice into horizontal segments to create the ripple effect
-        num_slices = max(1, water_h // 2) # Slice every 2 pixels
-        
-        for y in range(0, water_h, 2):
-            # Scale the y index to pull from the upper flipped image
-            # Squeezing the 75% height into the 25% height water
-            src_y = int(y * (city_h / water_h))
-            src_h = max(1, int(2 * (city_h / water_h)))
+        # --- STEP 2: Now blit the city to the main surface ---
+        surface.blit(self.city_render_surface, (0, 0))
+
+        # --- STEP 3: Draw the water + reflection ---
+        if water_h > 0:
+            # Base water color
+            surface.fill(DARK_BLUE, pygame.Rect(0, city_h, SCREEN_WIDTH, water_h))
+
+            # Capture the city we just rendered for reflection
+            capture_src_y = int(city_h * 0.22)
+            capture_h = max(1, city_h - capture_src_y)
+            capture_rect = pygame.Rect(0, capture_src_y, SCREEN_WIDTH, capture_h)
             
-            if src_y + src_h > city_h:
-                src_h = city_h - src_y
-                
-            if src_h > 0:
-                # Get the horizontal row from the flipped surface
-                slice_rect = pygame.Rect(0, src_y, SCREEN_WIDTH, src_h)
-                try:
-                    slice_surf = flipped_surf.subsurface(slice_rect)
-                    # Scale it to the reflection row height
-                    slice_surf = pygame.transform.scale(slice_surf, (SCREEN_WIDTH, 2))
-                    
-                    # Apply a sine wave horizontal offset based on the timer and depth
-                    offset_x = math.sin(self.reflection_timer + y * 0.2) * (1 + y * 0.05)
-                    
-                    surface.blit(slice_surf, (int(offset_x), city_h + y))
-                except ValueError:
-                    pass
+            # Get the subsurface from city_render_surface (not the main surface which has been filled)
+            try:
+                reflection_src = self.city_render_surface.subsurface(capture_rect)
+                flipped = pygame.transform.flip(reflection_src, False, True)
+                reflection = pygame.transform.smoothscale(flipped, (SCREEN_WIDTH, water_h))
+
+                # Make reflection clearly visible, then fade with depth
+                reflection.set_alpha(215)
+                reflection.blit(self.cached_reflection_fade, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+                # Wave distortion: blit horizontal slices with a small x offset
+                # Optimized for Raspberry Pi performance (fewer blit calls)
+                slice_h = 8
+                for y in range(0, water_h, slice_h):
+                    h = min(slice_h, water_h - y)
+                    wave = math.sin(self.reflection_timer + y * 0.11)
+                    amp = 1.2 + (y * 0.03)
+                    offset_x = int(wave * amp)
+                    surface.blit(reflection, (offset_x, city_h + y), area=pygame.Rect(0, y, SCREEN_WIDTH, h))
+
+                # Tint/darken so it reads as water
+                surface.blit(self.cached_reflection_darken_surf, (0, city_h))
+            except ValueError:
+                # If subsurface fails, just fill with solid water color
+                pass
 
         # 4. Draw Weather overlay (Rain)
         if self.rain_intensity > 0:

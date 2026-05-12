@@ -51,7 +51,8 @@ if _env_width and _env_height:
     except ValueError:
         pass
 
-FPS = 60
+# FPS: Optimized for Raspberry Pi
+FPS = 30
 
 # Display
 # On Raspberry Pi, default to fullscreen for kiosk-like usage.
