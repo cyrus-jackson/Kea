@@ -112,7 +112,7 @@ class AmbientState(State):
         self.orbital_timer = 0.0
         self.sun_moon = {
             'radius': 20,
-            'orbit_speed': 0.15,  # Complete orbit every ~7 seconds for testing (adjust as needed)
+            'orbit_speed': 0.025,  # Complete orbit every ~7 seconds for testing (adjust as needed)
             'center_x': SCREEN_WIDTH / 2,
             'center_y': int(self.city_h * 0.35),
             'orbit_radius_x': SCREEN_WIDTH * 0.4,
