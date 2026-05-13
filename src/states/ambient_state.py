@@ -221,6 +221,10 @@ class AmbientState(State):
                                  curr_win_w, curr_win_h, win_c1, win_c2)
 
     def generate_city(self):
+        # Clear existing layers and roads to prevent memory leaks and overlapping buildings on reset
+        self.layer_surfaces.clear()
+        self.roads.clear()
+        
         # Base colors (using 0-100 for Sat/Val instead of Lua's 0.0-1.0)
         base_hue = random.randint(0, 360)
         base_sat = random.randint(15, 40)
