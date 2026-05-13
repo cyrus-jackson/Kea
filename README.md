@@ -33,6 +33,7 @@ python3 src/main.py
 
 ## Controls
 
+**Keyboard:**
 - `1` ambient
 - `2` pomodoro
 - `3` notification
@@ -41,3 +42,10 @@ python3 src/main.py
 - `6` telegraph
 - `7` airship dock
 - `Esc` quits
+
+**Hardware Buttons:**
+- **Blue Button:** BCM GPIO 21 (Cycles through all available states)
+- **Red Button:** BCM GPIO 20 (Assigned to action `2` / pomodoro)
+- **Green Button:** BCM GPIO 26 (Assigned to action `3` / notification)
+
+*(Note: Hardware buttons are tied to ground with pull-up resistors enabled)*

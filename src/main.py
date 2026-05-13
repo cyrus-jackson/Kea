@@ -8,7 +8,12 @@ from states.street_state import StreetState
 from states.cloud_city_state import CloudCityState
 from states.telegraph_state import TelegraphState
 from states.airship_dock_state import AirshipDockState
-
+from hardware_input import (
+    HardwareButtons,
+    BUTTON_AMBIENT_EVENT,
+    BUTTON_POMODORO_EVENT,
+    BUTTON_NOTIFICATION_EVENT,
+)
 
 
 # --- State Manager ---
@@ -16,19 +21,36 @@ class StateManager:
     """Manages the active state and transitions between them."""
     def __init__(self):
         self.states = {}
+        self.state_names = []
         self.current_state = None
+        self.current_state_name = None
         
     def add_state(self, name, state):
         self.states[name] = state
+        if name not in self.state_names:
+            self.state_names.append(name)
         
     def change_state(self, name):
         if self.current_state:
             self.current_state.exit()
             
         self.current_state = self.states.get(name)
+        self.current_state_name = name
         
         if self.current_state:
             self.current_state.enter()
+
+    def next_state(self):
+        """Cycles to the next available state sequentially."""
+        if not self.state_names:
+            return
+        if self.current_state_name in self.state_names:
+            current_index = self.state_names.index(self.current_state_name)
+            next_index = (current_index + 1) % len(self.state_names)
+        else:
+            next_index = 0
+            
+        self.change_state(self.state_names[next_index])
             
     def handle_events(self, events):
         if self.current_state:
@@ -82,15 +104,29 @@ def main():
     # Start in Ambient State
     manager.change_state('ambient')
     
+    # Initialize hardware button poller
+    hw_buttons = HardwareButtons()
+    
     running = True
     while running:
         # Time management
         dt = clock.tick(FPS) / 1000.0 # Convert milliseconds to seconds
         
+        # Poll hardware buttons each frame
+        hw_buttons.update()
+        
         events = pygame.event.get()
         for event in events:
             if event.type == pygame.QUIT:
                 running = False
+            
+            # Handle Custom Hardware Button Events
+            elif event.type == BUTTON_AMBIENT_EVENT:
+                manager.next_state()  # Cycle to the next state
+            elif event.type == BUTTON_POMODORO_EVENT:
+                manager.change_state('pomodoro')
+            elif event.type == BUTTON_NOTIFICATION_EVENT:
+                manager.change_state('notification')
             
             # Global Key Inputs for Testing
             if event.type == pygame.KEYDOWN:
@@ -133,6 +169,7 @@ def main():
         # Update the full display Surface to the screen
         pygame.display.flip()
         
+    hw_buttons.cleanup()
     pygame.quit()
     sys.exit()
 

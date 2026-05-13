@@ -19,15 +19,21 @@ def main():
 
     print("\nListening for button press... (Press Ctrl+C to exit)\n")
 
+    # Track the previous state to only trigger on the initial press
+    previous_state = GPIO.HIGH
+
     try:
         while True:
-            # Button pressed when state goes LOW (using pull-up)
-            state = GPIO.input(args.pin)
-            if state == GPIO.LOW:
+            current_state = GPIO.input(args.pin)
+            
+            # Button pressed when state changes from HIGH to LOW
+            if current_state == GPIO.LOW and previous_state == GPIO.HIGH:
                 print(f"Button on GPIO {args.pin} PRESSED!")
-                # Basic debounce
-                time.sleep(0.3)
-            time.sleep(0.05)
+                # Basic debounce on press
+                time.sleep(0.05)
+            
+            previous_state = current_state
+            time.sleep(0.01)
     except KeyboardInterrupt:
         print("\nExiting and cleaning up GPIO...")
     finally:
