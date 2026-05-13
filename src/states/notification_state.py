@@ -24,3 +24,21 @@ class NotificationState(State):
         text_surface = self.font.render("Alert!", True, BLACK)
         text_rect = text_surface.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
         surface.blit(text_surface, text_rect)
+
+
+    def draw_pomodoro(self, surface, time_left, mode):
+        import pygame
+        # Minimalist notification theme
+        mins = int(time_left) // 60
+        secs = int(time_left) % 60
+        time_str = f"{mins:02d}:{secs:02d}"
+        
+        font = pygame.font.Font(None, 24)
+        
+        bg_rect = pygame.Rect(0, 0, surface.get_width(), 20)
+        c = (200, 40, 40) if mode == 'work' else (40, 180, 80)
+        
+        pygame.draw.rect(surface, c, bg_rect)
+        
+        overlay_surf = font.render(time_str, True, (255, 255, 255))
+        surface.blit(overlay_surf, overlay_surf.get_rect(center=bg_rect.center))

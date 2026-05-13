@@ -29,6 +29,7 @@
   - `update(dt)` for time-based logic (`dt` is seconds)
   - `draw(surface)` for rendering
 - States transition by calling `self.manager.change_state('<name>')` (see `NotificationState.update` in `src/states/notification_state.py`).
+- **Pomodoro Timer Rule:** The Pomodoro timer runs globally. When creating a new scene/state, ensure that no critical UI elements are positioned at the Top Right (`topright=(SCREEN_WIDTH - 5, 5)`), because `main.py` automatically overlays the active Pomodoro timer there.
 - To add a new screen:
   1) create `src/states/<name>_state.py`
   2) register it in `StateManager` in `src/main.py`

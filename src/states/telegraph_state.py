@@ -595,3 +595,25 @@ class TelegraphState(State):
         pygame.draw.circle(surface, cpt_col, (int(cx + 20), int(cy + 2 + tilt)), 3)
         # Knob
         pygame.draw.ellipse(surface, COPPER, (int(cx - 14), int(cy - 8 + tilt), 12, 8))
+
+    def draw_pomodoro(self, surface, time_left, mode):
+        import pygame
+        # Vintage paper telegraph theme
+        mins = int(time_left) // 60
+        secs = int(time_left) % 60
+        time_str = f"T-{mins:02d}:{secs:02d}"
+        
+        font = pygame.font.Font(None, 24)
+        c = (150, 20, 20) if mode == 'work' else (20, 120, 20)
+        overlay_surf = font.render(time_str, True, c)
+        
+        bg_rect = overlay_surf.get_rect(midtop=(surface.get_width() // 2, 5))
+        bg_rect.inflate_ip(10, 6)
+        
+        # Paper background
+        box = pygame.Surface((bg_rect.width, bg_rect.height))
+        box.fill((230, 220, 200))  # Aged paper
+        pygame.draw.rect(box, (100, 90, 80), box.get_rect(), 1) # Ink border
+        
+        surface.blit(box, bg_rect.topleft)
+        surface.blit(overlay_surf, overlay_surf.get_rect(center=bg_rect.center))

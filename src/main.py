@@ -4,10 +4,7 @@ from config import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, FULLSCREEN, SCALED, ROTATIO
 from states.ambient_state import AmbientState
 from states.pomodoro_state import PomodoroState
 from states.notification_state import NotificationState
-from states.street_state import StreetState
-from states.cloud_city_state import CloudCityState
 from states.telegraph_state import TelegraphState
-from states.airship_dock_state import AirshipDockState
 from hardware_input import (
     HardwareButtons,
     BUTTON_AMBIENT_EVENT,
@@ -98,10 +95,7 @@ def main():
     manager.add_state('ambient', AmbientState(manager))
     manager.add_state('pomodoro', PomodoroState(manager))
     manager.add_state('notification', NotificationState(manager))
-    manager.add_state('street', StreetState(manager))
-    manager.add_state('cloud_city', CloudCityState(manager))
     manager.add_state('telegraph', TelegraphState(manager))
-    manager.add_state('airship_dock', AirshipDockState(manager))
     
     # Start in Ambient State
     manager.change_state('ambient')
@@ -126,9 +120,11 @@ def main():
             elif event.type == BUTTON_AMBIENT_EVENT:
                 manager.next_state()  # Cycle to the next state
             elif event.type == BUTTON_POMODORO_EVENT:
-                manager.change_state('pomodoro')
+                if manager.current_state_name != 'pomodoro':
+                    manager.change_state('pomodoro')
             elif event.type == BUTTON_NOTIFICATION_EVENT:
-                manager.change_state('notification')
+                if manager.current_state_name != 'pomodoro':
+                    manager.change_state('notification')
             
             # Global Key Inputs for Testing
             if event.type == pygame.KEYDOWN:
@@ -137,17 +133,17 @@ def main():
                 elif event.key == pygame.K_1:
                     manager.change_state('ambient')
                 elif event.key == pygame.K_2:
-                    manager.change_state('pomodoro')
+                    if manager.current_state_name != 'pomodoro':
+                        manager.change_state('pomodoro')
+                    else:
+                        pygame.event.post(pygame.event.Event(BUTTON_POMODORO_EVENT))
                 elif event.key == pygame.K_3:
-                    manager.change_state('notification')
-                elif event.key == pygame.K_4:
-                    manager.change_state('street')
-                elif event.key == pygame.K_5:
-                    manager.change_state('cloud_city')
+                    if manager.current_state_name != 'pomodoro':
+                        manager.change_state('notification')
+                    else:
+                        pygame.event.post(pygame.event.Event(BUTTON_NOTIFICATION_EVENT))
                 elif event.key == pygame.K_6:
                     manager.change_state('telegraph')
-                elif event.key == pygame.K_7:
-                    manager.change_state('airship_dock')
         
         # State-specific event handling
         manager.handle_events(events)
@@ -155,11 +151,26 @@ def main():
         # Update
         manager.update(dt)
         
+        # Ensure Pomodoro updates in the background if it's active but not the current state
+        if manager.current_state_name != 'pomodoro':
+            pomodoro_state_obj = manager.states.get('pomodoro')
+            if pomodoro_state_obj:
+                pomodoro_state_obj.update(dt)
+        
         # Clear the logical surface to prevent trails
         logical_surface.fill((0, 0, 0))
         
         # Draw to the logical surface
         manager.draw(logical_surface)
+        
+        # Display global Pomodoro overlay if running
+        if manager.current_state_name != 'pomodoro':
+            pomodoro_state_obj = manager.states.get('pomodoro')
+            if pomodoro_state_obj and pomodoro_state_obj.running:
+                if hasattr(manager.current_state, 'draw_pomodoro'):
+                    manager.current_state.draw_pomodoro(logical_surface, pomodoro_state_obj.time_left, pomodoro_state_obj.mode)
+                else:
+                    pomodoro_state_obj.draw_overlay(logical_surface)
         
         # Rotate and blit to screen
         if ROTATION != 0:

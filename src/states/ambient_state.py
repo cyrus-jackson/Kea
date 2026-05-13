@@ -803,3 +803,24 @@ class AmbientState(State):
             ax = (SCREEN_WIDTH - affairs_surf.get_width()) // 2
             ay = SCREEN_HEIGHT - affairs_surf.get_height() - 20
             self.affairs_text.draw(surface, (ax, ay))
+
+    def draw_pomodoro(self, surface, time_left, mode):
+        import pygame
+        # Cyberpunk neon ambient theme timer
+        mins = int(time_left) // 60
+        secs = int(time_left) % 60
+        time_str = f"{mins:02d}:{secs:02d}"
+        
+        from ui.glow_text import GlowText
+        font = pygame.font.Font(None, 72)
+        
+        glow_c = (255, 50, 100) if mode == 'work' else (50, 255, 100)
+        t = getattr(self, '_pomo_text', None)
+        if not t or (t.text != time_str) or (t.glow_color != glow_c):
+            self._pomo_text = GlowText(font, time_str, (255, 255, 255), glow_c, 5)
+            
+        surf = self._pomo_text.get_surface()
+        # Center placement for cyberpunk
+        x = (surface.get_width() - surf.get_width()) // 2
+        y = (surface.get_height() - surf.get_height()) // 2
+        surface.blit(surf, (x, y))

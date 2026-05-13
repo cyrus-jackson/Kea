@@ -22,3 +22,13 @@ class State:
     def draw(self, surface):
         """Render graphics to the provided surface."""
         pass
+        
+    def draw_pomodoro(self, surface, time_left, mode):
+        """Draw the Pomodoro overlay uniquely styled for this specific state.
+        
+        Args:
+           surface (pygame.Surface): The surface to draw to.
+           time_left (float): The time left in seconds.
+           mode (str): 'work' or 'break'.
+        """
+        pass
