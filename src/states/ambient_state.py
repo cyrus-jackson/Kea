@@ -26,8 +26,9 @@ class AmbientState(State):
         self.traffic = self.gen_traffic(num_cars=16, speed=20)
         self.traffic.extend(self.gen_sky_traffic(num_cars=2, speed=10))
         
-        # 4. Timer for water reflection animation & side scrolling
+        # 4. Timer for water reflection animation & scene reset
         self.reflection_timer = 0.0
+        self.scene_reset_timer = 0.0
         self.scroll_x = 0.0
 
         # 4b. Celestial bodies (planets, moons) that rotate slowly
@@ -524,8 +525,11 @@ class AmbientState(State):
 
         self.reflection_timer += dt * 3.0
 
-        # Change sky color over time (shift hue slowly)
-        self.sky_hue = (self.sky_hue + dt * 0.5) % 360
+        # Periodically reset the entire city to get new fresh colors for buildings and sky
+        self.scene_reset_timer += dt
+        if self.scene_reset_timer >= 60.0:
+            self.scene_reset_timer = 0.0
+            self.generate_city()
 
         # --- Update Weather ---
         # Generate new raindrops according to intensity
