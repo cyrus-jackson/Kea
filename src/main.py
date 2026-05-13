@@ -66,6 +66,8 @@ class StateManager:
 
 # --- Main App ---
 def main():
+    # Pre-init mixer to avoid ALSA underrun errors
+    pygame.mixer.pre_init(44100, -16, 2, 4096)
     pygame.init()
     
     # 200x300 Display Surface
