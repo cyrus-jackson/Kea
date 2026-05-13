@@ -132,7 +132,7 @@ class TelegraphState(State):
         pygame.font.init()
         self.font_title   = pygame.font.Font(None, 28)
         self.font_sub     = pygame.font.Font(None, 18)
-        self.font_decoded = pygame.font.Font(None, 34)
+        self.font_decoded = pygame.font.Font(None, 24)
         self.font_label   = pygame.font.Font(None, 16)
         try:
             self.font_mono = pygame.font.SysFont("monospace", 18)
@@ -393,10 +393,10 @@ class TelegraphState(State):
             ch, bits = self.slots[slot_idx]
             if any(bits):          # non-blank column
                 self.clack_flash = 1.0
-                if ch.strip():     # printable character
+                if ch.isprintable():     # allow spaces to print
                     self.decoded.append(ch)
                     self._chars_sent += 1
-                    if len(self.decoded) > 55:
+                    if len(self.decoded) > 300: # allow longer buffer for multi-line
                         self.decoded.pop(0)
 
         # ── Decay clack flash ─────────────────────────────────────────────────
@@ -508,32 +508,32 @@ class TelegraphState(State):
                             self.gear_angle * gd, col)
 
         # ── 9. Header text ────────────────────────────────────────────────────
-        title_str = "✦  AETHERIC  TELEGRAPH  DISPATCH  ✦"
+        title_str = "* TELEGRAPH  DISPATCH  *"
         title_surf = self.font_title.render(title_str, True, AMBER)
-        surface.blit(title_surf, (SCREEN_WIDTH // 2 - title_surf.get_width() // 2, 6))
+        surface.blit(title_surf, (SCREEN_WIDTH // 2 - title_surf.get_width() // 2, 8))
 
         now_str = datetime.datetime.now().strftime("TRANSMISSION  ·  %H:%M:%S  ·  %a %d %b")
         ts_surf = self.font_sub.render(now_str, True, AMBER_DIM)
-        surface.blit(ts_surf, (SCREEN_WIDTH // 2 - ts_surf.get_width() // 2, 32))
+        surface.blit(ts_surf, (SCREEN_WIDTH // 2 - ts_surf.get_width() // 2, 30))
 
         # Dispatch number (top-left corner)
         dn_surf = self.font_sub.render(f"DISPATCH  #{self._dispatch_no:04d}", True, BRASS)
-        surface.blit(dn_surf, (26, 8))
+        surface.blit(dn_surf, (26, 66))
 
         # Characters sent counter (top-left)
         cs_surf = self.font_label.render(f"CHARS TX: {self._chars_sent:06d}", True, BRASS_DARK)
-        surface.blit(cs_surf, (26, 26))
+        surface.blit(cs_surf, (26, 86))
 
         # ── 10. RECEIVING indicator LED (top-right) ──────────────────────────
         led_col = (20, 230, 60) if self.clack_flash > 0.05 else (10, 80, 25)
-        pygame.draw.circle(surface, led_col, (SCREEN_WIDTH - 30, 14), 6)
-        pygame.draw.circle(surface, (5, 35, 10), (SCREEN_WIDTH - 30, 14), 6, 1)
+        pygame.draw.circle(surface, led_col, (SCREEN_WIDTH - 30, 70), 6)
+        pygame.draw.circle(surface, (5, 35, 10), (SCREEN_WIDTH - 30, 70), 6, 1)
         recv_lbl = self.font_label.render("RECEIVING", True, led_col)
-        surface.blit(recv_lbl, (SCREEN_WIDTH - 30 - recv_lbl.get_width() - 8, 10))
+        surface.blit(recv_lbl, (SCREEN_WIDTH - 30 - recv_lbl.get_width() - 12, 66))
 
         # Transmission speed
         spd_lbl = self.font_label.render(f"{int(self.scroll_spd)} BD", True, BRASS_DARK)
-        surface.blit(spd_lbl, (SCREEN_WIDTH - spd_lbl.get_width() - 24, 26))
+        surface.blit(spd_lbl, (SCREEN_WIDTH - spd_lbl.get_width() - 24, 86))
 
         # ── 11. Decoded text ticker ───────────────────────────────────────────
         decoded_y = ty + th + 34
@@ -542,22 +542,40 @@ class TelegraphState(State):
         surface.blit(decoded_label,
                      (SCREEN_WIDTH // 2 - decoded_label.get_width() // 2, decoded_y - 18))
 
-        # Build decoded string — last N chars to fit screen
-        decoded_str = "".join(self.decoded)
-        # Trim to screen width
-        while True:
-            ds = self.font_decoded.render(decoded_str, True, AMBER)
-            if ds.get_width() <= SCREEN_WIDTH - 40 or len(decoded_str) == 0:
-                break
-            decoded_str = decoded_str[1:]
-
-        ds = self.font_decoded.render(decoded_str, True, AMBER)
-        surface.blit(ds, (SCREEN_WIDTH // 2 - ds.get_width() // 2, decoded_y))
-
-        # Blinking cursor after last char
-        if (pygame.time.get_ticks() // 500) % 2 == 0:
-            cur_x = SCREEN_WIDTH // 2 - ds.get_width() // 2 + ds.get_width() + 3
-            pygame.draw.rect(surface, AMBER, (cur_x, decoded_y + 4, 10, 22))
+        if self.decoded:
+            full_text = "".join(self.decoded)
+            
+            # Simple multiline formatting for pure characters
+            ticker_rect_width = SCREEN_WIDTH - 40
+            lines = []
+            current_line = ""
+            for char in full_text:
+                test_line = current_line + char
+                if self.font_decoded.size(test_line)[0] < ticker_rect_width:
+                    current_line = test_line
+                else:
+                    lines.append(current_line)
+                    current_line = char
+            if current_line:
+                lines.append(current_line)
+                
+            # Keep only the last few lines that fit
+            max_lines = 4  # Allow up to 4 lines
+            lines = lines[-max_lines:]
+            
+            y_offset = decoded_y
+            last_line_width = 0
+            for line in lines:
+                ds = self.font_decoded.render(line, True, AMBER)
+                surface.blit(ds, (SCREEN_WIDTH // 2 - ds.get_width() // 2, y_offset))
+                last_line_width = ds.get_width()
+                y_offset += self.font_decoded.get_linesize()
+            
+            # Blinking cursor after last char
+            if (pygame.time.get_ticks() // 500) % 2 == 0 and lines:
+                cur_x = SCREEN_WIDTH // 2 - last_line_width // 2 + last_line_width + 4
+                cur_y = decoded_y + (len(lines) - 1) * self.font_decoded.get_linesize() + 4
+                pygame.draw.rect(surface, AMBER, (cur_x, cur_y, 10, self.font_decoded.get_height() - 8))
 
         # ── 12. Decorative gauge (bottom-right) ──────────────────────────────
         self._draw_gauge(surface, SCREEN_WIDTH - 60, SCREEN_HEIGHT - 50, 36)
