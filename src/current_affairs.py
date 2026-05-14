@@ -4,11 +4,13 @@ import urllib.error
 import json
 
 class CurrentAffairs:
+    _shared_messages = []
+
     def __init__(self):
         self.messages = [
             "INITIALIZING NETWORK CONNECTION...",
             "WAITING FOR INCOMING TRANSMISSIONS..."
-        ]
+        ] + CurrentAffairs._shared_messages
         self.current_index = 0
         self.timer = 0.0
         self.display_duration = 60.0 # Seconds to display each message
@@ -75,3 +77,16 @@ class CurrentAffairs:
             if self.current_index >= len(self.messages):
                 self.current_index = 0
             return self.messages[self.current_index]
+
+    def add_important_message(self, message):
+        """Insert a high-priority message to the current affairs rotation immediately."""
+        with self.lock:
+            if message not in CurrentAffairs._shared_messages:
+                CurrentAffairs._shared_messages.append(message)
+            # We add it right next in the rotation to be shown quickly
+            if self.messages:
+                insert_idx = (self.current_index + 1) % len(self.messages)
+                self.messages.insert(insert_idx, message)
+            else:
+                self.messages.append(message)
+                self.current_index = 0
