@@ -7,6 +7,8 @@ from ui.glow_text import GlowText
 
 WORK_TIME = 20 * 60
 BREAK_TIME = 6 * 60
+LONG_BREAK_TIME = 15 * 60
+TRANSITION_TIME = 0.9
 
 class PomodoroState(State):
     """Pomodoro timer styled with a futuristic, pulsing aesthetic."""
@@ -19,6 +21,9 @@ class PomodoroState(State):
         self.mode = 'work'
         self.time_left = WORK_TIME
         self.running = False
+        self.break_count = 0
+        self.transition_timer = 0.0
+        self.transition_mode = None
         
         self.t = 0.0
         
@@ -28,6 +33,27 @@ class PomodoroState(State):
 
     def enter(self):
         pass
+
+    def _begin_transition(self, mode_name):
+        self.transition_mode = mode_name
+        self.transition_timer = TRANSITION_TIME
+
+    def _switch_to_break(self):
+        self.break_count += 1
+        self.mode = 'break'
+        self.time_left = LONG_BREAK_TIME if self.break_count % 3 == 0 else BREAK_TIME
+        self.running = True
+        self._begin_transition('BREAK')
+        if self.manager.current_state_name != 'pomodoro':
+            self.manager.change_state('pomodoro')
+
+    def _switch_to_work(self):
+        self.mode = 'work'
+        self.time_left = WORK_TIME
+        self.running = True
+        self._begin_transition('WORK')
+        if self.manager.current_state_name != 'pomodoro':
+            self.manager.change_state('pomodoro')
 
     def handle_events(self, events):
         for event in events:
@@ -40,6 +66,8 @@ class PomodoroState(State):
                 else:
                     self.time_left = BREAK_TIME
                 self.running = False
+                self.transition_timer = 0.0
+                self.transition_mode = None
 
     def update(self, dt):
         self.t += dt
@@ -48,13 +76,13 @@ class PomodoroState(State):
             self.time_left -= dt
             if self.time_left <= 0:
                 self.time_left = 0
-                self.running = False
                 if self.mode == 'work':
-                    self.mode = 'break'
-                    self.time_left = BREAK_TIME
+                    self._switch_to_break()
                 else:
-                    self.mode = 'work'
-                    self.time_left = WORK_TIME
+                    self._switch_to_work()
+
+        if self.transition_timer > 0:
+            self.transition_timer = max(0.0, self.transition_timer - dt)
                     
         # Update glowing text surfaces
         mins = int(self.time_left) // 60
@@ -112,6 +140,32 @@ class PomodoroState(State):
         mode_surf = self.mode_glow.get_surface()
         mode_pos = (cx - mode_surf.get_width() // 2, cy - 60)
         surface.blit(mode_surf, mode_pos)
+
+        if self.transition_timer > 0 and self.transition_mode:
+            alpha = int(180 * (self.transition_timer / TRANSITION_TIME))
+            pulse = 1.0 - (self.transition_timer / TRANSITION_TIME)
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 0))
+
+            band_height = 34
+            band_y = cy - 110
+            band_rect = pygame.Rect(20, band_y, SCREEN_WIDTH - 40, band_height)
+            band_color = (255, 60, 60, alpha) if self.transition_mode == 'WORK' else (60, 255, 120, alpha)
+            pygame.draw.rect(overlay, band_color, band_rect, border_radius=4)
+
+            # Pixel blocks that blink in and out for a retro transition feel
+            block_color = (255, 240, 120, alpha)
+            for i in range(0, SCREEN_WIDTH, 18):
+                if (i // 18) % 2 == 0:
+                    block_w = 6 + int(4 * pulse)
+                    block_h = 6 + int(4 * pulse)
+                    pygame.draw.rect(overlay, block_color, (i + 4, band_y - 10, block_w, block_h))
+
+            banner_font = pygame.font.Font(None, 28)
+            banner = banner_font.render(f"SWITCH TO {self.transition_mode}", True, WHITE)
+            banner_pos = banner.get_rect(center=(cx, band_y + band_height // 2))
+            overlay.blit(banner, banner_pos)
+            surface.blit(overlay, (0, 0))
 
     def draw_overlay(self, surface):
         if not self.running:
