@@ -6,6 +6,7 @@ from states.pomodoro_state import PomodoroState
 from states.notification_state import NotificationState
 from states.telegraph_state import TelegraphState
 from states.climate_state import ClimateState
+from states.greetings_state import GreetingsState
 from hardware_input import (
     HardwareButtons,
     BUTTON_AMBIENT_EVENT,
@@ -98,6 +99,7 @@ def main():
     manager.add_state('notification', NotificationState(manager))
     manager.add_state('telegraph', TelegraphState(manager))
     manager.add_state('climate', ClimateState(manager))
+    manager.add_state('greetings', GreetingsState(manager))
     
     # Start in Ambient State
     manager.change_state('ambient')
@@ -148,6 +150,8 @@ def main():
                     manager.change_state('telegraph')
                 elif event.key == pygame.K_8:
                     manager.change_state('climate')
+                elif event.key == pygame.K_9:
+                    manager.change_state('greetings')
         
         # State-specific event handling
         manager.handle_events(events)

@@ -185,3 +185,4 @@ class PomodoroState(State):
         
         surface.blit(shape_surf, bg_rect.topleft)
         surface.blit(overlay_surf, overlay_surf.get_rect(center=bg_rect.center))
+ 
