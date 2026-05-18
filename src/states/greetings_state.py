@@ -1,3 +1,5 @@
+import random
+
 import pygame
 import math
 import json
@@ -14,7 +16,7 @@ class GreetingsState(State):
     TYPE_SPEED = 26.0
     HOLD_TIME = 1.0
     FADE_TIME = 0.55
-    FUN_DISPLAY_TIME = 7.0
+    FUN_DISPLAY_TIME = 120.0
     FETCH_INTERVAL = 300.0
 
     def __init__(self, state_manager):
@@ -57,7 +59,7 @@ class GreetingsState(State):
         )
 
         self._frame_surface = self._build_frame_surface()
-        self._set_greeting(self.fun_messages[0])
+        self._set_greeting(random.choice(self.fun_messages))
 
     def _build_frame_surface(self):
         """Pre-render static UI frame for lower per-frame work."""
@@ -115,7 +117,7 @@ class GreetingsState(State):
             try:
                 advice_data = self._fetch_json("https://api.adviceslip.com/advice")
                 advice = advice_data.get("slip", {}).get("advice", "")
-                advice_line = self._normalize_line(f"DEXTER, {advice}")
+                advice_line = self._normalize_line(f"{advice}")
                 if advice_line:
                     new_messages.append(advice_line)
             except Exception:
@@ -221,7 +223,7 @@ class GreetingsState(State):
 
         surface.blit(self._frame_surface, (0, 0))
 
-        title = self.title_font.render("GREETING PROTOCOL", True, (190, 230, 255))
+        title = self.title_font.render("SYSTEM PROTOCOL", True, (190, 230, 255))
         surface.blit(title, (self.panel_rect.x + 10, self.panel_rect.y + 8))
 
         greet_surf = self.greeting_glow.get_surface()

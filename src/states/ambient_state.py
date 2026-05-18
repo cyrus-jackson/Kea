@@ -55,7 +55,8 @@ class AmbientState(State):
 
         # Tint/darken overlay for reflection (applied after reflection blit)
         self.cached_reflection_darken_surf = pygame.Surface((SCREEN_WIDTH, self.water_h), pygame.SRCALPHA)
-        self.cached_reflection_darken_surf.fill((0, 25, 60, 90))
+        # Reduce blue intensity and make the darken overlay a bit more transparent
+        self.cached_reflection_darken_surf.fill((10, 18, 28, 60))
 
         # Vertical fade so reflection disappears into darker water
         self.cached_reflection_fade = pygame.Surface((SCREEN_WIDTH, self.water_h), pygame.SRCALPHA)
@@ -744,8 +745,11 @@ class AmbientState(State):
 
         # --- STEP 3: Draw the water + reflection ---
         if water_h > 0:
-            # Base water color
-            surface.fill(DARK_BLUE, pygame.Rect(0, city_h, SCREEN_WIDTH, water_h))
+            # Base water: use a semi-transparent overlay to reduce heavy blue
+            water_surf = pygame.Surface((SCREEN_WIDTH, water_h), pygame.SRCALPHA)
+            # Slightly desaturated, darker and semi-transparent so background shows through
+            water_surf.fill((10, 18, 28, 120))
+            surface.blit(water_surf, (0, city_h))
 
             # Capture the city we just rendered for reflection
             capture_src_y = int(city_h * 0.22)
