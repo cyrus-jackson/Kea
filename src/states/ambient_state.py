@@ -65,12 +65,12 @@ NEAR_BLACK = (8, 6, 14)
 # (width_divisor, skyline height fraction, window w, window h, lit_thresh)
 # lit_thresh: windows light up when randint(1,10) >= thresh (higher = sparser)
 LAYER_SPECS = [
-    (10, 0.33, 2, 4, 7),
-    (9,  0.40, 3, 5, 7),
-    (8,  0.41, 4, 6, 7),
-    (7,  0.50, 5, 7, 8),
-    (6,  0.52, 6, 8, 8),
-    (5,  0.58, 7, 9, 9),
+    (10, 0.33, 2, 4, 8),
+    (9,  0.40, 3, 5, 9),
+    (8,  0.41, 4, 6, 9),
+    (7,  0.50, 5, 7, 9),
+    (6,  0.52, 6, 8, 10),
+    (5,  0.58, 7, 9, 10),
 ]
 
 
@@ -123,7 +123,7 @@ class AmbientState(State):
         self.cached_weather_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
 
         self.cached_reflection_darken_surf = pygame.Surface((SCREEN_WIDTH, self.water_h), pygame.SRCALPHA)
-        self.cached_reflection_darken_surf.fill((10, 18, 28, 60))
+        self.cached_reflection_darken_surf.fill((8, 14, 26, 110))
         self.cached_reflection_fade = pygame.Surface((SCREEN_WIDTH, self.water_h), pygame.SRCALPHA)
         if self.water_h > 0:
             for y in range(self.water_h):
@@ -559,16 +559,22 @@ class AmbientState(State):
                 reflection = pygame.transform.scale(
                     pygame.transform.flip(src, False, True),
                     (SCREEN_WIDTH, self.water_h))
-                reflection.set_alpha(215)
+                reflection.set_alpha(160)
                 reflection.blit(self.cached_reflection_fade, (0, 0),
                                 special_flags=pygame.BLEND_RGBA_MULT)
-                slice_h = 8
+                slice_h = 6
                 for y in range(0, self.water_h, slice_h):
                     h = min(slice_h, self.water_h - y)
-                    offset_x = int(math.sin(self.reflection_timer + y * 0.11) * (1.2 + y * 0.03))
+                    offset_x = int(math.sin(self.reflection_timer + y * 0.13) * (2.2 + y * 0.05))
                     surface.blit(reflection, (offset_x, self.city_h + y),
                                  area=pygame.Rect(0, y, SCREEN_WIDTH, h))
                 surface.blit(self.cached_reflection_darken_surf, (0, self.city_h))
+                # shoreline: a lit waterfront edge separating city from water
+                hz = self.scheme["horizon"]
+                pygame.draw.line(surface, lerp_color(hz, (255, 255, 255), 0.3),
+                                 (0, self.city_h), (SCREEN_WIDTH, self.city_h), 1)
+                pygame.draw.line(surface, lerp_color(hz, NEAR_BLACK, 0.45),
+                                 (0, self.city_h + 1), (SCREEN_WIDTH, self.city_h + 1), 1)
             except ValueError:
                 pass
 
