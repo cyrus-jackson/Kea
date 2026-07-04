@@ -39,6 +39,7 @@ python3 src/main.py
 - `3` notification
 - `4` street
 - `5` cloud city
+- `4` orbital control (atompunk radar)
 - `6` telegraph
 - `7` conservatory (solarpunk garden)
 - `8` climate
