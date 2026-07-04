@@ -7,6 +7,7 @@ from states.notification_state import NotificationState
 from states.telegraph_state import TelegraphState
 from states.climate_state import ClimateState
 from states.greetings_state import GreetingsState
+from states.conservatory_state import ConservatoryState
 from hardware_input import (
     HardwareButtons,
     BUTTON_AMBIENT_EVENT,
@@ -100,6 +101,7 @@ def main():
     manager.add_state('telegraph', TelegraphState(manager))
     manager.add_state('climate', ClimateState(manager))
     manager.add_state('greetings', GreetingsState(manager))
+    manager.add_state('conservatory', ConservatoryState(manager))
     
     # Start in Ambient State
     manager.change_state('ambient')
@@ -148,6 +150,8 @@ def main():
                         pygame.event.post(pygame.event.Event(BUTTON_NOTIFICATION_EVENT))
                 elif event.key == pygame.K_6:
                     manager.change_state('telegraph')
+                elif event.key == pygame.K_7:
+                    manager.change_state('conservatory')
                 elif event.key == pygame.K_8:
                     manager.change_state('climate')
                 elif event.key == pygame.K_9:
