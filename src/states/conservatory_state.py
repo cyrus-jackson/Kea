@@ -127,6 +127,9 @@ class ConservatoryState(State):
 
         self.time_alive = 0.0
         self.sign_text = self.current_affairs.get_current_message()
+        self._sign_surf = self.font_sign.render(self.sign_text, True, CREAM)
+        self.sign_scroll = 0.0
+        self.sign_hold = 2.0          # pause before a long message starts scrolling
 
     # ══════════════════════════════════════════════════════════════════════
     # Static frame: greenhouse mullions, glass glare, planter box, dial face
@@ -285,6 +288,20 @@ class ConservatoryState(State):
 
         if self.current_affairs.update(dt):
             self.sign_text = self.current_affairs.get_current_message()
+            self._sign_surf = self.font_sign.render(self.sign_text, True, CREAM)
+            self.sign_scroll = 0.0
+            self.sign_hold = 2.0
+
+        # marquee for long dispatches
+        sign_area_w = SCREEN_WIDTH - s(116)
+        if self._sign_surf.get_width() > sign_area_w:
+            if self.sign_hold > 0:
+                self.sign_hold -= dt
+            else:
+                self.sign_scroll += s(26) * dt
+                if self.sign_scroll > self._sign_surf.get_width() + s(40):
+                    self.sign_scroll = 0.0
+                    self.sign_hold = 2.0
 
         # growth / pruning cycle
         if self.pruning:
@@ -393,14 +410,19 @@ class ConservatoryState(State):
             f"GEN {self.generation:02d}  ·  DAY {now.timetuple().tm_yday}", True, (168, 140, 100))
         surface.blit(gen, (s(10), SCREEN_HEIGHT - s(18)))
 
-        # dispatch painted on the planter box (kept clear of the dial)
-        max_w = SCREEN_WIDTH - s(120)
-        text = self.sign_text
-        sign = self.font_sign.render(text, True, CREAM)
-        while sign.get_width() > max_w and len(text) > 4:
-            text = text[:-4].rstrip() + "…"
-            sign = self.font_sign.render(text, True, CREAM)
-        surface.blit(sign, (s(10), self.shelf_y + s(42)))
+        # dispatch painted on the planter box — marquee if it doesn't fit
+        area = pygame.Rect(s(10), self.shelf_y + s(42),
+                           SCREEN_WIDTH - s(116), self._sign_surf.get_height())
+        sw = self._sign_surf.get_width()
+        if sw <= area.w:
+            surface.blit(self._sign_surf, (area.x + (area.w - sw) // 2, area.y))
+        else:
+            prev_clip = surface.get_clip()
+            surface.set_clip(area)
+            x0 = area.x - int(self.sign_scroll)
+            surface.blit(self._sign_surf, (x0, area.y))
+            surface.blit(self._sign_surf, (x0 + sw + s(40), area.y))  # wrap copy
+            surface.set_clip(prev_clip)
 
     def draw_pomodoro(self, surface, time_left, mode):
         mins, secs = int(time_left) // 60, int(time_left) % 60
