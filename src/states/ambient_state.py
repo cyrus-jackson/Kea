@@ -1,838 +1,609 @@
+"""
+ambient_state.py
+----------------
+NEON SPRAWL — the cyberpunk ambient city.
+
+A procedural night city that regenerates itself with a fresh color
+scheme every couple of minutes: layered silhouettes over a glowing
+horizon, a giant banded moon drifting on a slow orbit, sweeping
+searchlights, flickering holo-billboards, blinking rooftop beacons,
+street + sky traffic, and the whole scene reflected in dark water.
+
+Design notes (Raspberry Pi friendly):
+- Everything static for a given city generation is pre-rendered once
+  (sky gradient, stars, planets, moon sprite, building layers).
+- The per-frame path is blits + a handful of primitive draws. The old
+  version allocated several full-screen alpha surfaces every frame.
+"""
+
 import pygame
 import random
 import math
-from config import SCREEN_WIDTH, SCREEN_HEIGHT, DARK_BLUE, WHITE
+
+from config import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE
 from states.base_state import State
 from ui.glow_text import GlowText
 from current_affairs import CurrentAffairs
 
+SCALE = SCREEN_HEIGHT / 480.0
+
+
+def s(v):
+    return max(1, int(v * SCALE))
+
+
+def lerp_color(a, b, t):
+    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
+# ── Curated night palettes: one is picked per city generation ───────────────
+SCHEMES = [
+    {   # classic neon night
+        "sky_top": (6, 5, 20),   "sky_bot": (36, 14, 56),
+        "horizon": (255, 64, 158), "far": (58, 30, 82),
+        "windows": [(255, 190, 60), (0, 225, 255)],
+    },
+    {   # teal dusk / orange sodium lamps
+        "sky_top": (4, 12, 22),  "sky_bot": (16, 52, 62),
+        "horizon": (255, 140, 40), "far": (30, 66, 74),
+        "windows": [(255, 170, 50), (170, 255, 230)],
+    },
+    {   # violet storm
+        "sky_top": (10, 4, 26),  "sky_bot": (52, 18, 84),
+        "horizon": (170, 80, 255), "far": (70, 38, 104),
+        "windows": [(230, 160, 255), (0, 235, 255)],
+    },
+    {   # blood-red skyline
+        "sky_top": (14, 4, 10),  "sky_bot": (58, 12, 28),
+        "horizon": (255, 70, 70), "far": (86, 28, 44),
+        "windows": [(255, 120, 90), (255, 220, 130)],
+    },
+]
+
+NEAR_BLACK = (8, 6, 14)
+
+# (width_divisor, skyline height fraction, window w, window h, lit_thresh)
+# lit_thresh: windows light up when randint(1,10) >= thresh (higher = sparser)
+LAYER_SPECS = [
+    (10, 0.33, 2, 4, 7),
+    (9,  0.40, 3, 5, 7),
+    (8,  0.41, 4, 6, 7),
+    (7,  0.50, 5, 7, 8),
+    (6,  0.52, 6, 8, 8),
+    (5,  0.58, 7, 9, 9),
+]
+
+
 class AmbientState(State):
+    """Procedural neon city with water reflection."""
+
+    RESET_INTERVAL = 120.0     # seconds between city regenerations
+
     def __init__(self, state_manager):
         super().__init__(state_manager)
+        pygame.font.init()
 
         self.city_h = int(SCREEN_HEIGHT * 0.75)
         self.water_h = SCREEN_HEIGHT - self.city_h
-        
-        # 1. Create separate surfaces for sky and layers to interleave dynamic traffic
-        self.sky_surface = pygame.Surface((SCREEN_WIDTH, self.city_h), pygame.SRCALPHA)
+
+        # per-generation content
+        self.scheme = None
+        self.sky_surface = pygame.Surface((SCREEN_WIDTH, self.city_h))
         self.layer_surfaces = []
-        
         self.roads = []
-        # 2. Call our procedural generator to paint the layers
+        self.beacons = []          # [x, y, phase]
+        self.billboards = []       # {rect, color, phase, layer, bg}
+        self.searchlights = []     # {x, y, phase, speed, spread, length}
+        self.twinkles = []         # [x, y, phase]
+        self.moon_sprite = None
+
         self.generate_city()
-        
-        # 3. Dynamic Elements (Traffic)
-        # Optimized counts for Raspberry Pi performance
+
+        # traffic (street + sky)
         self.traffic = self.gen_traffic(num_cars=16, speed=20)
         self.traffic.extend(self.gen_sky_traffic(num_cars=2, speed=10))
-        
-        # 4. Timer for water reflection animation & scene reset
+
+        # timers
+        self.time_alive = 0.0
         self.reflection_timer = 0.0
         self.scene_reset_timer = 0.0
-        self.scroll_x = 0.0
 
-        # 4b. Celestial bodies (planets, moons) that rotate slowly
-        self.celestial_bodies = self.generate_celestial_bodies()
-
-        # 5. Weather variables (Configurable via set_weather)
-        self.rain_intensity = 0.0 # 0.0 (off) to 1.0 (heavy storm)
-        self.wind_speed = 0.0     # negative = left, positive = right
+        # weather
+        self.rain_intensity = 0.0
+        self.wind_speed = 0.0
         self.raindrops = []
-        self.water_ripples = []   # Ripples for the lake surface
+        self.water_ripples = []
         self.lightning_timer = random.uniform(5.0, 15.0)
-        self.lightning_flash_alpha = 0.1
-        
-        # 6. Cached surfaces to avoid memory allocation every frame (Optimized for Raspberry Pi)
-        # Lightning flash overlay in the sky area
-        self.cached_flash_surf = pygame.Surface((SCREEN_WIDTH, self.city_h), pygame.SRCALPHA)
+        self.lightning_flash_alpha = 0.0
 
-        # Weather overlay (rain + ripples)
+        # reusable surfaces (no per-frame allocation)
+        self.city_render_surface = pygame.Surface((SCREEN_WIDTH, self.city_h))
+        self.fx_surface = pygame.Surface((SCREEN_WIDTH, self.city_h), pygame.SRCALPHA)
+        self.cached_flash_surf = pygame.Surface((SCREEN_WIDTH, self.city_h), pygame.SRCALPHA)
         self.cached_weather_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
 
-        # Separate surface for rendering the city (sky + buildings + traffic)
-        # This ensures we have a clean capture for the reflection without main.py's pre-fill clearing it
-        self.city_render_surface = pygame.Surface((SCREEN_WIDTH, self.city_h), pygame.SRCALPHA)
-
-        # Tint/darken overlay for reflection (applied after reflection blit)
         self.cached_reflection_darken_surf = pygame.Surface((SCREEN_WIDTH, self.water_h), pygame.SRCALPHA)
-        # Reduce blue intensity and make the darken overlay a bit more transparent
         self.cached_reflection_darken_surf.fill((10, 18, 28, 60))
-
-        # Vertical fade so reflection disappears into darker water
         self.cached_reflection_fade = pygame.Surface((SCREEN_WIDTH, self.water_h), pygame.SRCALPHA)
         if self.water_h > 0:
             for y in range(self.water_h):
-                t = 0.0 if self.water_h <= 1 else (y / (self.water_h - 1))
-                a = int(235 * (1.0 - (t ** 1.5)))
-                pygame.draw.line(self.cached_reflection_fade, (255, 255, 255, a), (0, y), (SCREEN_WIDTH, y))
+                t = y / max(1, self.water_h - 1)
+                a = int(235 * (1.0 - t ** 1.5))
+                pygame.draw.line(self.cached_reflection_fade, (255, 255, 255, a),
+                                 (0, y), (SCREEN_WIDTH, y))
 
-        # 7. Glowing Text UI
-        pygame.font.init()    
-
-        # Current affairs feed (message service) + display GlowText (small font)
+        # ticker
         self.current_affairs = CurrentAffairs()
-        affairs_font = pygame.font.Font(None, 20)
-        self.affairs_text = GlowText(affairs_font, self.current_affairs.get_current_message(), (255, 200, 120), (255, 120, 20), glow_radius=2, max_width=SCREEN_WIDTH - 80)
+        affairs_font = pygame.font.Font(None, s(20))
+        self.affairs_text = GlowText(affairs_font, self.current_affairs.get_current_message(),
+                                     (255, 200, 120), (255, 120, 20), glow_radius=2,
+                                     max_width=SCREEN_WIDTH - s(60))
+        self.ticker_band = pygame.Surface((SCREEN_WIDTH, s(46)), pygame.SRCALPHA)
+        for y in range(s(46)):
+            a = int(150 * (y / s(46)))
+            pygame.draw.line(self.ticker_band, (0, 0, 0, a), (0, y), (SCREEN_WIDTH, y))
 
-        # --- TO TEST THE WEATHER --- 
-        # Uncomment the line below to test a full storm with lightning and heavy wind!
-        self.set_weather(rain_intensity=0.01, wind_speed=-10.0)
+        # moon orbit
+        self.orbital_timer = random.uniform(0, math.tau)
+        self.moon_orbit = {
+            "cx": SCREEN_WIDTH / 2, "cy": int(self.city_h * 0.22),
+            "rx": SCREEN_WIDTH * 0.36, "ry": int(self.city_h * 0.11),
+            "speed": 0.02,
+        }
+        self.moon_x = self.moon_orbit["cx"] + math.cos(self.orbital_timer) * self.moon_orbit["rx"]
+        self.moon_y = self.moon_orbit["cy"] + math.sin(self.orbital_timer) * self.moon_orbit["ry"]
 
+        # keep the storm switch (external callers can crank it up)
+        self.set_weather(rain_intensity=0.0, wind_speed=0.0)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # City generation (everything here runs once per generation)
+    # ══════════════════════════════════════════════════════════════════════
     def set_weather(self, rain_intensity, wind_speed):
-        """Can be called externally to configure weather."""
         self.rain_intensity = max(0.0, min(1.0, rain_intensity))
         self.wind_speed = wind_speed
 
-    def get_hsv_color(self, h, s, v):
-        """Helper to create a Pygame Color from HSV values."""
-        c = pygame.Color(0, 0, 0)
-        # Pygame uses H (0-360), S (0-100), V (0-100), A (0-100)
-        c.hsva = (int(h) % 360, int(max(0, min(100, s))), int(max(0, min(100, v))), 100)
-        return c
-
-    def generate_celestial_bodies(self):
-        """Generate dim background planets and a bright sun/moon orbital system."""
-        bodies = []
-        
-        # Generate 2-3 DIM background planets (won't interfere with sun/moon)
-        num_dim_planets = random.randint(2, 3)
-        for _ in range(num_dim_planets):
-            body = {
-                'x': random.randint(50, SCREEN_WIDTH - 50),
-                'y': random.randint(20, int(self.city_h * 0.4)),
-                'radius': random.randint(6, 15),
-                'color': self.get_hsv_color(random.randint(0, 360), random.randint(30, 80), random.randint(40, 60)),  # Dimmer
-                'rotation': 0.0,
-                'rotation_speed': random.uniform(0.05, 0.2),  # Slower rotation
-                'has_rings': random.random() < 0.2,  # Fewer rings
-                'ring_color': self.get_hsv_color(random.randint(0, 360), random.randint(40, 60), random.randint(40, 60)),
-                'alpha': 120,  # DIM these background planets
-            }
-            bodies.append(body)
-        
-        # Create the SUN/MOON orbital system (bright and moves across sky)
-        self.orbital_timer = 0.0
-        self.sun_moon = {
-            'radius': 20,
-            'orbit_speed': 0.025,  # Complete orbit every ~7 seconds for testing (adjust as needed)
-            'center_x': SCREEN_WIDTH / 2,
-            'center_y': int(self.city_h * 0.35),
-            'orbit_radius_x': SCREEN_WIDTH * 0.4,
-            'orbit_radius_y': int(self.city_h * 0.25),
-        }
-        
-        return bodies
-
-    def gen_windows(self, surface, start_x, end_x, start_y, end_y, win_w, win_h, color1, color2):
-        """Translates your Lua genWindows function."""
-        building_width = end_x - start_x
-        building_height = end_y - start_y
-
-        # Number of windows. Using int() ensures we get whole numbers
-        windows_in_row = int((building_width - 2) / win_w)
-        windows_in_col = int((building_height - 2) / win_h)
-
-        for iy in range(windows_in_col + 1):
-            for ix in range(windows_in_row + 1):
-                # Calculate window positions exactly like Lua
-                w_start_x = start_x + 1 + (ix * win_w)
-                w_start_y = start_y + 3 + (iy * win_h)
-                w_end_x = w_start_x + win_w - 2
-                w_end_y = w_start_y + win_h - 3
-
-                if w_end_x < end_x:
-                    draw_chance = random.randint(1, 10)
-                    
-                    if draw_chance >= 7:
-                        # 75% chance for color1, 25% chance for color2
-                        chosen_color = random.choice([color1, color1, color1, color2])
-                        
-                        # Convert Start/End coordinates to Pygame's Width/Height format
-                        rect_w = w_end_x - w_start_x
-                        rect_h = w_end_y - w_start_y
-                        
-                        # Draw the window rectangle
-                        if rect_w > 0 and rect_h > 0:
-                            pygame.draw.rect(surface, chosen_color, (w_start_x, w_start_y, rect_w, rect_h))
-
-    def gen_buildings(self, surface, b_width, b_height, b_start_x, b_color, win_w, win_h, win_c1, win_c2):
-        """Translates your Lua genBuildings function."""
-        canvas_h = surface.get_height()
-        
-        # Loop to draw multiple buildings
-        # Adjusted slightly from Lua to ensure it covers the screen horizontally
-        num_buildings = int(SCREEN_WIDTH / b_width) + 2 
-        
-        for i in range(num_buildings):
-            # Calculate positions with randomness
-            start_x = (b_width * i) + random.randint(int(-b_width), int(b_width))
-            start_y = b_height + random.randint(-15, 15)
-            end_x = start_x + b_width + random.randint(-10, 10)
-            end_y = canvas_h
-            
-            rect_w = end_x - start_x
-            rect_h = end_y - start_y
-            
-            if rect_w > 0:
-                # 1. Draw the main building block
-                pygame.draw.rect(surface, b_color, (start_x, start_y, rect_w, rect_h))
-                
-                # Choose a feature to add
-                chosen_feature = random.choice(["Box", "Dome", "Light", "Platform", "Pylon", "None"])
-
-                if chosen_feature == "Box":
-                    box_start_x = random.randint(int(start_x), int(start_x + (rect_w/2)))
-                    box_start_y = random.randint(int(start_y - 5), int(start_y - 1))
-                    box_end_x = random.randint(int(start_x + (rect_w/2)), int(end_x))
-                    box_end_y = start_y
-                    if box_end_x > box_start_x:
-                        pygame.draw.rect(surface, b_color, (box_start_x, box_start_y, box_end_x - box_start_x, box_end_y - box_start_y))
-
-                elif chosen_feature == "Dome":
-                    dome_diameter_min = max(2, rect_w / 2)
-                    dome_diameter_max = max(2, rect_w)
-                    if dome_diameter_max >= dome_diameter_min:
-                        dome_diameter = random.randint(int(dome_diameter_min), int(dome_diameter_max))
-                        dome_radius = dome_diameter / 2
-                        dome_start_x = int((start_x + (rect_w/2)) - dome_radius)
-                        dome_start_y = random.randint(int(start_y - dome_radius), int(start_y - (dome_radius/2)))
-                        pygame.draw.ellipse(surface, b_color, (dome_start_x, dome_start_y, int(dome_diameter), int(dome_diameter)))
-
-                elif chosen_feature == "Light":
-                    light_color = self.get_hsv_color(5, 60, 100)
-                    pygame.draw.rect(surface, light_color, (int(start_x + 2), int(start_y - 1), 1, 1))
-                    pygame.draw.rect(surface, light_color, (int(end_x - 1), int(start_y - 1), 1, 1))
-
-                elif chosen_feature == "Platform":
-                    pygame.draw.line(surface, b_color, (start_x, start_y - 2), (end_x, start_y - 2))
-                    pygame.draw.rect(surface, b_color, (int(start_x + 3), int(start_y - 1), 1, 1))
-                    pygame.draw.rect(surface, b_color, (int(end_x - 2), int(start_y - 1), 1, 1))
-
-                elif chosen_feature == "Pylon":
-                    pylon_position = random.randint(int(start_x), int(end_x))
-                    pylon_height = random.randint(2, 6)
-                    pygame.draw.line(surface, b_color, (pylon_position, start_y), (pylon_position, start_y - pylon_height))
-                
-                # 2. Add Windows
-                # Randomize window sizes slightly, keeping them from hitting 0
-                curr_win_w = max(2, random.randint(win_w - 1, win_w + 1))
-                curr_win_h = max(3, random.randint(win_h - 1, win_h + 1))
-
-                self.gen_windows(surface, start_x, end_x, start_y, end_y, 
-                                 curr_win_w, curr_win_h, win_c1, win_c2)
-
     def generate_city(self):
-        # Clear existing layers and roads to prevent memory leaks and overlapping buildings on reset
+        self.scheme = random.choice(SCHEMES)
         self.layer_surfaces.clear()
         self.roads.clear()
-        
-        # Base colors (using 0-100 for Sat/Val instead of Lua's 0.0-1.0)
-        base_hue = random.randint(0, 360)
-        base_sat = random.randint(15, 40)
-        base_val = random.randint(81, 100)
-        
-        self.sky_hue = base_hue
-        self.sky_sat = base_sat
-        self.sky_val = base_val
-        
-        base_color = self.get_hsv_color(base_hue, base_sat, base_val)
+        self.beacons.clear()
+        self.billboards.clear()
+        self.searchlights.clear()
+        self.twinkles.clear()
 
-        # Make sky details transparent so we can draw changing color behind it
-        self.sky_surface.fill((0, 0, 0, 0))
-        surf_h = int(SCREEN_HEIGHT * 0.75)
-        
-        # Draw stars
-        num_stars = random.randint(20, 40)
-        for _ in range(num_stars):
-            star_x = random.randint(0, SCREEN_WIDTH)
-            star_y = random.randint(0, surf_h)
-            # Random brush size 1 or 2 as in Lua
-            star_size = random.choice([1, 2])
-            pygame.draw.rect(self.sky_surface, WHITE, (star_x, star_y, star_size, star_size))
+        self._build_sky()
+        self._build_moon_sprite()
 
-        # Draw sphere (moon/planet)
-        sphere_x = random.randint(6, max(7, SCREEN_WIDTH - 6))
-        # Place in the upper third of the sky surface
-        sphere_y = random.randint(6, max(7, int(surf_h / 3)))
-        sphere_diameter = random.randint(10, 40)
-        pygame.draw.ellipse(self.sky_surface, WHITE, (sphere_x, sphere_y, sphere_diameter, sphere_diameter))
+        n = len(LAYER_SPECS)
+        for i, (wdiv, hfrac, ww, wh, lit) in enumerate(LAYER_SPECS):
+            t = i / (n - 1)
+            color = lerp_color(self.scheme["far"], NEAR_BLACK, t ** 0.8)
+            layer = pygame.Surface((SCREEN_WIDTH, self.city_h), pygame.SRCALPHA)
+            skyline_y = self.city_h - int(self.city_h * (1 - hfrac))
+            self._gen_buildings(layer, i, SCREEN_WIDTH / wdiv, skyline_y,
+                                color, ww, wh, lit)
+            # road for this layer
+            r0 = 0.70 + i * 0.05
+            road_y = random.randint(int(self.city_h * r0),
+                                    min(self.city_h - 8, int(self.city_h * (r0 + 0.05))))
+            thickness = 2 + i
+            self.roads.append({"y": road_y, "thickness": thickness, "layer": i})
+            self._gen_road(layer, road_y, thickness, color)
+            self.layer_surfaces.append(layer)
 
-        # Layer 1 Buildings (Background)
-        b_width_1 = SCREEN_WIDTH / 10
-        layer_1 = pygame.Surface((SCREEN_WIDTH, surf_h), pygame.SRCALPHA)
-        b_height_1 = surf_h - (surf_h * 0.67) # True canvas height representation
-        b_color_1 = self.get_hsv_color(base_hue - random.randint(5, 10), 
-                                       base_sat + random.randint(5, 10), 
-                                       base_val - random.randint(6, 10))
-        
-        # Call the generator!
-        self.gen_buildings(layer_1, b_width_1, b_height_1, 0, b_color_1, 
-                           2, 4, base_color, base_color)
-                           
-        # Layer 1 Road
-        road_min_1 = int(surf_h * 0.70)
-        road_max_1 = int(surf_h * 0.75)
-        road_thickness_1 = 2
-        # Use the exact same color you generated for the buildings on this layer
-        road_color_1 = b_color_1 
-        road_y_1 = random.randint(road_min_1, road_max_1)
-        self.roads.append({'y': road_y_1, 'thickness': road_thickness_1, 'layer': 0})
-
-        # Call the road generator!
-        self.gen_road(layer_1, road_y_1, road_thickness_1, road_color_1)
-        self.layer_surfaces.append(layer_1)
-
-        # Layer 2 Buildings
-        b_width_2 = SCREEN_WIDTH / 9
-        layer_2 = pygame.Surface((SCREEN_WIDTH, surf_h), pygame.SRCALPHA)
-        b_height_2 = surf_h - (surf_h * 0.60)
-        b_color_2 = self.get_hsv_color(base_hue - random.randint(10, 15), 
-                                       base_sat + random.randint(5, 10), 
-                                       base_val - random.randint(15, 25))
-        
-        self.gen_buildings(layer_2, b_width_2, b_height_2, 0, b_color_2, 
-                           3, 5, base_color, b_color_1)
-                           
-        # Layer 2 Road
-        road_min_2 = int(surf_h * 0.75)
-        road_max_2 = int(surf_h * 0.80)
-        road_thickness_2 = 3
-        road_color_2 = b_color_2 
-        road_y_2 = random.randint(road_min_2, road_max_2)
-        self.roads.append({'y': road_y_2, 'thickness': road_thickness_2, 'layer': 1})
-
-        self.gen_road(layer_2, road_y_2, road_thickness_2, road_color_2)
-        self.layer_surfaces.append(layer_2)
-
-        # Layer 3 Buildings
-        layer_3 = pygame.Surface((SCREEN_WIDTH, surf_h), pygame.SRCALPHA)
-        b_width_3 = SCREEN_WIDTH / 8
-        b_height_3 = surf_h - (surf_h * 0.59)
-        b_color_3 = self.get_hsv_color(base_hue - random.randint(15, 20), 
-                                       base_sat + random.randint(5, 10), 
-                                       base_val - random.randint(15, 25))
-        
-        self.gen_buildings(layer_3, b_width_3, b_height_3, 0, b_color_3, 
-                           4, 6, b_color_1, b_color_2)
-                           
-        # Layer 3 Road
-        road_min_3 = int(surf_h * 0.80)
-        road_max_3 = int(surf_h * 0.85)
-        road_thickness_3 = 3
-        road_color_3 = b_color_3 
-        road_y_3 = random.randint(road_min_3, road_max_3)
-        self.roads.append({'y': road_y_3, 'thickness': road_thickness_3, 'layer': 2})
-
-        self.gen_road(layer_3, road_y_3, road_thickness_3, road_color_3)
-        self.layer_surfaces.append(layer_3)
-
-        # Layer 4 Buildings
-        layer_4 = pygame.Surface((SCREEN_WIDTH, surf_h), pygame.SRCALPHA)
-        b_width_4 = SCREEN_WIDTH / 7
-        b_height_4 = surf_h - (surf_h * 0.50)
-        b_color_4 = self.get_hsv_color(base_hue - random.randint(20, 25), 
-                                       base_sat + random.randint(5, 10), 
-                                       base_val - random.randint(35, 55))
-        
-        self.gen_buildings(layer_4, b_width_4, b_height_4, 0, b_color_4, 
-                           5, 7, b_color_2, b_color_3)
-                           
-        # Layer 4 Road
-        road_min_4 = int(surf_h * 0.85)
-        road_max_4 = int(surf_h * 0.90)
-        road_thickness_4 = 4
-        road_color_4 = b_color_4 
-        road_y_4 = random.randint(road_min_4, road_max_4)
-        self.roads.append({'y': road_y_4, 'thickness': road_thickness_4, 'layer': 3})
-
-        self.gen_road(layer_4, road_y_4, road_thickness_4, road_color_4)
-        self.layer_surfaces.append(layer_4)
-
-        # Layer 5 Buildings
-        layer_5 = pygame.Surface((SCREEN_WIDTH, surf_h), pygame.SRCALPHA)
-        b_width_5 = SCREEN_WIDTH / 6
-        b_height_5 = surf_h - (surf_h * 0.48)
-        b_color_5 = self.get_hsv_color(base_hue - random.randint(30, 45), 
-                                       base_sat + random.randint(5, 10), 
-                                       base_val - random.randint(55, 70))
-        
-        self.gen_buildings(layer_5, b_width_5, b_height_5, 0, b_color_5, 
-                           6, 8, b_color_3, b_color_4)
-                           
-        # Layer 5 Road
-        road_min_5 = int(surf_h * 0.90)
-        road_max_5 = int(surf_h * 0.95)
-        road_thickness_5 = 6
-        road_color_5 = b_color_5 
-        road_y_5 = random.randint(road_min_5, road_max_5)
-        self.roads.append({'y': road_y_5, 'thickness': road_thickness_5, 'layer': 4})
-
-        self.gen_road(layer_5, road_y_5, road_thickness_5, road_color_5)
-        self.layer_surfaces.append(layer_5)
-
-        # Layer 6 Buildings
-        layer_6 = pygame.Surface((SCREEN_WIDTH, surf_h), pygame.SRCALPHA)
-        b_width_6 = SCREEN_WIDTH / 5
-        b_height_6 = surf_h - (surf_h * 0.42)
-        b_color_6 = self.get_hsv_color(base_hue - random.randint(50, 70), 
-                                       base_sat + random.randint(5, 10), 
-                                       base_val - random.randint(70, 80))
-        
-        self.gen_buildings(layer_6, b_width_6, b_height_6, 0, b_color_6, 
-                           7, 9, b_color_5, b_color_6)
-                           
-        # Layer 6 Road
-        road_min_6 = int(surf_h * 0.95)
-        road_max_6 = surf_h - 8
-        road_thickness_6 = 8
-        road_color_6 = b_color_6 
-        road_y_6 = random.randint(road_min_6, road_max_6)
-        self.roads.append({'y': road_y_6, 'thickness': road_thickness_6, 'layer': 5})
-
-        self.gen_road(layer_6, road_y_6, road_thickness_6, road_color_6)
-        self.layer_surfaces.append(layer_6)
-
-    def gen_traffic(self, num_cars, speed):
-        """Translate your Lua genTraffic() here."""
-        cars = []
-        for _ in range(num_cars):
-            # Select a random road for the car to drive on
-            road = random.choice(self.roads) if hasattr(self, 'roads') and self.roads else {'y': int(SCREEN_HEIGHT * 0.50), 'thickness': 2, 'layer': 0}
-            # The car is 2 pixels tall, so keep it within the road thickness
-            car_h = 2
-            car_y = road['y'] + random.randint(0, max(0, road['thickness'] - car_h))
-            
-            cars.append({
-                'x': random.uniform(0, SCREEN_WIDTH),
-                'y': car_y,
-                'speed': speed * random.uniform(0.8, 1.2) * random.choice([1, -1]), # Randomize direction and slightly randomize speed
-                'layer': road.get('layer', 0)
+        # sweeping searchlights rise from mid-distance rooftops
+        for _ in range(2):
+            self.searchlights.append({
+                "x": random.randint(s(30), SCREEN_WIDTH - s(30)),
+                "y": random.randint(int(self.city_h * 0.42), int(self.city_h * 0.60)),
+                "phase": random.uniform(0, math.tau),
+                "speed": random.uniform(0.25, 0.45),
+                "spread": random.uniform(0.05, 0.09),
+                "length": self.city_h * random.uniform(0.7, 0.95),
             })
-        return cars
-    
-    def gen_sky_traffic(self, num_cars, speed):
-        """Generates Star Wars style flying vehicles."""
-        cars = []
-        surf_h = int(SCREEN_HEIGHT * 0.95)
-        for _ in range(num_cars):
-            cars.append({
-                'x': random.uniform(0, SCREEN_WIDTH),
-                'y': random.uniform(surf_h * 0.1, surf_h * 0.75),
-                'speed': speed * random.uniform(1.5, 4.0) * random.choice([1, -1]),
-                'layer': random.randint(0, 5),
-                'is_sky': True,
-                'trail': random.randint(4, 15),
-                'color': random.choice([(255, 100, 100), (100, 255, 255), (100, 255, 100), (255, 255, 255)])
-            })
-        return cars
 
-    def gen_road(self, surface, road_y, road_thickness, road_color):
-        """Translates your Lua genRoad function."""
-        canvas_w = surface.get_width()
+    def _build_sky(self):
+        """Gradient + horizon glow + stars + a distant ringed planet."""
+        sky = self.sky_surface
+        top, bot = self.scheme["sky_top"], self.scheme["sky_bot"]
+        h = self.city_h
+        for y in range(h):
+            sky_t = y / max(1, h - 1)
+            pygame.draw.line(sky, lerp_color(top, bot, sky_t), (0, y), (SCREEN_WIDTH, y))
+        # horizon glow band (strongest at the skyline, fades upward)
+        hz = self.scheme["horizon"]
+        for i in range(s(70)):
+            a = (1 - i / s(70)) ** 2
+            y = h - 1 - i
+            base = sky.get_at((0, y))[:3]
+            pygame.draw.line(sky, lerp_color(base, hz, 0.55 * a), (0, y), (SCREEN_WIDTH, y))
+
+        # stars (static; a few get twinkle animation on top)
+        for _ in range(random.randint(30, 48)):
+            x = random.randint(0, SCREEN_WIDTH - 1)
+            y = random.randint(0, int(h * 0.75))
+            c = random.choice([(210, 210, 230), (200, 160, 200), (150, 200, 220)])
+            sky.fill(c, (x, y, random.choice([1, 1, 2]), 1))
+        self.twinkles = [[random.randint(2, SCREEN_WIDTH - 3),
+                          random.randint(2, int(h * 0.6)),
+                          random.uniform(0, math.tau)] for _ in range(8)]
+
+        # one distant ringed planet, baked
+        px = random.randint(s(30), SCREEN_WIDTH - s(30))
+        py = random.randint(s(30), int(h * 0.35))
+        pr = random.randint(s(8), s(14))
+        pcol = lerp_color(self.scheme["horizon"], (120, 120, 160), 0.5)
+        pygame.draw.circle(sky, lerp_color(pcol, top, 0.55), (px, py), pr)
+        pygame.draw.circle(sky, lerp_color(pcol, top, 0.35), (px - pr // 3, py - pr // 3), pr // 3)
+        if random.random() < 0.6:
+            ring = pygame.Rect(0, 0, int(pr * 3.2), int(pr * 0.9))
+            ring.center = (px, py)
+            pygame.draw.ellipse(sky, lerp_color(pcol, top, 0.3), ring, 1)
+
+    def _build_moon_sprite(self):
+        """Giant banded synthwave moon, pre-rendered with its glow."""
+        r = s(34)
+        glow = s(12)
+        size = (r + glow) * 2
+        surf = pygame.Surface((size, size), pygame.SRCALPHA)
+        hz = self.scheme["horizon"]
+        # halo
+        for g in range(glow, 0, -2):
+            pygame.draw.circle(surf, (*hz, 10), (size // 2, size // 2), r + g)
+        # banded disc: pale top fading into a bright horizon-colored base
+        pale = (245, 240, 248)
+        hz_hot = lerp_color(hz, (255, 255, 255), 0.25)
+        for y in range(-r, r):
+            half = int(math.sqrt(r * r - y * y))
+            band_t = (y + r) / (2 * r)
+            col = lerp_color(pale, hz_hot, band_t)
+            pygame.draw.line(surf, col, (size // 2 - half, size // 2 + y),
+                             (size // 2 + half, size // 2 + y))
+        # slice gaps in the lower half (classic synthwave)
+        gap, y = 2, int(size * 0.60)
+        while y < size:
+            surf.fill((0, 0, 0, 0), (0, y, size, gap))
+            y += gap + s(6)
+            gap += 1
+        # craters on the pale upper half
+        rng = random.Random()
+        for _ in range(4):
+            cx = size // 2 + rng.randint(-r // 2, r // 2)
+            cy = size // 2 - rng.randint(r // 4, int(r * 0.7))
+            pygame.draw.circle(surf, lerp_color(pale, (150, 150, 170), 0.5),
+                               (cx, cy), rng.randint(2, s(4)))
+        self.moon_sprite = surf
+
+    def _gen_buildings(self, surface, layer_i, b_width, b_height, b_color, win_w, win_h, lit_thresh):
         canvas_h = surface.get_height()
+        num_buildings = int(SCREEN_WIDTH / b_width) + 2
+        for i in range(num_buildings):
+            start_x = int(b_width * i + random.randint(int(-b_width), int(b_width)))
+            start_y = int(b_height + random.randint(-15, 15))
+            end_x = start_x + int(b_width) + random.randint(-10, 10)
+            rect_w = end_x - start_x
+            if rect_w <= 0:
+                continue
+            pygame.draw.rect(surface, b_color, (start_x, start_y, rect_w, canvas_h - start_y))
 
-        # 1. Base Road Rectangle
-        pygame.draw.rect(surface, road_color, (0, road_y, canvas_w, road_thickness))
+            feature = random.choice(["Box", "Dome", "Antenna", "Platform", "Pylon", "None"])
+            if feature == "Box":
+                bx0 = random.randint(start_x, start_x + rect_w // 2)
+                bx1 = random.randint(start_x + rect_w // 2, end_x)
+                by0 = random.randint(start_y - 5, start_y - 1)
+                if bx1 > bx0:
+                    pygame.draw.rect(surface, b_color, (bx0, by0, bx1 - bx0, start_y - by0))
+            elif feature == "Dome":
+                d = random.randint(max(2, rect_w // 2), max(3, rect_w))
+                pygame.draw.ellipse(surface, b_color,
+                                    (start_x + rect_w // 2 - d // 2,
+                                     random.randint(start_y - d, start_y - d // 2), d, d))
+            elif feature in ("Antenna", "Pylon"):
+                px = random.randint(start_x + 2, max(start_x + 3, end_x - 2))
+                ph = random.randint(4, 10)
+                pygame.draw.line(surface, b_color, (px, start_y), (px, start_y - ph))
+                # rooftop beacon on the antenna tip (front layers only)
+                if layer_i >= 3 and random.random() < 0.6:
+                    self.beacons.append([px, start_y - ph, random.uniform(0, math.tau)])
+            elif feature == "Platform":
+                pygame.draw.line(surface, b_color, (start_x, start_y - 2), (end_x, start_y - 2))
 
-        # 2. Draw Struts
-        # int() ensures we don't pass decimal pixels to Pygame
-        # max(1, ...) ensures we never accidentally divide by zero if thickness is 0
-        num_struts = int(canvas_w / max(1, road_thickness))
-        strut_w = max(1, int((road_thickness / 3) * 2)) 
-        strut_interval = strut_w * 5
+            # windows
+            ww = max(2, random.randint(win_w - 1, win_w + 1))
+            wh = max(3, random.randint(win_h - 1, win_h + 1))
+            self._gen_windows(surface, start_x, end_x, start_y, canvas_h, ww, wh, lit_thresh)
 
-        for i in range(num_struts + 1):
-            strut_x = int(i * strut_interval + (i * strut_w))
-            
-            # Draw strut going down to the bottom of the canvas
-            pygame.draw.rect(surface, road_color, (strut_x, road_y, strut_w, canvas_h - road_y))
+            # holo-billboard on some tall mid/front buildings
+            if layer_i >= 2 and rect_w > s(26) and random.random() < 0.18 \
+               and len(self.billboards) < 4:
+                bw = random.randint(s(16), min(rect_w - 6, s(30)))
+                bh = random.randint(s(10), s(18))
+                bx = random.randint(start_x + 3, max(start_x + 4, end_x - bw - 3))
+                by = random.randint(start_y + 6, start_y + s(40))
+                self.billboards.append({
+                    "rect": pygame.Rect(bx, by, bw, bh),
+                    "color": random.choice(self.scheme["windows"] + [self.scheme["horizon"]]),
+                    "bg": b_color,
+                    "phase": random.uniform(0, math.tau),
+                    "layer": layer_i,
+                })
 
-            # Draw arches (using pygame.draw.line)
-            # Syntax: (surface, color, start_pos, end_pos)
-            arch_y = road_y + road_thickness + 1
-            pygame.draw.line(surface, road_color, 
-                             (strut_x - 2, arch_y), 
-                             (strut_x + strut_w + 2, arch_y))
+    def _gen_windows(self, surface, start_x, end_x, start_y, end_y, win_w, win_h, lit_thresh):
+        c1, c2 = self.scheme["windows"]
+        cols = int((end_x - start_x - 2) / win_w)
+        rows = int((end_y - start_y - 2) / win_h)
+        for iy in range(rows + 1):
+            for ix in range(cols + 1):
+                wx = start_x + 1 + ix * win_w
+                wy = start_y + 3 + iy * win_h
+                if wx + win_w - 2 >= end_x:
+                    continue
+                if random.randint(1, 10) >= lit_thresh:
+                    color = random.choice([c1, c1, c1, c2])
+                    # occasional dim window (someone's asleep)
+                    if random.random() < 0.25:
+                        color = lerp_color(color, NEAR_BLACK, 0.6)
+                    if win_w - 2 > 0 and win_h - 3 > 0:
+                        pygame.draw.rect(surface, color, (wx, wy, win_w - 2, win_h - 3))
 
-        # 3. Draw Railing (50% chance)
-        if random.randint(0, 1) > 0:
-            railing_y = int(road_y - road_thickness / 2)
-            
-            # Top rail
-            pygame.draw.line(surface, road_color, (0, railing_y), (canvas_w, railing_y))
+    def _gen_road(self, surface, road_y, thickness, color):
+        canvas_w, canvas_h = surface.get_size()
+        pygame.draw.rect(surface, color, (0, road_y, canvas_w, thickness))
+        strut_w = max(1, (thickness * 2) // 3)
+        interval = strut_w * 6
+        for i in range(canvas_w // max(1, interval) + 1):
+            x = i * (interval + strut_w)
+            pygame.draw.rect(surface, color, (x, road_y, strut_w, canvas_h - road_y))
+        if random.random() < 0.5:
+            rail_y = road_y - thickness // 2 - 1
+            pygame.draw.line(surface, color, (0, rail_y), (canvas_w, rail_y))
+            for i in range(canvas_w // 3 + 1):
+                pygame.draw.rect(surface, color, (i * 3, rail_y, 1, road_y - rail_y))
+        # street lamps
+        lamp = self.scheme["windows"][0]
+        for i in range(canvas_w // 24 + 1):
+            x = random.randint(-10, 10) + i * 25
+            pygame.draw.rect(surface, color, (x, road_y - 8, 1, 8))
+            pygame.draw.rect(surface, color, (x, road_y - 8, 3, 2))
+            pygame.draw.rect(surface, lamp, (x + 3, road_y - 6, 2, 2))
 
-            num_poles = int(canvas_w / 2)
-            pole_w = 1
-            pole_interval = 2
-            pole_start = random.randint(-10, 10)
+    # ══════════════════════════════════════════════════════════════════════
+    # Traffic
+    # ══════════════════════════════════════════════════════════════════════
+    def gen_traffic(self, num_cars, speed):
+        cars = []
+        for _ in range(num_cars):
+            road = random.choice(self.roads)
+            cars.append({
+                "x": random.uniform(0, SCREEN_WIDTH),
+                "y": road["y"] + random.randint(0, max(0, road["thickness"] - 2)),
+                "speed": speed * random.uniform(0.8, 1.2) * random.choice([1, -1]),
+                "layer": road["layer"],
+            })
+        return cars
 
-            # Loop to draw railing poles
-            for i in range(num_poles + 1):
-                pole_x = pole_start + i * pole_interval + (i * pole_w)
-                pygame.draw.rect(surface, road_color, (pole_x, railing_y, pole_w, road_y - railing_y))
+    def gen_sky_traffic(self, num_cars, speed):
+        cars = []
+        for _ in range(num_cars):
+            cars.append({
+                "x": random.uniform(0, SCREEN_WIDTH),
+                "y": random.uniform(self.city_h * 0.1, self.city_h * 0.75),
+                "speed": speed * random.uniform(1.5, 4.0) * random.choice([1, -1]),
+                "layer": random.randint(0, len(LAYER_SPECS) - 1),
+                "is_sky": True,
+                "trail": random.randint(4, 15),
+                "color": random.choice([(255, 100, 100), (100, 255, 255),
+                                        (100, 255, 100), (255, 255, 255)]),
+            })
+        return cars
 
-        # 4. Draw Streetlamps
-        num_lamps = int(canvas_w / 4)
-        lamp_w = 1
-        lamp_h = 8
-        lamp_interval = 24
-        lamp_start = random.randint(-10, 10)
-        
-        # Creating a warm, bright light color (Hue 45, low saturation, max brightness)
-        light_color = self.get_hsv_color(45, 10, 100)
+    def _respawn_car(self, car):
+        if car.get("is_sky"):
+            car["y"] = random.uniform(self.city_h * 0.1, self.city_h * 0.75)
+            car["layer"] = random.randint(0, len(LAYER_SPECS) - 1)
+            car["trail"] = random.randint(4, 15)
+        else:
+            road = random.choice(self.roads)
+            car["y"] = road["y"] + random.randint(0, max(0, road["thickness"] - 2))
+            car["layer"] = road["layer"]
 
-        for i in range(num_lamps + 1):
-            lamp_x = lamp_start + i * lamp_interval + (i * lamp_w)
-
-            # Draw Post
-            pygame.draw.rect(surface, road_color, (lamp_x, road_y - lamp_h, lamp_w, lamp_h))
-            
-            # Draw Head (slightly wider)
-            pygame.draw.rect(surface, road_color, (lamp_x, road_y - lamp_h, lamp_w + 2, 2))
-            
-            # Draw Light (Using a 2x2 rect instead of pencil tool)
-            pygame.draw.rect(surface, light_color, (lamp_x + 3, road_y - lamp_h + 2, 2, 2))
-
+    # ══════════════════════════════════════════════════════════════════════
+    # Update
+    # ══════════════════════════════════════════════════════════════════════
     def update(self, dt):
-        """All animation math happens here."""
-        # Scroll the background (parallax)
-        self.scroll_x += dt * 0.0
-
-        # Move traffic
-        for car in self.traffic:
-            car['x'] += car['speed'] * dt
-            
-            respawn = False
-            if car['x'] > SCREEN_WIDTH + 20:
-                car['x'] = -20 # Reset offscreen on left
-                respawn = True
-            elif car['x'] < -20:
-                car['x'] = SCREEN_WIDTH + 20 # Reset offscreen on right
-                respawn = True
-                
-            if respawn:
-                if car.get('is_sky'):
-                    surf_h = int(SCREEN_HEIGHT * 0.75)
-                    car['y'] = random.uniform(surf_h * 0.1, surf_h * 0.75)
-                    car['layer'] = random.randint(0, 5)
-                    car['trail'] = random.randint(4, 15)
-                    car['color'] = random.choice([(255, 100, 100), (100, 255, 255), (100, 255, 100), (255, 255, 255)])
-                    # Keep same direction but randomize speed
-                    dir_mod = 1 if car['speed'] > 0 else -1
-                    car['speed'] = 40 * random.uniform(1.5, 4.0) * dir_mod
-                else:
-                    road = random.choice(self.roads) if hasattr(self, 'roads') and self.roads else {'y': int(SCREEN_HEIGHT * 0.50), 'thickness': 2, 'layer': 0}
-                    car_h = 2
-                    car['y'] = road['y'] + random.randint(0, max(0, road['thickness'] - car_h))
-                    car['layer'] = road.get('layer', 0)
-                    dir_mod = 1 if car['speed'] > 0 else -1
-                    car['speed'] = 20 * random.uniform(0.8, 1.2) * dir_mod
-
+        self.time_alive += dt
         self.reflection_timer += dt * 3.0
 
-        # Periodically reset the entire city to get new fresh colors for buildings and sky
+        for car in self.traffic:
+            car["x"] += car["speed"] * dt
+            if car["x"] > SCREEN_WIDTH + 20:
+                car["x"] = -20
+                self._respawn_car(car)
+            elif car["x"] < -20:
+                car["x"] = SCREEN_WIDTH + 20
+                self._respawn_car(car)
+
         self.scene_reset_timer += dt
-        if self.scene_reset_timer >= 60.0:
+        if self.scene_reset_timer >= self.RESET_INTERVAL:
             self.scene_reset_timer = 0.0
             self.generate_city()
 
-        # --- Update Weather ---
-        # Generate new raindrops according to intensity
-        target_drops = int(self.rain_intensity * 400) # Max 400 drops
+        # moon orbit
+        self.orbital_timer += dt * self.moon_orbit["speed"]
+        self.moon_x = self.moon_orbit["cx"] + math.cos(self.orbital_timer) * self.moon_orbit["rx"]
+        self.moon_y = self.moon_orbit["cy"] + math.sin(self.orbital_timer) * self.moon_orbit["ry"]
+
+        # ── weather ──────────────────────────────────────────────────────
+        target_drops = int(self.rain_intensity * 400)
         while len(self.raindrops) < target_drops:
             self.raindrops.append({
-                'x': random.uniform(0, SCREEN_WIDTH),
-                'y': random.uniform(-SCREEN_HEIGHT, 0),
-                'speed': random.uniform(300, 500) + (self.rain_intensity * 200),
-                'length': random.uniform(10, 20) + (self.rain_intensity * 10)
+                "x": random.uniform(0, SCREEN_WIDTH),
+                "y": random.uniform(-SCREEN_HEIGHT, 0),
+                "speed": random.uniform(300, 500) + self.rain_intensity * 200,
+                "length": random.uniform(10, 20) + self.rain_intensity * 10,
             })
         while len(self.raindrops) > target_drops:
             self.raindrops.pop()
-            
-        # Move raindrops
+
         for drop in self.raindrops:
-            drop['x'] += self.wind_speed * dt
-            drop['y'] += drop['speed'] * dt
-            
-            # Wrap drops around the screen
-            if drop['y'] > SCREEN_HEIGHT:
-                # Optimized Ripple Spawning: Only spawn sometimes to save performance on Pi
-                if random.random() < 0.45: 
+            drop["x"] += self.wind_speed * dt
+            drop["y"] += drop["speed"] * dt
+            if drop["y"] > SCREEN_HEIGHT:
+                if random.random() < 0.45:
                     self.water_ripples.append({
-                        'x': drop['x'],
-                        'y': random.uniform(SCREEN_HEIGHT * 0.75, SCREEN_HEIGHT),
-                        'life': 0.0,
-                        'max_life': random.uniform(0.15, 0.3)
+                        "x": drop["x"],
+                        "y": random.uniform(SCREEN_HEIGHT * 0.78, SCREEN_HEIGHT),
+                        "life": 0.0,
+                        "max_life": random.uniform(0.15, 0.3),
                     })
-                    
-                drop['y'] = random.uniform(-50, 0)
-                if self.wind_speed < 0:
-                    drop['x'] = random.uniform(0, SCREEN_WIDTH + abs(self.wind_speed))
-                elif self.wind_speed > 0:
-                    drop['x'] = random.uniform(-self.wind_speed, SCREEN_WIDTH)
-                else:
-                    drop['x'] = random.uniform(0, SCREEN_WIDTH)
+                drop["y"] = random.uniform(-50, 0)
+                drop["x"] = random.uniform(0, SCREEN_WIDTH)
 
-        # Update Ripples
         for r in self.water_ripples:
-            r['life'] += dt
-        self.water_ripples = [r for r in self.water_ripples if r['life'] < r['max_life']]
+            r["life"] += dt
+        self.water_ripples = [r for r in self.water_ripples if r["life"] < r["max_life"]]
 
-        # Update celestial bodies (slow rotation)
-        for body in self.celestial_bodies:
-            body['rotation'] += body['rotation_speed'] * dt
-        
-        # Update sun/moon orbital position
-        self.orbital_timer += dt * self.sun_moon['orbit_speed']
-        # Use sine wave for elliptical orbit
-        sun_x = self.sun_moon['center_x'] + math.cos(self.orbital_timer) * self.sun_moon['orbit_radius_x']
-        sun_y = self.sun_moon['center_y'] + math.sin(self.orbital_timer) * self.sun_moon['orbit_radius_y']
-        self.sun_moon['x'] = sun_x
-        self.sun_moon['y'] = sun_y
-
-        # Lightning logic (only happens at very high rain intensities)
         if self.rain_intensity >= 0.8:
             self.lightning_timer -= dt
             if self.lightning_timer <= 0:
-                self.lightning_flash_alpha = 255.0 # Max flash brightness
-                self.lightning_timer = random.uniform(1.0, 5.0) # Time until next lightning strike
+                self.lightning_flash_alpha = 255.0
+                self.lightning_timer = random.uniform(1.0, 5.0)
         else:
             self.lightning_timer = random.uniform(5.0, 15.0)
-            
-        # Fade out lightning flash quickly
         if self.lightning_flash_alpha > 0:
-            self.lightning_flash_alpha -= 900 * dt
-            if self.lightning_flash_alpha < 0:
-                self.lightning_flash_alpha = 0
+            self.lightning_flash_alpha = max(0.0, self.lightning_flash_alpha - 900 * dt)
 
-        # Update CurrentAffairs and refresh displayed text when it changes
-        if hasattr(self, 'current_affairs'):
-            changed = self.current_affairs.update(dt)
-            if changed:
-                self.affairs_text.update_text(self.current_affairs.get_current_message())
+        if self.current_affairs.update(dt):
+            self.affairs_text.update_text(self.current_affairs.get_current_message())
 
+    # ══════════════════════════════════════════════════════════════════════
+    # Draw
+    # ══════════════════════════════════════════════════════════════════════
     def draw(self, surface):
-        """Render everything to the main screen."""
-        city_h = self.city_h
-        water_h = self.water_h
+        city = self.city_render_surface
+        t = self.time_alive
 
-        # --- STEP 1: Render the city to a separate surface ---
-        # This ensures reflection can capture it cleanly (main.py fills surface with black before calling draw)
-        self.city_render_surface.fill((0, 0, 0, 0))  # Clear the city surface
-        
-        # 1. Draw the changing sky background color
-        sky_bg_color = self.get_hsv_color(self.sky_hue, self.sky_sat, self.sky_val)
-        pygame.draw.rect(self.city_render_surface, sky_bg_color, (0, 0, SCREEN_WIDTH, city_h))
-        
-        # Draw the static sky details (stars, moon)
-        self.city_render_surface.blit(self.sky_surface, (0, 0))
-        
-        # Draw rotating celestial bodies (DIM background planets)
-        for body in self.celestial_bodies:
-            x, y, radius = int(body['x']), int(body['y']), body['radius']
-            color = body['color']
-            
-            # Create a temporary surface with alpha for dim planets
-            dim_surf = pygame.Surface((radius * 2 + 4, radius * 2 + 4), pygame.SRCALPHA)
-            
-            # Draw main planet/moon on temp surface
-            pygame.draw.circle(dim_surf, (*color[:3], body.get('alpha', 120)), (radius + 2, radius + 2), radius)
-            
-            # Add subtle shading/highlight
-            pygame.draw.circle(dim_surf, (255, 255, 255, 40), (radius - radius // 3 + 2, radius - radius // 3 + 2), radius // 4)
-            
-            # Draw rings if this body has them
-            if body['has_rings']:
-                ring_color = body['ring_color']
-                tilt = math.cos(math.radians(body['rotation'])) * 0.5
-                ring_w = int(radius * 2.5)
-                ring_h = int(radius * 0.8 * (1.0 - abs(tilt)))
-                
-                if ring_h > 0:
-                    pygame.draw.ellipse(dim_surf, (*ring_color[:3], body.get('alpha', 120)), 
-                                       (2 + radius - ring_w // 2, 2 + radius - ring_h // 2, ring_w, ring_h), 2)
-            
-            # Blit the dim planet to the city surface
-            self.city_render_surface.blit(dim_surf, (x - radius - 2, y - radius - 2))
-        
-        # Draw bright SUN/MOON (stays bright, orbits across sky)
-        sun_x = int(self.sun_moon['x'])
-        sun_y = int(self.sun_moon['y'])
-        sun_radius = self.sun_moon['radius']
-        sun_color = (255, 220, 100)  # Warm yellow-white
-        
-        # Draw sun glow (multiple circles with decreasing alpha for radial glow effect)
-        glow_layers = [
-            (60, 255, 200, 150, 80),   # radius, R, G, B, alpha
-            (50, 255, 210, 120, 100),
-            (40, 255, 230, 100, 60),
-            (30, 255, 240, 150, 40),
-        ]
-        for glow_radius, r, g, b, alpha in glow_layers:
-            glow_surf = pygame.Surface((glow_radius * 2 + 4, glow_radius * 2 + 4), pygame.SRCALPHA)
-            pygame.draw.circle(glow_surf, (r, g, b, alpha), (glow_radius + 2, glow_radius + 2), glow_radius)
-            self.city_render_surface.blit(glow_surf, (sun_x - glow_radius - 2, sun_y - glow_radius - 2))
-        
-        # Draw light rays emanating from sun (downward and outward)
-        # Rays are more visible when sun is higher in the sky
-        sun_center_y = self.sun_moon['center_y']
-        sun_height = sun_center_y - sun_y  # Positive when sun is above center
-        ray_visibility = max(0.1, min(1.0, sun_height / sun_center_y))  # Fade when sun sets
-        
-        if ray_visibility > 0.2:
-            num_rays = 12
-            ray_surf = pygame.Surface((SCREEN_WIDTH, self.city_h), pygame.SRCALPHA)
-            
-            for i in range(num_rays):
-                angle = (i / num_rays) * 2 * math.pi
-                # Bias rays to point downward and outward from sun
-                ray_angle = angle - math.pi / 2 + math.sin(angle) * 0.3
-                
-                # Ray length and opacity based on sun height
-                ray_length = 100 + sun_height * 0.5
-                ray_opacity = int(120 * ray_visibility)
-                
-                # Calculate ray endpoint
-                ray_end_x = sun_x + math.cos(ray_angle) * ray_length
-                ray_end_y = sun_y + math.sin(ray_angle) * ray_length
-                
-                # Draw ray with fade effect (thicker near sun, thinner at end)
-                pygame.draw.line(ray_surf, (255, 240, 150, ray_opacity), 
-                                (sun_x, sun_y), (int(ray_end_x), int(ray_end_y)), 3)
-                pygame.draw.line(ray_surf, (255, 250, 200, ray_opacity // 2), 
-                                (sun_x, sun_y), (int(ray_end_x), int(ray_end_y)), 1)
-            
-            self.city_render_surface.blit(ray_surf, (0, 0))
-        
-        # Draw the bright sun core
-        pygame.draw.circle(self.city_render_surface, sun_color, (sun_x, sun_y), sun_radius)
-        
-        # Add bright highlight to sun
-        pygame.draw.circle(self.city_render_surface, (255, 255, 200), (sun_x - sun_radius // 3, sun_y - sun_radius // 3), sun_radius // 3)
-        
-        # --- Lightning Flash in the Sky ---
-        if self.lightning_flash_alpha > 0:
-            self.cached_flash_surf.fill((255, 255, 255, int(min(255, max(0, self.lightning_flash_alpha)))))
-            self.city_render_surface.blit(self.cached_flash_surf, (0, 0))
-        
-        # 2. Draw each layer of buildings and its traffic on top
-        for i, layer_surf in enumerate(self.layer_surfaces):
-            # Parallax scroll: foreground layers move faster
-            parallax_factor = 0.1 + (i * 0.15)
-            layer_offset_x = int(self.scroll_x * parallax_factor) % SCREEN_WIDTH
-            
-            # Blit twice to seamlessly wrap horizontally
-            self.city_render_surface.blit(layer_surf, (-layer_offset_x, 0))
-            self.city_render_surface.blit(layer_surf, (-layer_offset_x + SCREEN_WIDTH, 0))
-            
+        # sky (pre-rendered) + twinkling stars + moon
+        city.blit(self.sky_surface, (0, 0))
+        for tx, ty, phase in self.twinkles:
+            b = 0.4 + 0.6 * (0.5 + 0.5 * math.sin(t * 2.0 + phase))
+            c = int(140 + 110 * b)
+            city.fill((c, c, min(255, c + 20)), (tx, ty, 2, 2))
+        ms = self.moon_sprite
+        city.blit(ms, (int(self.moon_x) - ms.get_width() // 2,
+                       int(self.moon_y) - ms.get_height() // 2))
+
+        # searchlight beams sweep the sky behind the buildings
+        self.fx_surface.fill((0, 0, 0, 0))
+        for sl in self.searchlights:
+            a = -math.pi / 2 + math.sin(t * sl["speed"] + sl["phase"]) * 0.85
+            for da, alpha in ((sl["spread"], 22), (sl["spread"] * 0.45, 30)):
+                p1 = (sl["x"] + math.cos(a - da) * sl["length"],
+                      sl["y"] + math.sin(a - da) * sl["length"])
+                p2 = (sl["x"] + math.cos(a + da) * sl["length"],
+                      sl["y"] + math.sin(a + da) * sl["length"])
+                pygame.draw.polygon(self.fx_surface, (*self.scheme["horizon"], alpha),
+                                    [(sl["x"], sl["y"]), p1, p2])
+        city.blit(self.fx_surface, (0, 0))
+
+        # building layers, each with its billboards, beacons and traffic
+        for i, layer in enumerate(self.layer_surfaces):
+            city.blit(layer, (0, 0))
+            for bb in self.billboards:
+                if bb["layer"] == i:
+                    flicker = 0.55 + 0.45 * math.sin(t * 3.1 + bb["phase"])
+                    if random.random() < 0.01:      # occasional hard glitch
+                        flicker *= 0.2
+                    col = lerp_color(bb["bg"], bb["color"], flicker)
+                    pygame.draw.rect(city, col, bb["rect"])
+                    # glyph bars, like unreadable holo-adverts
+                    r = bb["rect"]
+                    dark = lerp_color(col, NEAR_BLACK, 0.55)
+                    for gy in range(r.y + 2, r.bottom - 2, 4):
+                        gw = (gy * 7 + int(bb["phase"] * 10)) % max(4, r.w - 6) + 3
+                        pygame.draw.line(city, dark, (r.x + 2, gy), (r.x + 2 + gw // 2, gy))
             for car in self.traffic:
-                if car.get('layer', 0) == i:
-                    if car.get('is_sky'):
-                        dir_mod = 1 if car['speed'] < 0 else -1
-                        end_x = int(car['x'])
-                        
-                        # Simple colored trail
-                        start_x = end_x + int(car.get('trail', 5) * dir_mod)
-                        pygame.draw.line(self.city_render_surface, car.get('color', WHITE), (start_x, int(car['y'])), (end_x, int(car['y'])), 1)
-                        
-                        # Engine/ship dot
-                        pygame.draw.rect(self.city_render_surface, WHITE, (end_x - (1 if dir_mod > 0 else 0), int(car['y']) - 1, 2, 2))
-                    else:
-                        pygame.draw.rect(self.city_render_surface, WHITE, (int(car['x']), car['y'], 4, 2))
+                if car.get("layer", 0) != i:
+                    continue
+                if car.get("is_sky"):
+                    dir_mod = 1 if car["speed"] < 0 else -1
+                    ex = int(car["x"])
+                    sx0 = ex + int(car.get("trail", 5) * dir_mod)
+                    pygame.draw.line(city, car["color"], (sx0, int(car["y"])), (ex, int(car["y"])), 1)
+                    city.fill(WHITE, (ex - (1 if dir_mod > 0 else 0), int(car["y"]) - 1, 2, 2))
+                else:
+                    city.fill(WHITE, (int(car["x"]), int(car["y"]), 4, 2))
 
-        # --- STEP 2: Now blit the city to the main surface ---
-        surface.blit(self.city_render_surface, (0, 0))
+        # blinking rooftop beacons (in front of everything)
+        for bx, by, phase in self.beacons:
+            b = 0.5 + 0.5 * math.sin(t * 2.4 + phase)
+            if b > 0.55:
+                c = (int(255 * b), int(50 * b), int(50 * b))
+                city.fill(c, (bx - 1, by - 1, 2, 2))
 
-        # --- STEP 3: Draw the water + reflection ---
-        if water_h > 0:
-            # Base water: use a semi-transparent overlay to reduce heavy blue
-            water_surf = pygame.Surface((SCREEN_WIDTH, water_h), pygame.SRCALPHA)
-            # Slightly desaturated, darker and semi-transparent so background shows through
-            water_surf.fill((10, 18, 28, 120))
-            surface.blit(water_surf, (0, city_h))
+        # lightning
+        if self.lightning_flash_alpha > 0:
+            self.cached_flash_surf.fill((255, 255, 255,
+                                         int(min(255, self.lightning_flash_alpha))))
+            city.blit(self.cached_flash_surf, (0, 0))
 
-            # Capture the city we just rendered for reflection
-            capture_src_y = int(city_h * 0.22)
-            capture_h = max(1, city_h - capture_src_y)
-            capture_rect = pygame.Rect(0, capture_src_y, SCREEN_WIDTH, capture_h)
-            
-            # Get the subsurface from city_render_surface (not the main surface which has been filled)
+        surface.blit(city, (0, 0))
+
+        # ── water reflection ─────────────────────────────────────────────
+        if self.water_h > 0:
+            capture_y = int(self.city_h * 0.22)
+            capture = pygame.Rect(0, capture_y, SCREEN_WIDTH, self.city_h - capture_y)
             try:
-                reflection_src = self.city_render_surface.subsurface(capture_rect)
-                flipped = pygame.transform.flip(reflection_src, False, True)
-                reflection = pygame.transform.smoothscale(flipped, (SCREEN_WIDTH, water_h))
-
-                # Make reflection clearly visible, then fade with depth
+                src = city.subsurface(capture)
+                reflection = pygame.transform.scale(
+                    pygame.transform.flip(src, False, True),
+                    (SCREEN_WIDTH, self.water_h))
                 reflection.set_alpha(215)
-                reflection.blit(self.cached_reflection_fade, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-
-                # Wave distortion: blit horizontal slices with a small x offset
-                # Optimized for Raspberry Pi performance (fewer blit calls)
+                reflection.blit(self.cached_reflection_fade, (0, 0),
+                                special_flags=pygame.BLEND_RGBA_MULT)
                 slice_h = 8
-                for y in range(0, water_h, slice_h):
-                    h = min(slice_h, water_h - y)
-                    wave = math.sin(self.reflection_timer + y * 0.11)
-                    amp = 1.2 + (y * 0.03)
-                    offset_x = int(wave * amp)
-                    surface.blit(reflection, (offset_x, city_h + y), area=pygame.Rect(0, y, SCREEN_WIDTH, h))
-
-                # Tint/darken so it reads as water
-                surface.blit(self.cached_reflection_darken_surf, (0, city_h))
+                for y in range(0, self.water_h, slice_h):
+                    h = min(slice_h, self.water_h - y)
+                    offset_x = int(math.sin(self.reflection_timer + y * 0.11) * (1.2 + y * 0.03))
+                    surface.blit(reflection, (offset_x, self.city_h + y),
+                                 area=pygame.Rect(0, y, SCREEN_WIDTH, h))
+                surface.blit(self.cached_reflection_darken_surf, (0, self.city_h))
             except ValueError:
-                # If subsurface fails, just fill with solid water color
                 pass
 
-        # 4. Draw Weather overlay (Rain)
+        # ── rain overlay ─────────────────────────────────────────────────
         if self.rain_intensity > 0:
-            self.cached_weather_surf.fill((0, 0, 0, 0)) # Clear the transparent surface
-            
-            # Draw rain lines
-            rain_color = (200, 200, 230, 150)
-            wind_x_offset = self.wind_speed * 0.05 # Determine rain angle lag
-            
+            self.cached_weather_surf.fill((0, 0, 0, 0))
+            rain_color = (150, 210, 255, 150)
+            wind_lag = self.wind_speed * 0.05
             for drop in self.raindrops:
-                start_pos = (drop['x'], drop['y'])
-                end_pos = (drop['x'] - wind_x_offset, drop['y'] - drop['length'])
-                pygame.draw.line(self.cached_weather_surf, rain_color, start_pos, end_pos, 1)
-
-            # Draw high-performance droplets/ripples on the lake surface
+                pygame.draw.line(self.cached_weather_surf, rain_color,
+                                 (drop["x"], drop["y"]),
+                                 (drop["x"] - wind_lag, drop["y"] - drop["length"]), 1)
             for ripple in self.water_ripples:
-                prog = ripple['life'] / ripple['max_life']
-                # Calculate ripple width relative to its life
-                w = int(4 + (12 * prog)) 
-                r_color = (200, 200, 230, int(150 * (1.0 - prog))) # Fades out
-                
-                pygame.draw.line(self.cached_weather_surf, r_color, 
-                                 (ripple['x'] - w/2, ripple['y']), 
-                                 (ripple['x'] + w/2, ripple['y']), 1)
-            
+                prog = ripple["life"] / ripple["max_life"]
+                w = 4 + 12 * prog
+                rc = (150, 210, 255, int(150 * (1 - prog)))
+                pygame.draw.line(self.cached_weather_surf, rc,
+                                 (ripple["x"] - w / 2, ripple["y"]),
+                                 (ripple["x"] + w / 2, ripple["y"]), 1)
             surface.blit(self.cached_weather_surf, (0, 0))
 
-
-        # Draw current affairs at bottom-center
-        if hasattr(self, 'affairs_text'):
-            affairs_surf = self.affairs_text.get_surface()
-            ax = (SCREEN_WIDTH - affairs_surf.get_width()) // 2
-            ay = SCREEN_HEIGHT - affairs_surf.get_height() - 20
-            self.affairs_text.draw(surface, (ax, ay))
+        # ── ticker ───────────────────────────────────────────────────────
+        surface.blit(self.ticker_band, (0, SCREEN_HEIGHT - self.ticker_band.get_height()))
+        af = self.affairs_text.get_surface()
+        self.affairs_text.draw(surface, ((SCREEN_WIDTH - af.get_width()) // 2,
+                                         SCREEN_HEIGHT - af.get_height() - s(12)))
 
     def draw_pomodoro(self, surface, time_left, mode):
-        import pygame
-        # Cyberpunk neon ambient theme timer
-        mins = int(time_left) // 60
-        secs = int(time_left) % 60
+        mins, secs = int(time_left) // 60, int(time_left) % 60
         time_str = f"{mins:02d}:{secs:02d}"
-        
-        from ui.glow_text import GlowText
-        font = pygame.font.Font(None, 72)
-        
-        glow_c = (255, 50, 100) if mode == 'work' else (50, 255, 100)
-        t = getattr(self, '_pomo_text', None)
-        if not t or (t.text != time_str) or (t.glow_color != glow_c):
+        glow_c = (255, 50, 100) if mode == "work" else (50, 255, 100)
+        cached = getattr(self, "_pomo_text", None)
+        if not cached or cached.text != time_str or cached.glow_color != glow_c:
+            font = pygame.font.Font(None, s(72))
             self._pomo_text = GlowText(font, time_str, (255, 255, 255), glow_c, 5)
-            
-        surf = self._pomo_text.get_surface()
-        # Center placement for cyberpunk
-        x = (surface.get_width() - surf.get_width()) // 2
-        y = (surface.get_height() - surf.get_height()) // 2
-        surface.blit(surf, (x, y))
+        ts = self._pomo_text.get_surface()
+        surface.blit(ts, ((surface.get_width() - ts.get_width()) // 2,
+                          (surface.get_height() - ts.get_height()) // 2))
