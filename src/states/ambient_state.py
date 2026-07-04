@@ -123,14 +123,15 @@ class AmbientState(State):
         self.cached_weather_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
 
         self.cached_reflection_darken_surf = pygame.Surface((SCREEN_WIDTH, self.water_h), pygame.SRCALPHA)
-        self.cached_reflection_darken_surf.fill((8, 14, 26, 110))
-        self.cached_reflection_fade = pygame.Surface((SCREEN_WIDTH, self.water_h), pygame.SRCALPHA)
-        if self.water_h > 0:
-            for y in range(self.water_h):
-                t = y / max(1, self.water_h - 1)
-                a = int(235 * (1.0 - t ** 1.5))
-                pygame.draw.line(self.cached_reflection_fade, (255, 255, 255, a),
-                                 (0, y), (SCREEN_WIDTH, y))
+        self.cached_reflection_darken_surf.fill((8, 14, 26, 70))
+        # depth fade as an RGB multiply mask (the reflection surface has no
+        # alpha channel, so an RGBA mask silently does nothing — old bug)
+        self.cached_reflection_fade = pygame.Surface((SCREEN_WIDTH, max(1, self.water_h)))
+        for y in range(self.water_h):
+            t = y / max(1, self.water_h - 1)
+            shade = int(255 * (1.0 - t ** 1.3) * 0.92 + 18)
+            pygame.draw.line(self.cached_reflection_fade, (shade, shade, shade),
+                             (0, y), (SCREEN_WIDTH, y))
 
         # ticker
         self.current_affairs = CurrentAffairs()
@@ -191,6 +192,19 @@ class AmbientState(State):
             self.roads.append({"y": road_y, "thickness": thickness, "layer": i})
             self._gen_road(layer, road_y, thickness, color)
             self.layer_surfaces.append(layer)
+
+        # shimmer streaks on the water: [x, row, width, speed, phase, color]
+        self.water_streaks = []
+        streak_colors = self.scheme["windows"] + [self.scheme["horizon"]]
+        for _ in range(10):
+            self.water_streaks.append([
+                random.randint(s(10), SCREEN_WIDTH - s(10)),
+                random.randint(2, max(3, self.water_h - 4)),
+                random.randint(s(8), s(34)),
+                random.uniform(1.2, 2.6),
+                random.uniform(0, math.tau),
+                random.choice(streak_colors),
+            ])
 
         # sweeping searchlights rise from mid-distance rooftops
         for _ in range(2):
@@ -552,31 +566,35 @@ class AmbientState(State):
 
         # ── water reflection ─────────────────────────────────────────────
         if self.water_h > 0:
-            capture_y = int(self.city_h * 0.22)
-            capture = pygame.Rect(0, capture_y, SCREEN_WIDTH, self.city_h - capture_y)
-            try:
-                src = city.subsurface(capture)
-                reflection = pygame.transform.scale(
-                    pygame.transform.flip(src, False, True),
-                    (SCREEN_WIDTH, self.water_h))
-                reflection.set_alpha(160)
-                reflection.blit(self.cached_reflection_fade, (0, 0),
-                                special_flags=pygame.BLEND_RGBA_MULT)
-                slice_h = 6
-                for y in range(0, self.water_h, slice_h):
-                    h = min(slice_h, self.water_h - y)
-                    offset_x = int(math.sin(self.reflection_timer + y * 0.13) * (2.2 + y * 0.05))
-                    surface.blit(reflection, (offset_x, self.city_h + y),
-                                 area=pygame.Rect(0, y, SCREEN_WIDTH, h))
-                surface.blit(self.cached_reflection_darken_surf, (0, self.city_h))
-                # shoreline: a lit waterfront edge separating city from water
-                hz = self.scheme["horizon"]
-                pygame.draw.line(surface, lerp_color(hz, (255, 255, 255), 0.3),
-                                 (0, self.city_h), (SCREEN_WIDTH, self.city_h), 1)
-                pygame.draw.line(surface, lerp_color(hz, NEAR_BLACK, 0.45),
-                                 (0, self.city_h + 1), (SCREEN_WIDTH, self.city_h + 1), 1)
-            except ValueError:
-                pass
+            # mirror the WHOLE city — moon, horizon glow and beams included,
+            # so the water always has something bright to show
+            reflection = pygame.transform.scale(
+                pygame.transform.flip(city, False, True),
+                (SCREEN_WIDTH, self.water_h))
+            reflection.blit(self.cached_reflection_fade, (0, 0),
+                            special_flags=pygame.BLEND_MULT)
+            slice_h = 6
+            for y in range(0, self.water_h, slice_h):
+                h = min(slice_h, self.water_h - y)
+                offset_x = int(math.sin(self.reflection_timer + y * 0.13) * (2.2 + y * 0.05))
+                surface.blit(reflection, (offset_x, self.city_h + y),
+                             area=pygame.Rect(0, y, SCREEN_WIDTH, h))
+            surface.blit(self.cached_reflection_darken_surf, (0, self.city_h))
+
+            # neon shimmer streaks dancing on the surface
+            hz = self.scheme["horizon"]
+            for st in self.water_streaks:
+                b = 0.5 + 0.5 * math.sin(t * st[3] + st[4])
+                col = lerp_color((14, 18, 32), st[5], 0.25 + 0.6 * b)
+                y = self.city_h + st[1]
+                pygame.draw.line(surface, col, (st[0] - st[2] // 2, y),
+                                 (st[0] + st[2] // 2, y), 1)
+
+            # shoreline: a lit waterfront edge separating city from water
+            pygame.draw.line(surface, lerp_color(hz, (255, 255, 255), 0.3),
+                             (0, self.city_h), (SCREEN_WIDTH, self.city_h), 1)
+            pygame.draw.line(surface, lerp_color(hz, NEAR_BLACK, 0.45),
+                             (0, self.city_h + 1), (SCREEN_WIDTH, self.city_h + 1), 1)
 
         # ── rain overlay ─────────────────────────────────────────────────
         if self.rain_intensity > 0:
