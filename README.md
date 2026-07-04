@@ -40,7 +40,9 @@ python3 src/main.py
 - `4` street
 - `5` cloud city
 - `6` telegraph
-- `7` airship dock
+- `7` conservatory (solarpunk garden)
+- `8` climate
+- `9` greetings
 - `Esc` quits
 
 **Hardware Buttons:**
