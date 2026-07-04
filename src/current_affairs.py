@@ -1,15 +1,16 @@
 import threading
-import urllib.request
-import urllib.error
-import json
+
+from system_protocol import SystemProtocol
+
 
 class CurrentAffairs:
     _shared_messages = []
+    _protocol = SystemProtocol()
 
     def __init__(self):
         self.messages = [
-            "INITIALIZING NETWORK CONNECTION...",
-            "WAITING FOR INCOMING TRANSMISSIONS..."
+            "SYSTEM PROTOCOL ONLINE.",
+            CurrentAffairs._protocol.next_message(),
         ] + CurrentAffairs._shared_messages
         self.current_index = 0
         self.timer = 0.0
@@ -21,28 +22,17 @@ class CurrentAffairs:
         self.is_fetching = False
 
     def fetch_api_data(self):
-        """Fetches random facts in a background thread so the main game loop doesn't freeze."""
+        """Refill the rotation from the local SystemProtocol engine
+        (kept on the background thread to preserve the old call shape)."""
         try:
-            new_messages = []
-            # Fetch 3 quirky facts
-            for _ in range(3):
-                req = urllib.request.Request(
-                    "https://uselessfacts.jsph.pl/api/v2/facts/random", 
-                    headers={'User-Agent': 'Mozilla/5.0'}
-                )
-                with urllib.request.urlopen(req, timeout=5) as response:
-                    data = json.loads(response.read().decode())
-                    fact = data.get("text", "").upper()
-                    if fact:
-                        new_messages.append(fact)
-            
+            new_messages = CurrentAffairs._protocol.next_messages(3)
             if new_messages:
                 with self.lock:
                     self.messages = new_messages
                     self.current_index = 0
-                    self.timer = 0.0 # reset display timer on new fetch
+                    self.timer = 0.0  # reset display timer on refresh
         except Exception as e:
-            print("Failed to fetch facts:", e)
+            print("Failed to generate protocol messages:", e)
         finally:
             self.is_fetching = False
 

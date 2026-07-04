@@ -2,11 +2,10 @@ import random
 
 import pygame
 import math
-import json
 import threading
-import urllib.request
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
+from system_protocol import SystemProtocol
 from ui.glow_text import GlowText
 
 
@@ -27,7 +26,11 @@ class GreetingsState(State):
         self.greeting_font = pygame.font.Font(None, 30)
         self.meta_font = pygame.font.Font(None, 16)
 
-        self.target_greeting = "DEXTER, LOADING SOMETHING FUN..."
+        # Local themed message engine (cyberpunk/steampunk, time-aware,
+        # non-repeating) — replaces the old advice/affirmation APIs.
+        self.protocol = SystemProtocol()
+
+        self.target_greeting = ""
         self.visible_text = ""
         self.next_greeting = None
 
@@ -38,11 +41,7 @@ class GreetingsState(State):
         self.cursor_on = True
         self.global_time = 0.0
 
-        # Similar cadence to CurrentAffairs / useless facts style
-        self.fun_messages = [
-            "DEXTER, LOADING SOMETHING FUN...",
-            "DEX, PREPARING A FRESH LITTLE SURPRISE...",
-        ]
+        self.fun_messages = self.protocol.next_messages(2)
         self.fun_index = 0
         self.fun_timer = 0.0
         self.fetch_timer = self.FETCH_INTERVAL
@@ -95,53 +94,17 @@ class GreetingsState(State):
 
         self.greeting_glow.update_text("")
 
-    def _fetch_json(self, url):
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            return json.loads(response.read().decode())
-
-    def _normalize_line(self, line, max_len=120):
-        text = " ".join(str(line).strip().split())
-        if not text:
-            return ""
-        if len(text) > max_len:
-            text = text[: max_len - 3].rstrip() + "..."
-        return text.upper()
-
     def _fetch_fun_messages(self):
-        """Fetch fun greetings from public APIs without blocking the render loop."""
+        """Refill the rotation from the local SystemProtocol engine."""
         try:
-            new_messages = []
-
-            # Advice Slip API
-            try:
-                advice_data = self._fetch_json("https://api.adviceslip.com/advice")
-                advice = advice_data.get("slip", {}).get("advice", "")
-                advice_line = self._normalize_line(f"{advice}")
-                if advice_line:
-                    new_messages.append(advice_line)
-            except Exception:
-                pass
-
-            # Affirmations API
-            try:
-                affirmation_data = self._fetch_json("https://www.affirmations.dev/")
-                affirmation = affirmation_data.get("affirmation", "")
-                affirmation_line = self._normalize_line(f"DEXTER, {affirmation}")
-                if affirmation_line:
-                    new_messages.append(affirmation_line)
-            except Exception:
-                pass
-
-            # Fallback: keep defaults if all APIs fail
-            if new_messages:
-                with self.lock:
-                    self.fun_messages = new_messages
-                    self.fun_index = 0
-                    self.fun_timer = 0.0
-                    self.next_greeting = self.fun_messages[0]
-                    self.phase = "fade"
-                    self.phase_timer = 0.0
+            new_messages = self.protocol.next_messages(3)
+            with self.lock:
+                self.fun_messages = new_messages
+                self.fun_index = 0
+                self.fun_timer = 0.0
+                self.next_greeting = self.fun_messages[0]
+                self.phase = "fade"
+                self.phase_timer = 0.0
         finally:
             self.is_fetching = False
 
@@ -245,7 +208,7 @@ class GreetingsState(State):
             pygame.draw.rect(surface, (180, 230, 255), (cursor_x, cursor_y, 8, 20))
 
         scanline_y = self.panel_rect.bottom + 24
-        meta = self.meta_font.render("DEXTER / DEX", True, (120, 175, 215))
+        meta = self.meta_font.render(f"KEA // {self.protocol.name}", True, (120, 175, 215))
         surface.blit(meta, (self.panel_rect.x + 10, scanline_y))
 
     def draw_pomodoro(self, surface, time_left, mode):
