@@ -1,19 +1,13 @@
 """
 telegraph_state.py
 ------------------
-Steampunk Punch-Tape Telegraph  —  Ambient Screen for Raspberry Pi
-Displays current-affairs headlines encoded as authentic ITA2 Baudot
-punch-tape, scrolling left with a brass reading-head in the centre.
-Decoded characters appear letter-by-letter below the tape.
+Steampunk Punch-Tape Telegraph — Ambient Screen for Raspberry Pi.
 
-Drop this file into your  states/  folder and wire it up the same way
-as AmbientState.  It expects the same helpers to exist:
-
-    from config import SCREEN_WIDTH, SCREEN_HEIGHT
-    from states.base_state import State
-    from current_affairs import CurrentAffairs
-
-(GlowText is not required — we draw our own styled text here.)
+Portrait-first redesign: brass header plate with rising steam, ITA2
+punch-tape machine band with visible spools and a reading head, and the
+decoded transmission typed letter-by-letter onto an aged TELEGRAM card
+with a wax seal. All static layers are pre-rendered; the per-frame cost
+is blits + the moving tape.
 """
 
 import pygame
@@ -21,15 +15,11 @@ import random
 import math
 import datetime
 
-# ── project imports (same pattern as ambient_state.py) ──────────────────────
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
 from current_affairs import CurrentAffairs
 
-
-# ── ITA2 / Baudot-Murray 5-bit codes ────────────────────────────────────────
-#  Authentic codes from the ITA-2 standard.
-#  Each value is [row0, row1, row2, row3, row4]  (top → bottom on tape)
+# ── ITA2 / Baudot-Murray 5-bit codes (authentic) ────────────────────────────
 ITA2 = {
     'A': [1,1,0,0,0], 'B': [1,0,0,1,1], 'C': [0,1,1,1,0],
     'D': [1,0,0,1,0], 'E': [1,0,0,0,0], 'F': [1,0,1,1,0],
@@ -50,588 +40,484 @@ ITA2 = {
     ')': [1,1,0,1,0],
 }
 
+
 def char_to_bits(ch):
-    """Return 5-bit ITA2 hole pattern for a character."""
-    key = ch.upper()
-    return ITA2.get(key, [random.randint(0, 1) for _ in range(5)])
+    return ITA2.get(ch.upper(), [random.randint(0, 1) for _ in range(5)])
 
 
-# ── Colour palette ───────────────────────────────────────────────────────────
-BG           = ( 14,   8,   2)   # near-black warm brown
-PANEL_DARK   = ( 28,  16,   4)   # dark panel sections
-BRASS        = (139, 106,  48)   # standard brass
-BRASS_BRIGHT = (200, 160,  70)   # highlight brass
-BRASS_DARK   = ( 80,  55,  15)   # shadow brass
-AMBER        = (220, 140,  20)   # warm amber text
-AMBER_DIM    = (140,  90,  12)   # dimmer amber
-COPPER       = (184, 115,  51)   # copper accent
-TAPE_PAPER   = (218, 196, 148)   # aged cream paper
-TAPE_PAPER2  = (200, 178, 130)   # slightly darker cream
-HOLE_DARK    = ( 30,  16,   4)   # punched hole interior
-HEAD_WIN_OFF = ( 10,  35,  10)   # reading window — idle
-HEAD_WIN_ON  = ( 20, 160,  50)   # reading window — active
+# ── Palette ──────────────────────────────────────────────────────────────────
+BG_TOP       = ( 24,  14,   7)
+BG_BOTTOM    = ( 12,   7,   3)
+PANEL_DARK   = ( 30,  18,   6)
+BRASS        = (150, 112,  48)
+BRASS_BRIGHT = (214, 172,  84)
+BRASS_DARK   = ( 84,  58,  16)
+AMBER        = (226, 148,  30)
+AMBER_DIM    = (146,  94,  16)
+COPPER       = (184, 115,  51)
+TAPE_PAPER   = (218, 196, 148)
+TAPE_PAPER2  = (198, 176, 128)
+HOLE_DARK    = ( 28,  15,   4)
+LAMP_OFF     = ( 60,  22,  10)
+LAMP_ON      = (255, 168,  40)
 RIVET        = (180, 140,  60)
 RED_NEEDLE   = (210,  65,  15)
+CARD_PAPER   = (231, 214, 172)
+CARD_PAPER2  = (214, 195, 150)
+CARD_EDGE    = (120,  96,  60)
+INK          = ( 62,  42,  24)
+INK_FAINT    = (128, 104,  70)
+SEAL_WAX     = (146,  32,  22)
+
+SCALE = SCREEN_HEIGHT / 480.0
+
+
+def s(v):
+    """Scale a design-space (320x480) value to the actual resolution."""
+    return max(1, int(v * SCALE))
 
 
 class TelegraphState(State):
-    """
-    Steampunk punch-tape telegraph ambient display.
+    """Steampunk punch-tape telegraph, portrait layout."""
 
-    Architecture mirrors AmbientState:
-        __init__  → build all surfaces & encode first message
-        update    → advance scroll, gear angles, weather-equivalent
-        draw      → render tape, gears, decoded ticker, gauges
-    """
-
-    # ── Tape geometry constants ──────────────────────────────────────────────
-    TAPE_H        = 88    # px — height of the paper tape band
-    SLOT_W        = 20    # px — width per character column on tape
-    LEAD_SLOTS    = 6     # blank lead-in columns before message
-    TRAIL_SLOTS   = 6     # blank trail-out columns after message
-    SPROCKET_R    = 3     # px radius of sprocket (feed) holes
-    DATA_R        = 5     # px radius of data holes
-    # Row y-offsets *within the tape surface* (0 = tape top)
-    SPROCKET_TOP  = 10
-    DATA_ROWS     = [22, 33, 44, 55, 66]   # 5 data rows
-    SPROCKET_BOT  = 78
-
-    # ── Speed & animation ────────────────────────────────────────────────────
-    BASE_SPEED    = 72.0  # px / second  (tune to taste)
+    BASE_SPEED = 72.0  # px/s in design space
 
     def __init__(self, state_manager):
         super().__init__(state_manager)
 
-        # ── Current-affairs feed ─────────────────────────────────────────────
         self.current_affairs = CurrentAffairs()
         self._message = ""
 
-        # ── Tape scroll state ────────────────────────────────────────────────
-        self.tape_x      = 0.0   # how many px we have scrolled so far
-        self.scroll_spd  = self.BASE_SPEED
+        # ── Geometry (scaled design space) ───────────────────────────────
+        self.SLOT_W       = s(20)
+        self.TAPE_H       = s(72)
+        self.tape_y       = s(96)
+        self.head_x       = SCREEN_WIDTH // 2
+        self.SPROCKET_R   = s(2)
+        self.DATA_R       = s(4)
+        self.DATA_ROWS    = [s(16), s(26), s(36), s(46), s(56)]
+        self.SPROCKET_TOP = s(8)
+        self.SPROCKET_BOT = s(64)
+        self.LEAD_SLOTS   = 6
+        self.TRAIL_SLOTS  = 6
 
-        # ── Encoded tape: list of (char, [5 bits]) ───────────────────────────
-        self.slots: list[tuple[str, list[int]]] = []
+        # Telegram card
+        self.card_rect = pygame.Rect(s(16), s(218), SCREEN_WIDTH - s(32), s(208))
 
-        # ── Decoded ticker (bottom half) ─────────────────────────────────────
-        self.decoded: list[str] = []     # characters successfully "read"
-        self._last_slot_idx = -1         # which slot index was last decoded
+        # ── Animation state ───────────────────────────────────────────────
+        self.tape_x      = 0.0
+        self.scroll_spd  = self.BASE_SPEED * SCALE
+        self.slots       = []
+        self.decoded     = []
+        self._last_slot_idx = -1
+        self.gear_angle  = 0.0
+        self.spool_angle = 0.0
+        self.clack_flash = 0.0
+        self.gauge_a     = -55.0
+        self.gauge_tgt   = 20.0
+        self.steam       = []          # puffs: [x, y, r, alpha, drift]
+        self.steam_timer = 0.0
 
-        # ── Animation angles ─────────────────────────────────────────────────
-        self.gear_angle   = 0.0          # main corner-gear rotation (radians)
-        self.spool_angle  = 0.0          # spool rotation (radians)
-
-        # ── Reading-head flash (green pulse when a hole passes) ──────────────
-        self.clack_flash  = 0.0          # 0.0 → 1.0
-
-        # ── Gauge (purely decorative) ────────────────────────────────────────
-        self.gauge_a      = -55.0        # current needle angle (degrees)
-        self.gauge_tgt    = 20.0         # target needle angle
-
-        # ── Fonts ────────────────────────────────────────────────────────────
+        # ── Fonts ──────────────────────────────────────────────────────────
         pygame.font.init()
-        self.font_title   = pygame.font.Font(None, 28)
-        self.font_sub     = pygame.font.Font(None, 18)
-        self.font_decoded = pygame.font.Font(None, 24)
-        self.font_label   = pygame.font.Font(None, 16)
+        self.font_title   = pygame.font.Font(None, s(30))
+        self.font_sub     = pygame.font.Font(None, s(17))
+        self.font_card_hd = pygame.font.Font(None, s(19))
+        self.font_label   = pygame.font.Font(None, s(15))
         try:
-            self.font_mono = pygame.font.SysFont("monospace", 18)
+            self.font_decoded = pygame.font.SysFont("monospace", s(17), bold=True)
         except Exception:
-            self.font_mono = pygame.font.Font(None, 18)
+            self.font_decoded = pygame.font.Font(None, s(20))
 
-        # ── Derived positions ─────────────────────────────────────────────────
-        self.tape_y   = SCREEN_HEIGHT // 2 - self.TAPE_H // 2
-        self.head_x   = SCREEN_WIDTH  // 2   # reading head fixed at centre
-
-        # ── Pre-build static frame overlay (brass bars, rivets) ──────────────
+        # ── Pre-rendered static layers ─────────────────────────────────────
+        self._bg_surf    = self._build_background()
         self._frame_surf = self._build_frame_surface()
+        self._grain_surf = self._build_grain_surface()
+        self._card_surf  = self._build_card_surface()
+        self._steam_area = pygame.Surface((s(90), s(80)), pygame.SRCALPHA)
 
-        # ── Tape paper grain: reuse a small tiled surface ────────────────────
-        self._grain_surf  = self._build_grain_surface()
+        self._dispatch_no = random.randint(1000, 9999)
+        self._chars_sent  = 0
 
-        # ── Dispatch counter ─────────────────────────────────────────────────
-        self._dispatch_no  = random.randint(1000, 9999)
-        self._chars_sent   = 0
-
-        # ── Kick off first message ────────────────────────────────────────────
         self._encode_message(self.current_affairs.get_current_message())
 
-    # ═════════════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════
     # Construction helpers
-    # ═════════════════════════════════════════════════════════════════════════
-
-    def _encode_message(self, message: str):
-        """Convert a text message into a list of punch-tape slots."""
+    # ══════════════════════════════════════════════════════════════════════
+    def _encode_message(self, message):
         self._message = message
         self.slots = []
-
-        # Lead-in blanks (all sprockets, no data holes → looks like unprinted tape)
-        for _ in range(self.LEAD_SLOTS + int(self.head_x / self.SLOT_W)):
+        lead = self.LEAD_SLOTS + int(self.head_x / self.SLOT_W)
+        for _ in range(lead):
             self.slots.append((' ', [0, 0, 0, 0, 0]))
-
         for ch in message:
             self.slots.append((ch, char_to_bits(ch)))
-
-        # Trail-out blanks
         for _ in range(self.TRAIL_SLOTS + int(self.head_x / self.SLOT_W) + 2):
             self.slots.append((' ', [0, 0, 0, 0, 0]))
-
-        self.tape_x       = 0.0
+        self.tape_x = 0.0
         self._last_slot_idx = -1
-        self.decoded      = []
-        self.clack_flash  = 0.0
+        self.decoded = []
+        self.clack_flash = 0.0
 
-    def _build_frame_surface(self) -> pygame.Surface:
-        """Pre-render the brass frame bars, rivets, and edge lines (static)."""
+    def _build_background(self):
+        """Warm vertical gradient + wood streaks + vignette + scanlines."""
+        surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        for y in range(SCREEN_HEIGHT):
+            t = y / max(1, SCREEN_HEIGHT - 1)
+            c = [int(BG_TOP[i] + (BG_BOTTOM[i] - BG_TOP[i]) * t) for i in range(3)]
+            pygame.draw.line(surf, c, (0, y), (SCREEN_WIDTH, y))
+        # faint vertical wood streaks
+        rng = random.Random(7)
+        for _ in range(26):
+            x = rng.randint(0, SCREEN_WIDTH - 1)
+            shade = rng.randint(-8, 8)
+            col = (max(0, 20 + shade), max(0, 12 + shade // 2), max(0, 6))
+            pygame.draw.line(surf, col, (x, 0), (x, SCREEN_HEIGHT), 1)
+        # scanlines (pre-rendered once — the old version rebuilt these per frame)
+        for y in range(0, SCREEN_HEIGHT, 3):
+            r, g, b = surf.get_at((0, y))[:3]
+            pygame.draw.line(surf, (max(0, r - 6), max(0, g - 4), max(0, b - 3)),
+                             (0, y), (SCREEN_WIDTH, y))
+        return surf
+
+    def _build_frame_surface(self):
+        """Header plate, machine panels, rivets — all static brass work."""
         surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         ty, th = self.tape_y, self.TAPE_H
 
-        # ── Top panel (above tape) ────────────────────────────────────────────
-        pygame.draw.rect(surf, PANEL_DARK, (0, ty - 24, SCREEN_WIDTH, 24))
-        pygame.draw.line(surf, BRASS,       (0, ty - 24), (SCREEN_WIDTH, ty - 24), 2)
-        pygame.draw.line(surf, BRASS_DARK,  (0, ty),      (SCREEN_WIDTH, ty),      2)
+        # ── Header plate ────────────────────────────────────────────────
+        plate = pygame.Rect(s(10), s(8), SCREEN_WIDTH - s(20), s(54))
+        pygame.draw.rect(surf, PANEL_DARK, plate, border_radius=s(6))
+        pygame.draw.rect(surf, BRASS, plate, 2, border_radius=s(6))
+        pygame.draw.rect(surf, BRASS_DARK, plate.inflate(-s(8), -s(8)), 1, border_radius=s(4))
+        for rx, ry in [(plate.left + s(8), plate.top + s(8)),
+                       (plate.right - s(8), plate.top + s(8)),
+                       (plate.left + s(8), plate.bottom - s(8)),
+                       (plate.right - s(8), plate.bottom - s(8))]:
+            pygame.draw.circle(surf, RIVET, (rx, ry), s(3))
+            pygame.draw.circle(surf, BRASS_DARK, (rx, ry), s(3), 1)
 
-        # ── Bottom panel (below tape) ─────────────────────────────────────────
-        pygame.draw.rect(surf, PANEL_DARK, (0, ty + th, SCREEN_WIDTH, 24))
-        pygame.draw.line(surf, BRASS,       (0, ty + th),      (SCREEN_WIDTH, ty + th),      2)
-        pygame.draw.line(surf, BRASS_DARK,  (0, ty + th + 24), (SCREEN_WIDTH, ty + th + 24), 2)
-
-        # ── Rivets ────────────────────────────────────────────────────────────
-        for panel_y, row_y in [(-12, ty - 12), (12, ty + th + 12)]:
-            for rx in range(14, SCREEN_WIDTH, 26):
-                ry = ty + panel_y if panel_y < 0 else row_y
-                pygame.draw.circle(surf, RIVET,      (rx, ry), 4)
-                pygame.draw.circle(surf, BRASS_DARK, (rx, ry), 2)
-
-        # ── Vertical side bars ────────────────────────────────────────────────
-        pygame.draw.rect(surf, PANEL_DARK,  (0, 0,               18, SCREEN_HEIGHT))
-        pygame.draw.rect(surf, PANEL_DARK,  (SCREEN_WIDTH - 18, 0, 18, SCREEN_HEIGHT))
-        pygame.draw.line(surf, BRASS,        (18, 0),               (18, SCREEN_HEIGHT), 1)
-        pygame.draw.line(surf, BRASS, (SCREEN_WIDTH - 18, 0), (SCREEN_WIDTH - 18, SCREEN_HEIGHT), 1)
-
+        # ── Machine panels above/below the tape ─────────────────────────
+        for py in (ty - s(22), ty + th):
+            pygame.draw.rect(surf, PANEL_DARK, (0, py, SCREEN_WIDTH, s(22)))
+            pygame.draw.line(surf, BRASS, (0, py), (SCREEN_WIDTH, py), 2)
+            pygame.draw.line(surf, BRASS_DARK, (0, py + s(22)), (SCREEN_WIDTH, py + s(22)), 2)
+            for rx in range(s(12), SCREEN_WIDTH, s(30)):
+                pygame.draw.circle(surf, RIVET, (rx, py + s(11)), s(3))
+                pygame.draw.circle(surf, BRASS_DARK, (rx, py + s(11)), s(1)),
         return surf
 
-    def _build_grain_surface(self) -> pygame.Surface:
-        """Build a small tileable paper-grain texture for the tape."""
+    def _build_grain_surface(self):
         w, h = 64, self.TAPE_H
         surf = pygame.Surface((w, h))
         surf.fill(TAPE_PAPER)
         for _ in range(300):
-            gx = random.randint(0, w - 1)
-            gy = random.randint(0, h - 1)
+            gx, gy = random.randint(0, w - 1), random.randint(0, h - 1)
             shade = random.randint(195, 230)
             surf.set_at((gx, gy), (shade, shade - 18, shade - 48))
+        # edge shading baked in
+        for d in range(1, 6):
+            a = 90 - d * 15
+            pygame.draw.line(surf, (170 - a // 3, 150 - a // 3, 110 - a // 3), (0, d), (w, d))
+            pygame.draw.line(surf, (170 - a // 3, 150 - a // 3, 110 - a // 3), (0, h - d), (w, h - d))
         return surf
 
-    # ═════════════════════════════════════════════════════════════════════════
-    # Drawing helpers
-    # ═════════════════════════════════════════════════════════════════════════
+    def _build_card_surface(self):
+        """Aged TELEGRAM card: deckled edges, header, rules, wax seal."""
+        r = self.card_rect
+        surf = pygame.Surface((r.w, r.h), pygame.SRCALPHA)
+        rng = random.Random(3)
 
-    def _draw_gear(self, surface, cx: float, cy: float,
-                   radius: float, teeth: int, angle: float,
-                   color: tuple, inner_ratio: float = 0.72):
-        """Draw a single gear with spokes and hub."""
-        inner_r = radius * inner_ratio
+        # drop shadow
+        pygame.draw.rect(surf, (0, 0, 0, 110), (s(5), s(6), r.w - s(6), r.h - s(6)),
+                         border_radius=s(3))
+        card = pygame.Rect(0, 0, r.w - s(6), r.h - s(7))
+        pygame.draw.rect(surf, CARD_PAPER, card, border_radius=s(2))
+
+        # paper mottling
+        for _ in range(260):
+            px = rng.randint(2, card.w - 3)
+            py = rng.randint(2, card.h - 3)
+            surf.set_at((px, py), CARD_PAPER2)
+        # coffee-ring stain, upper right
+        pygame.draw.circle(surf, (206, 184, 138), (card.w - s(34), s(38)), s(16), 2)
+
+        # deckled (rough) edges
+        for x in range(0, card.w, 3):
+            if rng.random() < 0.5:
+                surf.set_at((x, rng.randint(0, 1)), (0, 0, 0, 0))
+            if rng.random() < 0.5:
+                surf.set_at((x, card.h - 1 - rng.randint(0, 1)), (0, 0, 0, 0))
+        pygame.draw.rect(surf, CARD_EDGE, card, 1, border_radius=s(2))
+
+        # header
+        hd = self.font_card_hd.render("— THE KEA TELEGRAPH CO. —", True, INK)
+        surf.blit(hd, ((card.w - hd.get_width()) // 2, s(10)))
+        sub = self.font_label.render("RECEIVED DISPATCH  ·  READ BY LAMPLIGHT", True, INK_FAINT)
+        surf.blit(sub, ((card.w - sub.get_width()) // 2, s(28)))
+        pygame.draw.line(surf, INK_FAINT, (s(14), s(44)), (card.w - s(14), s(44)), 1)
+        pygame.draw.line(surf, INK_FAINT, (s(14), s(47)), (card.w - s(14), s(47)), 1)
+
+        # faint writing guide lines
+        line_h = self.font_decoded.get_linesize() + s(4)
+        y = s(60) + line_h - s(2)
+        while y < card.h - s(40):
+            pygame.draw.line(surf, (204, 186, 144), (s(14), y), (card.w - s(14), y), 1)
+            y += line_h
+
+        # footer rule + wax seal
+        pygame.draw.line(surf, INK_FAINT, (s(14), card.h - s(30)), (card.w - s(14), card.h - s(30)), 1)
+        ft = self.font_label.render("DO NOT FOLD", True, INK_FAINT)
+        surf.blit(ft, (s(16), card.h - s(24)))
+        sx, sy_ = card.w - s(30), card.h - s(26)
+        pygame.draw.circle(surf, SEAL_WAX, (sx, sy_), s(14))
+        pygame.draw.circle(surf, (100, 20, 14), (sx, sy_), s(14), 2)
+        pygame.draw.circle(surf, (196, 60, 40), (sx - s(4), sy_ - s(4)), s(3))
+        kk = self.font_label.render("K", True, (228, 190, 160))
+        surf.blit(kk, kk.get_rect(center=(sx, sy_)))
+        return surf
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Drawing helpers
+    # ══════════════════════════════════════════════════════════════════════
+    def _draw_gear(self, surface, cx, cy, radius, teeth, angle, color):
+        inner_r = radius * 0.72
         pts = []
         n = teeth * 4
         for i in range(n):
             a = angle + (i / n) * math.tau
             r = radius if i % 4 in (1, 2) else inner_r
             pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
-
+        shadow = tuple(max(0, c - 60) for c in color)
         if len(pts) >= 3:
             pygame.draw.polygon(surface, color, pts)
-            shadow = (max(0, color[0] - 60), max(0, color[1] - 60), max(0, color[2] - 60))
             pygame.draw.polygon(surface, shadow, pts, 1)
+        pygame.draw.circle(surface, shadow, (int(cx), int(cy)), max(2, int(radius * 0.22)))
 
-        # Hub disc
-        hub_r = max(3, int(radius * 0.22))
-        pygame.draw.circle(surface, shadow, (int(cx), int(cy)), hub_r)
-
-        # Spokes
-        spoke_color = (
-            min(255, color[0] + 30),
-            min(255, color[1] + 20),
-            max(0,   color[2] - 10),
-        )
-        for k in range(4):
-            a = angle + k * math.pi / 2
-            x1 = cx + inner_r * 0.28 * math.cos(a)
-            y1 = cy + inner_r * 0.28 * math.sin(a)
-            x2 = cx + inner_r * 0.82 * math.cos(a)
-            y2 = cy + inner_r * 0.82 * math.sin(a)
-            pygame.draw.line(surface, spoke_color,
-                             (int(x1), int(y1)), (int(x2), int(y2)), 1)
-
-    def _draw_spool(self, surface, cx: float, cy: float,
-                    radius: float, angle: float, color: tuple):
-        """Draw a tape spool with flanges and spokes."""
-        # Outer flange
+    def _draw_spool(self, surface, cx, cy, radius, angle):
+        color = (95, 65, 18)
+        shadow = tuple(max(0, c - 50) for c in color)
         pygame.draw.circle(surface, color, (int(cx), int(cy)), int(radius))
-        shadow = (max(0, color[0] - 50), max(0, color[1] - 50), max(0, color[2] - 50))
         pygame.draw.circle(surface, shadow, (int(cx), int(cy)), int(radius), 2)
-
-        # Hub
         hub_r = int(radius * 0.32)
         pygame.draw.circle(surface, shadow, (int(cx), int(cy)), hub_r)
-
-        # Spokes
-        spoke = (min(255, color[0] + 40), min(255, color[1] + 30), min(255, color[2] + 5))
+        spoke = tuple(min(255, c + 40) for c in color)
         for k in range(6):
             a = angle + k * math.tau / 6
-            x1 = cx + hub_r * math.cos(a)
-            y1 = cy + hub_r * math.sin(a)
-            x2 = cx + radius * 0.85 * math.cos(a)
-            y2 = cy + radius * 0.85 * math.sin(a)
             pygame.draw.line(surface, spoke,
-                             (int(x1), int(y1)), (int(x2), int(y2)), 2)
+                             (int(cx + hub_r * math.cos(a)), int(cy + hub_r * math.sin(a))),
+                             (int(cx + radius * 0.85 * math.cos(a)),
+                              int(cy + radius * 0.85 * math.sin(a))), 2)
 
-    def _draw_gauge(self, surface, cx: float, cy: float, radius: int):
-        """Small decorative brass steam-pressure gauge."""
-        # Outer bezel
-        pygame.draw.circle(surface, BRASS_DARK, (int(cx), int(cy)), radius + 4)
-        pygame.draw.circle(surface, BRASS,       (int(cx), int(cy)), radius + 4, 3)
-        # Face
+    def _draw_gauge(self, surface, cx, cy, radius):
+        pygame.draw.circle(surface, BRASS_DARK, (int(cx), int(cy)), radius + s(3))
+        pygame.draw.circle(surface, BRASS, (int(cx), int(cy)), radius + s(3), 2)
         pygame.draw.circle(surface, (22, 12, 4), (int(cx), int(cy)), radius)
-
-        # Scale arc ticks  (-210° → +30°,  i.e. 240° sweep)
         for i in range(11):
             a = math.radians(-210 + i * 24)
-            r1 = radius - 5
-            r2 = radius - 10 if i % 5 == 0 else radius - 8
-            x1, y1 = cx + r1 * math.cos(a), cy + r1 * math.sin(a)
-            x2, y2 = cx + r2 * math.cos(a), cy + r2 * math.sin(a)
+            r1, r2 = radius - s(4), radius - (s(8) if i % 5 == 0 else s(6))
             pygame.draw.line(surface, BRASS,
-                             (int(x1), int(y1)), (int(x2), int(y2)), 1)
-
-        # Danger zone ticks (red zone: 0 → +30°)
-        for i in range(5):
-            a = math.radians(i * 6)
-            r1 = radius - 5
-            pygame.draw.line(surface, (180, 40, 10),
                              (int(cx + r1 * math.cos(a)), int(cy + r1 * math.sin(a))),
-                             (int(cx + (radius - 3) * math.cos(a)),
-                              int(cy + (radius - 3) * math.sin(a))), 1)
-
-        # Needle
+                             (int(cx + r2 * math.cos(a)), int(cy + r2 * math.sin(a))), 1)
         na = math.radians(self.gauge_a)
-        nx = cx + (radius - 8) * math.cos(na)
-        ny = cy + (radius - 8) * math.sin(na)
-        pygame.draw.line(surface, RED_NEEDLE,
-                         (int(cx), int(cy)), (int(nx), int(ny)), 2)
-        pygame.draw.circle(surface, BRASS_BRIGHT, (int(cx), int(cy)), 4)
-
-        # Label
-        lbl = self.font_label.render("PSI", True, BRASS)
-        surface.blit(lbl, (int(cx) - lbl.get_width() // 2, int(cy) + radius // 2 + 2))
+        pygame.draw.line(surface, RED_NEEDLE, (int(cx), int(cy)),
+                         (int(cx + (radius - s(6)) * math.cos(na)),
+                          int(cy + (radius - s(6)) * math.sin(na))), 2)
+        pygame.draw.circle(surface, BRASS_BRIGHT, (int(cx), int(cy)), s(3))
 
     def _draw_reading_head(self, surface):
-        """Draw the central brass reading-head assembly."""
-        ty, th = self.tape_y, self.TAPE_H
-        hx = self.head_x
-        hw = 22   # head half-width
-
-        # Glowing halo when flash active
+        ty, th, hx = self.tape_y, self.TAPE_H, self.head_x
+        hw = s(18)
         if self.clack_flash > 0.05:
-            alpha = int(self.clack_flash * 80)
-            glow = pygame.Surface((hw * 2 + 40, th + 40), pygame.SRCALPHA)
-            glow.fill((30, 200, 60, alpha))
-            surface.blit(glow, (hx - hw - 20, ty - 20))
+            glow = pygame.Surface((hw * 2 + s(30), th + s(30)), pygame.SRCALPHA)
+            glow.fill((255, 170, 40, int(self.clack_flash * 70)))
+            surface.blit(glow, (hx - hw - s(15), ty - s(15)))
+        body = (hx - hw, ty - s(9), hw * 2, th + s(18))
+        pygame.draw.rect(surface, BRASS_BRIGHT, body, border_radius=s(4))
+        pygame.draw.rect(surface, BRASS_DARK, body, 2, border_radius=s(4))
+        win = LAMP_ON if self.clack_flash > 0.05 else LAMP_OFF
+        pygame.draw.rect(surface, win, (hx - s(4), ty + s(4), s(8), th - s(8)))
+        pygame.draw.rect(surface, BRASS_DARK, (hx - s(4), ty + s(4), s(8), th - s(8)), 1)
+        for gy in (ty - s(9), ty + th):
+            pygame.draw.rect(surface, COPPER, (hx - hw - s(5), gy, hw * 2 + s(10), s(9)),
+                             border_radius=s(2))
 
-        # Body plate
-        body_rect = (hx - hw, ty - 10, hw * 2, th + 20)
-        pygame.draw.rect(surface, BRASS_BRIGHT, body_rect, border_radius=5)
-        pygame.draw.rect(surface, BRASS_DARK,   body_rect, 2, border_radius=5)
+    def _draw_morse_key(self, surface, cx, cy):
+        pygame.draw.rect(surface, BRASS_DARK, (int(cx - s(24)), int(cy + s(6)), s(48), s(8)),
+                         border_radius=2)
+        pygame.draw.rect(surface, BRASS, (int(cx - s(2)), int(cy - s(2)), s(4), s(10)))
+        tilt = -s(3) if self.clack_flash > 0.1 else 0
+        pts = [(cx - s(19), cy + tilt + 2), (cx + s(19), cy - tilt + 2),
+               (cx + s(19), cy - tilt + s(5)), (cx - s(19), cy + tilt + s(5))]
+        pygame.draw.polygon(surface, BRASS, [(int(x), int(y)) for x, y in pts])
+        cpt = LAMP_ON if self.clack_flash > 0.1 else LAMP_OFF
+        pygame.draw.circle(surface, cpt, (int(cx + s(17)), int(cy + 2 + tilt)), s(2))
+        pygame.draw.ellipse(surface, COPPER, (int(cx - s(12)), int(cy - s(7) + tilt), s(10), s(7)))
 
-        # Bolt heads on body
-        for by in (ty - 4, ty + th + 4):
-            pygame.draw.circle(surface, BRASS_DARK,  (hx - hw + 6, by), 3)
-            pygame.draw.circle(surface, BRASS_DARK,  (hx + hw - 6, by), 3)
-
-        # Reading window slot (coloured LED-style)
-        win_col = HEAD_WIN_ON if self.clack_flash > 0.05 else HEAD_WIN_OFF
-        pygame.draw.rect(surface, win_col,
-                         (hx - 5, ty + 4, 10, th - 8))
-        # Window frame
-        pygame.draw.rect(surface, BRASS_DARK,
-                         (hx - 5, ty + 4, 10, th - 8), 1)
-
-        # Top / bottom guide brackets
-        for gy in (ty - 10, ty + th):
-            pygame.draw.rect(surface, COPPER,
-                             (hx - hw - 6, gy, hw * 2 + 12, 10),
-                             border_radius=2)
-            pygame.draw.rect(surface, BRASS_DARK,
-                             (hx - hw - 6, gy, hw * 2 + 12, 10), 1,
-                             border_radius=2)
-
-    # ═════════════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════
     # State interface
-    # ═════════════════════════════════════════════════════════════════════════
-
-    def update(self, dt: float):
-        # ── Scroll tape ───────────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════
+    def update(self, dt):
         self.tape_x += self.scroll_spd * dt
-
-        # ── Gear & spool rotation ─────────────────────────────────────────────
-        ratio = self.scroll_spd / self.BASE_SPEED
-        self.gear_angle  += ratio * dt * 1.4
+        ratio = self.scroll_spd / (self.BASE_SPEED * SCALE)
+        self.gear_angle += ratio * dt * 1.4
         self.spool_angle += ratio * dt * 0.7
 
-        # ── Gauge needle wander ───────────────────────────────────────────────
         self.gauge_a += (self.gauge_tgt - self.gauge_a) * min(1.0, dt * 1.2)
         if abs(self.gauge_a - self.gauge_tgt) < 2.0:
             self.gauge_tgt = random.uniform(-50.0, 28.0)
 
-        # ── Decode character under head ───────────────────────────────────────
-        #  The slot currently centred under head_x
+        # steam puffs from behind the header plate
+        self.steam_timer -= dt
+        if self.steam_timer <= 0:
+            self.steam_timer = random.uniform(0.5, 1.1)
+            self.steam.append([s(66), s(76), s(3), 150, random.uniform(-4, 4) * SCALE])
+        for p in self.steam:
+            p[1] -= s(14) * dt          # rise
+            p[0] += p[4] * dt           # drift
+            p[2] += s(5) * dt           # grow
+            p[3] -= 65 * dt             # fade
+        self.steam = [p for p in self.steam if p[3] > 4]
+
+        # decode the slot under the head
         raw_idx = int((self.tape_x + self.head_x) / self.SLOT_W)
         slot_idx = max(0, min(raw_idx, len(self.slots) - 1))
-
         if slot_idx != self._last_slot_idx and slot_idx < len(self.slots):
             self._last_slot_idx = slot_idx
             ch, bits = self.slots[slot_idx]
-            if any(bits):          # non-blank column
+            if any(bits):
                 self.clack_flash = 1.0
-                if ch.isprintable():     # allow spaces to print
+                if ch.isprintable():
                     self.decoded.append(ch)
                     self._chars_sent += 1
-                    if len(self.decoded) > 300: # allow longer buffer for multi-line
+                    if len(self.decoded) > 300:
                         self.decoded.pop(0)
-
-        # ── Decay clack flash ─────────────────────────────────────────────────
         if self.clack_flash > 0:
             self.clack_flash = max(0.0, self.clack_flash - dt * 9.0)
 
-        # ── Loop tape / fetch new message ─────────────────────────────────────
-        tape_len_px = len(self.slots) * self.SLOT_W
-        if self.tape_x >= tape_len_px:
-            changed = self.current_affairs.update(dt) if hasattr(self, 'current_affairs') else False
-            msg = self.current_affairs.get_current_message()
+        # loop tape / next message
+        if self.tape_x >= len(self.slots) * self.SLOT_W:
+            self.current_affairs.update(dt)
             self._dispatch_no += 1
-            self._encode_message(msg)
+            self._encode_message(self.current_affairs.get_current_message())
         else:
-            if hasattr(self, 'current_affairs'):
-                self.current_affairs.update(dt)
+            self.current_affairs.update(dt)
 
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def draw(self, surface: pygame.Surface):
+    # ──────────────────────────────────────────────────────────────────────
+    def draw(self, surface):
         ty, th = self.tape_y, self.TAPE_H
+        surface.blit(self._bg_surf, (0, 0))
 
-        # ── 1. Background ─────────────────────────────────────────────────────
-        surface.fill(BG)
+        # steam (behind the header plate)
+        self._steam_area.fill((0, 0, 0, 0))
+        for p in self.steam:
+            pygame.draw.circle(self._steam_area, (225, 218, 205, int(p[3])),
+                               (int(p[0]), int(p[1])), int(p[2]))
+        surface.blit(self._steam_area, (s(10), s(0)))
 
-        # Subtle horizontal scan-lines texture
-        scan_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        for sy in range(0, SCREEN_HEIGHT, 3):
-            scan_surf.fill((0, 0, 0, 18), rect=(0, sy, SCREEN_WIDTH, 1))
-        surface.blit(scan_surf, (0, 0))
-
-        # ── 2. Tape spools ────────────────────────────────────────────────────
-        spool_cy = ty + th // 2
-        spool_col = (95, 65, 18)
-
-        # left spool (feed)
-        self._draw_spool(surface,  52, spool_cy, 36, -self.spool_angle, spool_col)
-        # right spool (take-up)
-        self._draw_spool(surface, SCREEN_WIDTH - 52, spool_cy,
-                         36,  self.spool_angle, spool_col)
-
-        # Tape ribbon connecting spool to tape band (two thin lines)
-        for side_x, sign in [(52, 1), (SCREEN_WIDTH - 52, -1)]:
-            pygame.draw.line(surface, TAPE_PAPER2,
-                             (side_x + sign * 18, spool_cy - 4),
-                             (side_x + sign * 18, spool_cy + 4), 1)
-
-        # ── 3. Paper tape band ────────────────────────────────────────────────
-        # Tiled grain
+        # tape band
         gw = self._grain_surf.get_width()
         for gx in range(0, SCREEN_WIDTH, gw):
             surface.blit(self._grain_surf, (gx, ty))
 
-        # Tape edge highlight lines
-        pygame.draw.line(surface, TAPE_PAPER2,         (0, ty),       (SCREEN_WIDTH, ty),      1)
-        pygame.draw.line(surface, (160, 140, 100), (0, ty + th),   (SCREEN_WIDTH, ty + th),  1)
-
-        # ── 4. Punch holes ────────────────────────────────────────────────────
+        # punch holes
         first_slot = max(0, int(self.tape_x / self.SLOT_W) - 1)
-        last_slot  = min(len(self.slots), first_slot + int(SCREEN_WIDTH / self.SLOT_W) + 4)
-
+        last_slot = min(len(self.slots), first_slot + int(SCREEN_WIDTH / self.SLOT_W) + 4)
         for i in range(first_slot, last_slot):
             ch, bits = self.slots[i]
-            sx = int(i * self.SLOT_W - self.tape_x) + self.SLOT_W // 2  # centre-x on screen
-
-            # ── Sprocket holes (every slot, top & bottom) ─────────────────────
-            for sy in (ty + self.SPROCKET_TOP, ty + self.SPROCKET_BOT):
-                pygame.draw.circle(surface, HOLE_DARK, (sx, sy), self.SPROCKET_R)
-
-            # ── Data holes ────────────────────────────────────────────────────
+            sx = int(i * self.SLOT_W - self.tape_x) + self.SLOT_W // 2
+            for sy_ in (ty + self.SPROCKET_TOP, ty + self.SPROCKET_BOT):
+                pygame.draw.circle(surface, HOLE_DARK, (sx, sy_), self.SPROCKET_R)
             for row, bit in enumerate(bits):
                 if bit:
                     hy = ty + self.DATA_ROWS[row]
                     pygame.draw.circle(surface, HOLE_DARK, (sx, hy), self.DATA_R)
-                    # Inner deep shadow for depth
-                    pygame.draw.circle(surface, (15, 6, 1), (sx, hy), self.DATA_R - 2)
+                    pygame.draw.circle(surface, (15, 6, 1), (sx, hy), max(1, self.DATA_R - 2))
 
-        # ── 5. Tape edge shadows ──────────────────────────────────────────────
-        for depth in range(1, 7):
-            alpha = 35 - depth * 5
-            s = pygame.Surface((SCREEN_WIDTH, 1), pygame.SRCALPHA)
-            s.fill((0, 0, 0, alpha))
-            surface.blit(s, (0, ty + depth))
-            surface.blit(s, (0, ty + th - depth))
+        # spools in front of the band edges — the tape feeds out of them
+        spool_cy = ty + th // 2
+        self._draw_spool(surface, s(4), spool_cy, s(30), -self.spool_angle)
+        self._draw_spool(surface, SCREEN_WIDTH - s(4), spool_cy, s(30), self.spool_angle)
 
-        # ── 6. Reading head ───────────────────────────────────────────────────
         self._draw_reading_head(surface)
-
-        # ── 7. Static brass frame ─────────────────────────────────────────────
         surface.blit(self._frame_surf, (0, 0))
 
-        # ── 8. Corner gears ───────────────────────────────────────────────────
-        panel_mid_top = ty - 12     # vertical centre of top panel
-        panel_mid_bot = ty + th + 12
+        # gears on the machine panels
+        pm_top, pm_bot = ty - s(11), ty + th + s(11)
+        for gx, gy, gr, gt, gd in [
+                (s(26), pm_top, s(13), 9, 1.0), (s(52), pm_top, s(8), 7, -1.67),
+                (SCREEN_WIDTH - s(26), pm_top, s(13), 9, -1.0),
+                (SCREEN_WIDTH - s(52), pm_top, s(8), 7, 1.67),
+                (s(26), pm_bot, s(13), 9, -1.0),
+                (SCREEN_WIDTH - s(26), pm_bot, s(13), 9, 1.0)]:
+            col = BRASS if gr >= s(13) else BRASS_DARK
+            self._draw_gear(surface, gx, gy, gr, gt, self.gear_angle * gd, col)
 
-        gear_positions = [
-            (32,               panel_mid_top, 16, 9,  1.0),   # TL large
-            (62,               panel_mid_top, 10, 7, -1.67),  # TL small
-            (SCREEN_WIDTH-32,  panel_mid_top, 16, 9, -1.0),   # TR large
-            (SCREEN_WIDTH-62,  panel_mid_top, 10, 7,  1.67),  # TR small
-            (32,               panel_mid_bot, 16, 9, -1.0),   # BL large
-            (62,               panel_mid_bot, 10, 7,  1.67),  # BL small
-            (SCREEN_WIDTH-32,  panel_mid_bot, 16, 9,  1.0),   # BR large
-            (SCREEN_WIDTH-62,  panel_mid_bot, 10, 7, -1.67),  # BR small
-        ]
-        for gx, gy, gr, gt, gd in gear_positions:
-            col = BRASS if gr == 16 else BRASS_DARK
-            self._draw_gear(surface, gx, gy, gr, gt,
-                            self.gear_angle * gd, col)
+        # header plate text
+        title = self.font_title.render("TELEGRAPH DISPATCH", True, AMBER)
+        surface.blit(title, ((SCREEN_WIDTH - title.get_width()) // 2, s(16)))
+        now = datetime.datetime.now().strftime("%H:%M  ·  %a %d %b")
+        meta = self.font_sub.render(f"DISPATCH #{self._dispatch_no:04d}  ·  {now}", True, AMBER_DIM)
+        surface.blit(meta, ((SCREEN_WIDTH - meta.get_width()) // 2, s(40)))
 
-        # ── 9. Header text ────────────────────────────────────────────────────
-        title_str = "* TELEGRAPH  DISPATCH  *"
-        title_surf = self.font_title.render(title_str, True, AMBER)
-        surface.blit(title_surf, (SCREEN_WIDTH // 2 - title_surf.get_width() // 2, 8))
+        # receiving lamp on the top machine panel
+        lamp = LAMP_ON if self.clack_flash > 0.05 else LAMP_OFF
+        pygame.draw.circle(surface, lamp, (self.head_x, ty - s(11)), s(5))
+        pygame.draw.circle(surface, BRASS_DARK, (self.head_x, ty - s(11)), s(5), 1)
 
-        now_str = datetime.datetime.now().strftime("TRANSMISSION  ·  %H:%M:%S  ·  %a %d %b")
-        ts_surf = self.font_sub.render(now_str, True, AMBER_DIM)
-        surface.blit(ts_surf, (SCREEN_WIDTH // 2 - ts_surf.get_width() // 2, 30))
+        # ── telegram card + decoded text ────────────────────────────────
+        surface.blit(self._card_surf, self.card_rect.topleft)
+        self._draw_decoded(surface)
 
-        # Dispatch number (top-left corner)
-        dn_surf = self.font_sub.render(f"DISPATCH  #{self._dispatch_no:04d}", True, BRASS)
-        surface.blit(dn_surf, (26, 66))
+        # bottom hardware row
+        self._draw_morse_key(surface, s(44), SCREEN_HEIGHT - s(28))
+        self._draw_gauge(surface, SCREEN_WIDTH - s(44), SCREEN_HEIGHT - s(30), s(20))
+        stats = self.font_label.render(
+            f"TX {self._chars_sent:05d}  ·  {int(self.scroll_spd / SCALE)} BD", True, BRASS_DARK)
+        surface.blit(stats, ((SCREEN_WIDTH - stats.get_width()) // 2, SCREEN_HEIGHT - s(32)))
 
-        # Characters sent counter (top-left)
-        cs_surf = self.font_label.render(f"CHARS TX: {self._chars_sent:06d}", True, BRASS_DARK)
-        surface.blit(cs_surf, (26, 86))
+    def _draw_decoded(self, surface):
+        if not self.decoded:
+            return
+        r = self.card_rect
+        text_x = r.x + s(14)
+        text_w = r.w - s(34)
+        line_h = self.font_decoded.get_linesize() + s(4)
+        max_lines = (r.h - s(100)) // line_h
 
-        # ── 10. RECEIVING indicator LED (top-right) ──────────────────────────
-        led_col = (20, 230, 60) if self.clack_flash > 0.05 else (10, 80, 25)
-        pygame.draw.circle(surface, led_col, (SCREEN_WIDTH - 30, 70), 6)
-        pygame.draw.circle(surface, (5, 35, 10), (SCREEN_WIDTH - 30, 70), 6, 1)
-        recv_lbl = self.font_label.render("RECEIVING", True, led_col)
-        surface.blit(recv_lbl, (SCREEN_WIDTH - 30 - recv_lbl.get_width() - 12, 66))
+        lines, current = [], ""
+        for ch in "".join(self.decoded):
+            if self.font_decoded.size(current + ch)[0] < text_w:
+                current += ch
+            else:
+                lines.append(current)
+                current = ch
+        if current:
+            lines.append(current)
+        lines = lines[-max_lines:]
 
-        # Transmission speed
-        spd_lbl = self.font_label.render(f"{int(self.scroll_spd)} BD", True, BRASS_DARK)
-        surface.blit(spd_lbl, (SCREEN_WIDTH - spd_lbl.get_width() - 24, 86))
-
-        # ── 11. Decoded text ticker ───────────────────────────────────────────
-        decoded_y = ty + th + 34
-
-        decoded_label = self.font_sub.render("◄  DECODED  TRANSMISSION  ►", True, BRASS_DARK)
-        surface.blit(decoded_label,
-                     (SCREEN_WIDTH // 2 - decoded_label.get_width() // 2, decoded_y - 18))
-
-        if self.decoded:
-            full_text = "".join(self.decoded)
-            
-            # Simple multiline formatting for pure characters
-            ticker_rect_width = SCREEN_WIDTH - 40
-            lines = []
-            current_line = ""
-            for char in full_text:
-                test_line = current_line + char
-                if self.font_decoded.size(test_line)[0] < ticker_rect_width:
-                    current_line = test_line
-                else:
-                    lines.append(current_line)
-                    current_line = char
-            if current_line:
-                lines.append(current_line)
-                
-            # Keep only the last few lines that fit
-            max_lines = 4  # Allow up to 4 lines
-            lines = lines[-max_lines:]
-            
-            y_offset = decoded_y
-            last_line_width = 0
-            for line in lines:
-                ds = self.font_decoded.render(line, True, AMBER)
-                surface.blit(ds, (SCREEN_WIDTH // 2 - ds.get_width() // 2, y_offset))
-                last_line_width = ds.get_width()
-                y_offset += self.font_decoded.get_linesize()
-            
-            # Blinking cursor after last char
-            if (pygame.time.get_ticks() // 500) % 2 == 0 and lines:
-                cur_x = SCREEN_WIDTH // 2 - last_line_width // 2 + last_line_width + 4
-                cur_y = decoded_y + (len(lines) - 1) * self.font_decoded.get_linesize() + 4
-                pygame.draw.rect(surface, AMBER, (cur_x, cur_y, 10, self.font_decoded.get_height() - 8))
-
-        # ── 12. Decorative gauge (bottom-right) ──────────────────────────────
-        self._draw_gauge(surface, SCREEN_WIDTH - 60, SCREEN_HEIGHT - 50, 36)
-
-        # ── 13. Morse key decoration (bottom-left) ────────────────────────────
-        self._draw_morse_key(surface, 55, SCREEN_HEIGHT - 48)
-
-        # ── 14. Bottom status bar ─────────────────────────────────────────────
-        msg_preview = self._message[:50] + ("…" if len(self._message) > 50 else "")
-        bar_surf = self.font_label.render(f"SOURCE:  {msg_preview}", True, BRASS_DARK)
-        surface.blit(bar_surf, (26, SCREEN_HEIGHT - 14))
-
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def _draw_morse_key(self, surface, cx: float, cy: float):
-        """Draw a tiny decorative telegraph Morse key."""
-        col = BRASS_DARK
-        bcol = BRASS
-
-        # Base plate
-        pygame.draw.rect(surface, col, (int(cx - 28), int(cy + 8), 56, 10), border_radius=2)
-        # Pivot post
-        pygame.draw.rect(surface, bcol, (int(cx - 2), int(cy - 2), 4, 12))
-        # Lever arm  (tilts when flash active)
-        tilt = -4 if self.clack_flash > 0.1 else 0
-        pts = [
-            (cx - 22, cy + tilt + 2),
-            (cx + 22, cy - tilt + 2),
-            (cx + 22, cy - tilt + 6),
-            (cx - 22, cy + tilt + 6),
-        ]
-        pygame.draw.polygon(surface, bcol, [(int(x), int(y)) for x, y in pts])
-        # Contact point
-        cpt_col = (20, 200, 50) if self.clack_flash > 0.1 else (10, 60, 20)
-        pygame.draw.circle(surface, cpt_col, (int(cx + 20), int(cy + 2 + tilt)), 3)
-        # Knob
-        pygame.draw.ellipse(surface, COPPER, (int(cx - 14), int(cy - 8 + tilt), 12, 8))
+        y = r.y + s(58)
+        last_w = 0
+        for line in lines:
+            ink = self.font_decoded.render(line, True, INK)
+            surface.blit(ink, (text_x, y))
+            last_w = ink.get_width()
+            y += line_h
+        # blinking ink cursor
+        if (pygame.time.get_ticks() // 500) % 2 == 0:
+            cy = y - line_h
+            pygame.draw.rect(surface, INK,
+                             (text_x + last_w + s(3), cy + s(2), s(7), line_h - s(8)))
 
     def draw_pomodoro(self, surface, time_left, mode):
-        import pygame
-        # Vintage paper telegraph theme
-        mins = int(time_left) // 60
-        secs = int(time_left) % 60
+        mins, secs = int(time_left) // 60, int(time_left) % 60
         time_str = f"T-{mins:02d}:{secs:02d}"
-        
-        font = pygame.font.Font(None, 24)
         c = (150, 20, 20) if mode == 'work' else (20, 120, 20)
-        overlay_surf = font.render(time_str, True, c)
-        
-        bg_rect = overlay_surf.get_rect(midtop=(surface.get_width() // 2, 5))
-        bg_rect.inflate_ip(10, 6)
-        
-        # Paper background
+        overlay = self.font_sub.render(time_str, True, c)
+        bg_rect = overlay.get_rect(midtop=(surface.get_width() // 2, s(66)))
+        bg_rect.inflate_ip(s(10), s(6))
         box = pygame.Surface((bg_rect.width, bg_rect.height))
-        box.fill((230, 220, 200))  # Aged paper
-        pygame.draw.rect(box, (100, 90, 80), box.get_rect(), 1) # Ink border
-        
+        box.fill((230, 220, 200))
+        pygame.draw.rect(box, (100, 90, 80), box.get_rect(), 1)
         surface.blit(box, bg_rect.topleft)
-        surface.blit(overlay_surf, overlay_surf.get_rect(center=bg_rect.center))
+        surface.blit(overlay, overlay.get_rect(center=bg_rect.center))
