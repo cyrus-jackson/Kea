@@ -116,6 +116,19 @@ class AbyssalState(State):
         self.rings = []
         self.ring_timer = 2.0
 
+        # diving bell: hangs from a cable, drifts, sweeps a searchlight
+        self.sub = {
+            "bx": SCREEN_WIDTH * 0.68,          # base x (drifts around this)
+            "y": self.sea_rect.y + self.sea_rect.h * 0.30,
+            "phase": random.uniform(0, math.tau),
+        }
+        self.bubbles = []                        # [x, y, speed, r] rising
+        self.bubble_timer = 0.0
+        # pipeline leak position (matches the baked valve joint)
+        self.leak_x = s(96)
+        self.leak_y = self.hud_bot.y - s(14)
+        self._fx = pygame.Surface((SCREEN_WIDTH, self.sea_rect.h), pygame.SRCALPHA)
+
         # anglerfish + leviathan events
         self.angler = None
         self.angler_timer = random.uniform(20.0, 45.0)
@@ -159,6 +172,39 @@ class AbyssalState(State):
             rx = rng.randint(0, SCREEN_WIDTH - 1)
             rr = rng.randint(1, s(4))
             pygame.draw.circle(surf, (10, 18, 18), (rx, floor_y + rng.randint(0, s(6))), rr)
+
+        # ── STATION TECH (baked) ─────────────────────────────────────────
+        # riveted pipeline along the seafloor, with a valve wheel
+        pipe_y = floor_y - s(5)
+        pygame.draw.rect(surf, BRASS_DARK, (0, pipe_y, SCREEN_WIDTH, s(6)))
+        pygame.draw.line(surf, BRASS, (0, pipe_y), (SCREEN_WIDTH, pipe_y), 1)
+        for px in range(s(14), SCREEN_WIDTH, s(24)):      # pipe flanges
+            pygame.draw.rect(surf, BRASS, (px, pipe_y - 1, s(3), s(8)))
+        vx = s(96)                                        # valve at the leak joint
+        pygame.draw.circle(surf, BRASS, (vx, pipe_y - s(6)), s(6), 2)
+        pygame.draw.line(surf, BRASS, (vx - s(6), pipe_y - s(6)), (vx + s(6), pipe_y - s(6)), 1)
+        pygame.draw.line(surf, BRASS, (vx, pipe_y - s(12)), (vx, pipe_y), 1)
+
+        # habitat dome on the seafloor (portholes lit per frame)
+        dome_x, dome_r = s(52), s(34)
+        pygame.draw.circle(surf, (14, 22, 24), (dome_x, floor_y), dome_r,
+                           draw_top_left=True, draw_top_right=True)
+        pygame.draw.circle(surf, VERDIGRIS, (dome_x, floor_y), dome_r, 2,
+                           draw_top_left=True, draw_top_right=True)
+        for k in range(1, 3):                             # dome ribs
+            pygame.draw.line(surf, BRASS_DARK,
+                             (dome_x - dome_r + k * dome_r * 2 // 3, floor_y),
+                             (dome_x - dome_r + k * dome_r * 2 // 3, floor_y - dome_r + s(4)), 1)
+        pygame.draw.line(surf, VERDIGRIS, (dome_x, floor_y - dome_r),
+                         (dome_x, floor_y - dome_r - s(12)), 1)   # antenna
+        lbl = self.font_label.render("HAB-3", True, BRASS)
+        surf.blit(lbl, (dome_x - lbl.get_width() // 2, floor_y - s(14)))
+
+        # anchored cables hanging from above
+        for cx0 in (s(24), SCREEN_WIDTH - s(40)):
+            for yy in range(self.sea_rect.y, floor_y, s(6)):
+                sway = int(math.sin(yy * 0.03) * s(3))
+                surf.set_at((min(SCREEN_WIDTH - 1, cx0 + sway), yy), BRASS_DARK)
         return surf
 
     def _build_hud(self):
@@ -222,6 +268,21 @@ class AbyssalState(State):
         for ring in self.rings:
             ring[2] += s(64) * dt
         self.rings = [r for r in self.rings if r[2] < SCREEN_WIDTH * 0.8]
+
+        # diving bell drift + bubbles (from its vent and the pipe leak)
+        self.bubble_timer -= dt
+        if self.bubble_timer <= 0:
+            self.bubble_timer = random.uniform(0.25, 0.7)
+            sub_x = self.sub["bx"] + math.sin(t * 0.11 + self.sub["phase"]) * s(26)
+            src = random.choice([(sub_x, self.sub["y"] + s(16)),
+                                 (self.leak_x, self.leak_y)])
+            self.bubbles.append([src[0], src[1],
+                                 random.uniform(18, 34) * SCALE,
+                                 random.randint(1, s(2))])
+        for b in self.bubbles:
+            b[1] -= b[2] * dt
+            b[0] += math.sin(t * 2 + b[2]) * 5 * dt
+        self.bubbles = [b for b in self.bubbles if b[1] > self.sea_rect.y + s(4)]
 
         # anglerfish event
         if self.angler is None:
@@ -288,6 +349,31 @@ class AbyssalState(State):
         if self.leviathan:
             self._draw_leviathan(surface, t)
 
+        # searchlight beam from the diving bell (behind the fish)
+        sub_x = self.sub["bx"] + math.sin(t * 0.11 + self.sub["phase"]) * s(26)
+        sub_y = self.sub["y"] + math.sin(t * 0.5 + self.sub["phase"]) * s(4)
+        beam_a = math.pi / 2 + math.sin(t * 0.30 + self.sub["phase"]) * 0.55
+        self._fx.fill((0, 0, 0, 0))
+        blen = self.sea_rect.h * 0.62
+        for spread, alpha in ((0.16, 18), (0.07, 26)):
+            pts = [(sub_x, sub_y + s(14) - self.sea_rect.y)]
+            for da in (-spread, spread):
+                pts.append((sub_x + math.cos(beam_a + da) * blen,
+                            sub_y + s(14) - self.sea_rect.y + math.sin(beam_a + da) * blen))
+            pygame.draw.polygon(self._fx, (*LURE_WARM, alpha), pts)
+        surface.blit(self._fx, (0, self.sea_rect.y))
+
+        # habitat dome life: flickering portholes + antenna beacon
+        floor_y = self.hud_bot.y - s(10)
+        for i, px in enumerate((s(38), s(52), s(66))):
+            flick = 0.7 + 0.3 * math.sin(t * (1.3 + i * 0.4) + i * 2.1)
+            pygame.draw.rect(surface, lerp_color(SEA_BOTTOM, LURE_WARM, flick),
+                             (px - s(2), floor_y - s(14), s(5), s(6)),
+                             border_radius=2)
+        if int(t * 1.5) % 2 == 0:
+            pygame.draw.circle(surface, (220, 70, 60),
+                               (s(52), floor_y - s(34) - s(12)), s(2))
+
         # plankton glimmer
         for px, py, ph in self.plankton:
             b = 0.5 + 0.5 * math.sin(t * 1.7 + ph)
@@ -301,6 +387,29 @@ class AbyssalState(State):
 
         if self.angler:
             self._draw_angler(surface, t)
+
+        # the diving bell itself, hanging from its cable
+        cable_sway = math.sin(t * 0.11 + self.sub["phase"]) * s(8)
+        pygame.draw.line(surface, BRASS_DARK,
+                         (self.sub["bx"] + cable_sway * 0.3, self.sea_rect.y),
+                         (sub_x, sub_y - s(16)), 1)
+        pygame.draw.ellipse(surface, (30, 34, 30),
+                            (sub_x - s(14), sub_y - s(16), s(28), s(32)))
+        pygame.draw.ellipse(surface, BRASS,
+                            (sub_x - s(14), sub_y - s(16), s(28), s(32)), 2)
+        pygame.draw.line(surface, BRASS, (sub_x - s(14), sub_y), (sub_x + s(14), sub_y), 1)
+        for rx in (-s(9), 0, s(9)):                        # rivets
+            pygame.draw.circle(surface, BRASS_DARK, (int(sub_x + rx), int(sub_y + s(8))), 1)
+        # warm porthole with a crew silhouette hint
+        pygame.draw.circle(surface, LURE_WARM, (int(sub_x), int(sub_y - s(5))), s(5))
+        pygame.draw.circle(surface, BRASS_DARK, (int(sub_x), int(sub_y - s(5))), s(5), 1)
+        pygame.draw.circle(surface, (120, 90, 40),
+                           (int(sub_x - s(2)), int(sub_y - s(4))), s(2))
+
+        # bubbles from the bell vent and the pipeline leak
+        for b in self.bubbles:
+            pygame.draw.circle(surface, lerp_color(SEA_TOP, (200, 230, 230), 0.5),
+                               (int(b[0]), int(b[1])), b[3], 1)
 
         # kelp (foreground)
         floor_y = self.hud_bot.y - s(8)
