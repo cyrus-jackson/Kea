@@ -10,6 +10,7 @@ from states.greetings_state import GreetingsState
 from states.conservatory_state import ConservatoryState
 from states.orbital_state import OrbitalState
 from states.biolab_state import BiolabState
+from states.abyssal_state import AbyssalState
 from hardware_input import (
     HardwareButtons,
     BUTTON_AMBIENT_EVENT,
@@ -106,6 +107,7 @@ def main():
     manager.add_state('conservatory', ConservatoryState(manager))
     manager.add_state('orbital', OrbitalState(manager))
     manager.add_state('biolab', BiolabState(manager))
+    manager.add_state('abyssal', AbyssalState(manager))
     
     # Start in Ambient State
     manager.change_state('ambient')
@@ -156,6 +158,8 @@ def main():
                     manager.change_state('orbital')
                 elif event.key == pygame.K_5:
                     manager.change_state('biolab')
+                elif event.key == pygame.K_0:
+                    manager.change_state('abyssal')
                 elif event.key == pygame.K_6:
                     manager.change_state('telegraph')
                 elif event.key == pygame.K_7:

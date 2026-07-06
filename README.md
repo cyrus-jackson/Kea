@@ -45,6 +45,7 @@ python3 src/main.py
 - `7` conservatory (solarpunk garden)
 - `8` climate
 - `9` greetings
+- `0` abyssal station (oceanpunk deep sea)
 - `Esc` quits
 
 **Hardware Buttons:**
