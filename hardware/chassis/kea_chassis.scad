@@ -8,7 +8,7 @@
 // measuring your actual Pi+display stack.
 // ============================================================
 
-part = "shell"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
+part = "shell_left"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
                 // | "sled" | "camstand" | "camplate" | "assembly"
                 // RECOMMENDED PRINT: shell_left + shell_right, each lying on
                 // its cut face -> every feature prints as a vertical wall,
@@ -20,6 +20,9 @@ $fn = 48;
 // ---------- Main body ----------
 W        = 110;   // exterior width
 D        = 130;   // exterior depth
+cut_x    = 21.5;  // split-print plane: near the left side, between the
+                  // toggle (ends ~19.2) and the blue button (starts ~23.8),
+                  // clear of the screen opening and camera slot
 wall     = 3;     // wall thickness
 front_h  = 35;    // front panel height
 deck_y   = 48;    // control deck end (depth)
@@ -117,7 +120,7 @@ module dowel_holes() {
             [D-1.5, 8],                // back wall, below the door opening
             [D-1.5, 130],              // back wall, above the door opening
             [(sy+D)/2, H-1.5]])        // top plate
-    translate([W/2-6, p[0], p[1]])
+    translate([cut_x-6, p[0], p[1]])
       rotate([0, 90, 0]) cylinder(d=2.0, h=12);
 }
 
@@ -166,9 +169,9 @@ module bottom_nubs() {
 // Sled back face sits at wall+stack_h+6 (Pi back + 3 mm pads + 3 mm plate).
 module slope_rails() {
   for (s = [0, 1]) {
-    xw = s ? W-10 : 7;                        // web x-start (3 wide)
+    xw = s ? W-10 : 0;                        // web: SOLID from the side wall
     xl = s ? W-16 : 7;                        // lip x-start (9 wide)
-    translate([xw, wall, 0]) cube([3, stack_h + 9.3, slen]);          // web
+    translate([xw, wall, 0]) cube([10, stack_h + 9.3, slen]);         // web
     translate([xl, wall + stack_h + 6.3, 0]) cube([9, 3, slen]);      // lip
     translate([xl, wall + stack_h + 3, slen-5]) cube([9, 3.4, 5]);    // top stop
     // friction pad: 0.45 proud of the lip -> pinches the seated sled
@@ -307,9 +310,9 @@ module camera_plate() {
 // ============================================================
 if (part == "shell")    shell();
 if (part == "shell_left")                       // print lying on the cut face
-  intersection() { shell(); translate([-1, -1, -1]) cube([W/2+1, D+2, H+2]); }
+  intersection() { shell(); translate([-1, -1, -1]) cube([cut_x+1, D+2, H+2]); }
 if (part == "shell_right")
-  intersection() { shell(); translate([W/2, -1, -1]) cube([W/2+1, D+2, H+2]); }
+  intersection() { shell(); translate([cut_x, -1, -1]) cube([W-cut_x+1, D+2, H+2]); }
 if (part == "bottom")   bottom_plate();
 if (part == "door")     door();
 if (part == "sled")     pi_sled();
