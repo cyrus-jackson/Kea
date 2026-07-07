@@ -8,7 +8,12 @@
 // measuring your actual Pi+display stack.
 // ============================================================
 
-part = "shell"; // "shell" | "bottom" | "door" | "sled" | "camstand" | "camplate" | "assembly"
+part = "shell"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
+                // | "sled" | "camstand" | "camplate" | "assembly"
+                // RECOMMENDED PRINT: shell_left + shell_right, each lying on
+                // its cut face -> every feature prints as a vertical wall,
+                // NO supports needed anywhere. Align the halves with short
+                // pieces of 1.75 mm filament in the dowel holes and glue.
 
 $fn = 48;
 
@@ -100,7 +105,20 @@ module shell() {
                                halign="center", valign="center");
     // power inlet slot (side wall)
     power_slot();
+    // alignment dowel holes on the center cut plane (2.0 mm: a short
+    // piece of 1.75 mm filament is the dowel). Harmless in a one-piece
+    // print — they're buried inside the walls.
+    dowel_holes();
   }
+}
+
+module dowel_holes() {
+  for (p = [[1.5, 15],                 // front wall
+            [D-1.5, 8],                // back wall, below the door opening
+            [D-1.5, 130],              // back wall, above the door opening
+            [(sy+D)/2, H-1.5]])        // top plate
+    translate([W/2-6, p[0], p[1]])
+      rotate([0, 90, 0]) cylinder(d=2.0, h=12);
 }
 
 // Oversized slot so the micro-USB plug body passes through the 3 mm wall;
@@ -288,6 +306,10 @@ module camera_plate() {
 // RENDER
 // ============================================================
 if (part == "shell")    shell();
+if (part == "shell_left")                       // print lying on the cut face
+  intersection() { shell(); translate([-1, -1, -1]) cube([W/2+1, D+2, H+2]); }
+if (part == "shell_right")
+  intersection() { shell(); translate([W/2, -1, -1]) cube([W/2+1, D+2, H+2]); }
 if (part == "bottom")   bottom_plate();
 if (part == "door")     door();
 if (part == "sled")     pi_sled();

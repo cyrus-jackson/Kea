@@ -19,14 +19,15 @@ Set `part = "..."` in the file, render (F6), export STL.
 
 PETG recommended (PLA fine indoors). **Before printing the shell**, mate the display on the Pi and measure `stack_h`: panel inner face → back of the Pi PCB with the LCD glass touching the panel (default 26 mm) — it sets the length of the four tray bosses.
 
-## Printing the shell — support map
+## Printing the shell — recommended: two halves, zero supports
 
-Print upright (open bottom on the bed), 110×130 footprint, 158 mm tall. Vertical walls and the 55°-from-horizontal screen panel print clean. These features need support (enable normal/tree supports, "everywhere"):
+Set `part = "shell_left"`, export, then `"shell_right"`. **Lay each half on its flat cut face** in Cura. Because every feature of the cabinet (walls, deck, screen panel, rails, top) runs straight across the width, a half lying on its cut plane prints everything as vertical walls — Cura should show **no red at all**, supports off. Each half is only 55 mm tall and both fit on one bed.
 
-- **Deck underside** and the **top plate** — interior ceilings.
-- **Sled rails** — they hang off the sloped panel at ~35° from horizontal. Supports here scar the sliding channel, so after printing, run the bare sled up and down the rails and sand until it glides *before* loading the Pi. Add a support blocker only if you're confident in your bridging.
+Joining: cut four ~11 mm pieces of 1.75 mm filament, push them into the dowel holes on one cut face (front wall, back wall ×2, top), dry-fit, then glue (superglue for PLA, superglue or epoxy for PETG) and clamp with tape. The seam runs down the middle of the bezel and deck — a swipe of filler or a black marker hides it. The middle button hole spans the seam; run a 12 mm drill or file through after gluing to true it up.
 
-There are **no screw posts or bosses anywhere** — the old floating corner posts and horizontal door bosses (the structures Cura flagged) are gone. The bottom-plate ledge is a 1.8 mm micro-bridge and the friction nubs print from the bed; neither needs support. The screen opening's top edge is a ~51 mm bridge and the door opening's is ~80 mm — fine with decent bridging/cooling; any sag on the door edge hides behind the door flange. Print the **door outer-face down** (flip it in the slicer — lip and ribs point up) and the **camstand base-down** (its pegs point down but are only 3.5 mm; give them a brim or print upside-down if they worry you). All other parts print flat with no supports.
+One-piece upright printing (`part = "shell"`) still works if you prefer: supports needed only under the deck, the top plate, and the sled rails (sand the rail channel smooth after removing them — test-glide the empty sled before loading the Pi).
+
+There are **no screw posts or bosses anywhere**. The bottom-plate ledge is a 1.8 mm micro-bridge and the friction nubs print from the bed; neither needs support in either orientation. Print the **door outer-face down** (lip and ribs up) and the **camstand base-down** (pegs are only 3.5 mm; brim if they worry you). All other parts print flat with no supports.
 
 ## How it goes together
 
