@@ -25,7 +25,11 @@ Set `part = "shell_left"`, export, then `"shell_right"`. **Lay each half on its 
 
 Joining: cut four ~11 mm pieces of 1.75 mm filament, push them into the dowel holes on one cut face (front wall, back wall ×2, top), dry-fit, then glue (superglue for PLA, superglue or epoxy for PETG) and clamp with tape. The cut plane sits 21.5 mm from the left edge — through the blank strip between the toggle and the blue button — so the seam misses the screen opening, every deck hole, and the camera slot; from the front it reads as a subtle edge line, easily hidden with filler or a marker.
 
-One-piece upright printing (`part = "shell"`) still works if you prefer: supports needed only under the deck, the top plate, and the sled rails (sand the rail channel smooth after removing them — test-glide the empty sled before loading the Pi).
+Round holes printed sideways would overhang at their crowns, so with `teardrop = true` (the default) every button/encoder/toggle hole and the camstand sockets get a 45° teardrop point on their print-up side — it prints clean and hides under the mounted part. Set `teardrop = false` if you print upright.
+
+**Case thickness** is one knob: `wall` (default 3 mm) drives every wall, the deck, the screen panel and the top; the ledge, nubs, socket depths and camstand pegs all follow it automatically. Stay within 2.5–4 mm — beyond ~4 the KY-040's threaded bushing gets too short to catch its nut through the deck, and remember to re-measure `stack_h`/`pwr_depth` from the new inner face if you change it.
+
+One-piece upright printing (`part = "shell"`) still works if you prefer: set `teardrop = false`, supports needed only under the deck, the top plate, and the sled rails (sand the rail channel smooth after removing them — test-glide the empty sled before loading the Pi).
 
 There are **no screw posts or bosses anywhere**. The bottom-plate ledge is a 1.8 mm micro-bridge and the friction nubs print from the bed; neither needs support in either orientation. Print the **door outer-face down** (lip and ribs up) and the **camstand base-down** (pegs are only 3.5 mm; brim if they worry you). All other parts print flat with no supports.
 

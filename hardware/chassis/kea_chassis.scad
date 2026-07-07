@@ -8,7 +8,7 @@
 // measuring your actual Pi+display stack.
 // ============================================================
 
-part = "shell_left"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
+part = "shell_right"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
                 // | "sled" | "camstand" | "camplate" | "assembly"
                 // RECOMMENDED PRINT: shell_left + shell_right, each lying on
                 // its cut face -> every feature prints as a vertical wall,
@@ -17,13 +17,35 @@ part = "shell_left"; // "shell" | "shell_left" | "shell_right" | "bottom" | "doo
 
 $fn = 48;
 
+teardrop = true;  // true for the sideways split print: round holes get a
+                  // 45-degree point on the side that faces UP in that
+                  // orientation (+x), so their crowns print without support.
+                  // Set false if you print the shell upright in one piece.
+
+// cylinder that hulls into a 45-degree teardrop point along +/-x.
+// dir must point toward "print up": +1 for holes in the right half,
+// -1 for holes in the left half (it lies on the bed the other way).
+module tear_cyl(d, h, center=false, dir=1) {
+  if (teardrop)
+    hull() {
+      cylinder(d=d, h=h, center=center);
+      translate([dir*d*0.71, 0, 0]) cylinder(d=0.6, h=h, center=center);
+    }
+  else
+    cylinder(d=d, h=h, center=center);
+}
+
 // ---------- Main body ----------
 W        = 110;   // exterior width
 D        = 130;   // exterior depth
 cut_x    = 21.5;  // split-print plane: near the left side, between the
                   // toggle (ends ~19.2) and the blue button (starts ~23.8),
                   // clear of the screen opening and camera slot
-wall     = 3;     // wall thickness
+wall     = 3;     // CASE THICKNESS: one knob for every wall, the deck, the
+                  // screen panel and the top. Everything derives from it
+                  // (ledge, nubs, camstand pegs, socket depths). Keep it
+                  // 2.5-4: above ~4 the KY-040's bushing thread gets too
+                  // short to catch its nut through the deck.
 front_h  = 35;    // front panel height
 deck_y   = 48;    // control deck end (depth)
 deck_z   = 52;    // control deck end (height)
@@ -138,7 +160,7 @@ module power_slot() {
 module camstand_sockets() {
   py = (sy+D)/2;                            // stand center, depth
   for (s = [-1,1]) translate([W/2 + s*10, py, H-wall-1])
-    cylinder(d=5.5, h=wall+2);              // sockets for the stand's pegs
+    tear_cyl(d=5.5, h=wall+2);              // sockets for the stand's pegs
 }
 
 // The bottom plate is fully screwless: it pushes in from below past six
@@ -209,10 +231,10 @@ module pi_sled() {
 module deck_holes() {
   // 3 buttons: blue / red / green (GPIO 21 / 20 / 26)
   for (bx = [30, 55, 80])
-    translate([bx, 32, 0]) cylinder(d=btn_d, h=24, center=true);
+    translate([bx, 32, 0]) tear_cyl(d=btn_d, h=24, center=true);
   // KY-040 rotary encoder (right), mini toggle (left)
-  translate([94, 16, 0]) cylinder(d=enc_d, h=24, center=true);
-  translate([16, 16, 0]) cylinder(d=tog_d, h=24, center=true);
+  translate([94, 16, 0]) tear_cyl(d=enc_d, h=24, center=true);
+  translate([16, 16, 0]) tear_cyl(d=tog_d, h=24, center=true, dir=-1);  // left half
 }
 
 // ============================================================
@@ -272,9 +294,10 @@ module camstand() {
       }
       camstand_cuts();
     }
-    // press-fit pegs (chamfered tips) into the top-plate sockets
-    for (s = [-1, 1]) translate([s*10, 0, -3.4]) {
-      cylinder(d=5.7, h=3.5);
+    // press-fit pegs (chamfered tips) into the top-plate sockets;
+    // length follows the wall parameter automatically
+    for (s = [-1, 1]) translate([s*10, 0, -(wall+0.4)]) {
+      cylinder(d=5.7, h=wall+0.5);
       translate([0, 0, -0.9]) cylinder(d1=4.6, d2=5.7, h=1);
     }
   }
