@@ -77,11 +77,11 @@ module shell() {
         translate([wall,0,0]) rotate([90,0,90])
           linear_extrude(W-2*wall) offset(delta=-wall) polygon(profile);
       }
-      corner_posts();
-      door_bosses();
+      bottom_ledge();
+      bottom_nubs();
       screen_frame() slope_rails();
     }
-    // open bottom (bottom plate screws onto corner posts)
+    // open bottom (bottom plate snaps in between the nubs and the ledge)
     translate([wall, wall, -1]) cube([W-2*wall, D-2*wall, wall+2]);
     // back door opening
     translate([15, D-wall-1, 15]) cube([W-30, wall+2, 100]);
@@ -90,8 +90,8 @@ module shell() {
       cube([scr_vis[0], wall+6, scr_vis[1]], center=true);
     // control deck holes
     deck_frame() deck_holes();
-    // camera stand mounting holes (M3 from inside, up through the top)
-    camstand_holes();
+    // camera stand peg sockets (press-fit, no screws)
+    camstand_sockets();
     // camera ribbon slot
     translate([W/2-12.5, sy+1.5, H-wall-1]) cube([25, 4, wall+2]);
     // marquee label
@@ -100,9 +100,6 @@ module shell() {
                                halign="center", valign="center");
     // power inlet slot (side wall)
     power_slot();
-    // screw pilots
-    corner_post_pilots();
-    door_boss_pilots();
   }
 }
 
@@ -117,28 +114,31 @@ module power_slot() {
                                                           // notch the rail too
 }
 
-module camstand_holes() {
+module camstand_sockets() {
   py = (sy+D)/2;                            // stand center, depth
   for (s = [-1,1]) translate([W/2 + s*10, py, H-wall-1])
-    cylinder(d=3.4, h=wall+2);              // M3 clearance through the top
+    cylinder(d=5.5, h=wall+2);              // sockets for the stand's pegs
 }
 
-module corner_posts() {
-  for (p = [[8,8],[W-8,8],[8,D-8],[W-8,D-8]])
-    translate([p[0], p[1], wall]) cylinder(d=10, h=12);
+// The bottom plate is fully screwless: it pushes in from below past six
+// friction nubs and stops against a perimeter ledge, sitting recessed
+// ~0.8 mm. Nubs print from the bed; the ledge is a tiny 1.8 mm bridge.
+module bottom_ledge() {
+  lt = 1.5;   // ledge thickness
+  lp = 1.8;   // ledge protrusion into the interior
+  translate([wall, wall, wall+0.8]) cube([W-2*wall, lp, lt]);
+  translate([wall, D-wall-lp, wall+0.8]) cube([W-2*wall, lp, lt]);
+  translate([wall, wall, wall+0.8]) cube([lp, D-2*wall, lt]);
+  translate([W-wall-lp, wall, wall+0.8]) cube([lp, D-2*wall, lt]);
 }
-module corner_post_pilots() {
-  for (p = [[8,8],[W-8,8],[8,D-8],[W-8,D-8]])
-    translate([p[0], p[1], wall-1]) cylinder(d=2.6, h=11);
-}
-
-module door_bosses() {
-  for (p = [[17,17],[W-17,17],[17,113],[W-17,113]])
-    translate([p[0], D-13, p[1]]) rotate([-90,0,0]) cylinder(d=8, h=13);
-}
-module door_boss_pilots() {
-  for (p = [[17,17],[W-17,17],[17,113],[W-17,113]])
-    translate([p[0], D-9, p[1]]) rotate([-90,0,0]) cylinder(d=2.6, h=10);
+module bottom_nubs() {
+  np = 0.9;   // protrusion (squeezes the plate edges for friction)
+  for (x = [W*0.3, W*0.7]) {
+    translate([x-3, wall, 0]) cube([6, np, 1.4]);
+    translate([x-3, D-wall-np, 0]) cube([6, np, 1.4]);
+  }
+  translate([wall, D/2-3, 0]) cube([np, 6, 1.4]);
+  translate([W-wall-np, D/2-3, 0]) cube([np, 6, 1.4]);
 }
 
 // Two rails run down the inside of the screen panel; the Pi sled slides
@@ -195,29 +195,37 @@ module deck_holes() {
 }
 
 // ============================================================
-// BOTTOM PLATE (slides in from below, screws into corner posts)
+// BOTTOM PLATE (screwless: pushes in from below past the friction
+// nubs until it stops against the ledge; finger hole to pull it out)
 // ============================================================
 module bottom_plate() {
   difference() {
-    translate([wall+0.3, wall+0.3, 0]) cube([W-2*wall-0.6, D-2*wall-0.6, wall]);
-    for (p = [[8,8],[W-8,8],[8,D-8],[W-8,D-8]]) {
-      translate([p[0], p[1], -1]) cylinder(d=3.4, h=wall+2);
-      translate([p[0], p[1], -0.01]) cylinder(d1=6.5, d2=3.4, h=1.8); // countersink
-    }
+    translate([wall+0.75, wall+0.75, 0])
+      cube([W-2*wall-1.5, D-2*wall-1.5, wall]);
+    translate([W/2, D-30, -1]) cylinder(d=14, h=wall+2);  // finger hole
   }
 }
 
 // ============================================================
-// BACK DOOR (vented, with power-cable hole)
+// BACK DOOR (screwless press-fit: full-size lip with crush ribs
+// wedges into the opening; pull tab at the bottom to pop it out)
 // ============================================================
 module door() {
   difference() {
     union() {
       translate([-46, -56, 0]) cube([92, 112, 2.5]);   // face plate
-      translate([-30, -40, -2]) cube([60, 80, 2.5]);   // registration lip
+      translate([-39.7, -49.7, -2.5]) cube([79.4, 99.4, 2.6]);  // press-fit lip
+      // crush ribs: 0.5 proud, they squash on first insertion
+      for (ry = [-30, 20]) {
+        translate([-40.2, ry, -2.5]) cube([0.5, 10, 2.6]);
+        translate([39.7, ry, -2.5]) cube([0.5, 10, 2.6]);
+      }
+      for (rx = [-25, 15]) {
+        translate([rx, -50.2, -2.5]) cube([10, 0.5, 2.6]);
+        translate([rx, 49.7, -2.5]) cube([10, 0.5, 2.6]);
+      }
+      translate([-10, -66, 0]) cube([20, 10, 2.5]);    // pull tab
     }
-    for (p = [[-38,-48],[38,-48],[-38,48],[38,48]])    // screws into door bosses
-      translate([p[0], p[1], -3]) cylinder(d=3.4, h=8);
     for (i = [-2:2])                                    // vents
       translate([i*12-1.5, -20, -3]) cube([3, 45, 9]);
     // spare cable hole (e.g. aux 5 V for servos later) — power enters
@@ -227,26 +235,36 @@ module door() {
 }
 
 // ============================================================
-// CAMERA STAND (no servos): fixed fork bolted to the top plate;
-// the camera plate hangs between the arms on an M3 bolt + nyloc
-// nut — a manual friction tilt, set the angle once by hand.
+// CAMERA STAND (no servos, no screws): fork with two chamfered
+// pegs that press into the top-plate sockets. The camera plate
+// hangs between the arms on an M3 bolt + nyloc nut — a manual
+// friction tilt, set the angle once by hand.
 // (If you ever add a servo back, only this part changes.)
 // ============================================================
 module camstand() {
-  difference() {
-    union() {
-      translate([-19, -13, 0]) cube([38, 26, 6]);      // base, bolts to top
-      for (s = [-1, 1])                                 // fork arms, 28 mm apart
-        translate([s*16-2, -6, 0]) cube([4, 12, 32]);
+  union() {
+    difference() {
+      union() {
+        translate([-19, -13, 0]) cube([38, 26, 6]);    // base, press-fits to top
+        for (s = [-1, 1])                               // fork arms, 28 mm apart
+          translate([s*16-2, -6, 0]) cube([4, 12, 32]);
+      }
+      camstand_cuts();
     }
-    for (s = [-1, 1])                                   // blind M3 pilots (from below)
-      translate([s*10, 0, -1]) cylinder(d=2.6, h=6);
-    // ribbon pass-through: the base sits over the top-plate slot, so the
-    // same 25 x 4 slot continues through the base (in front of the arms)
-    translate([-12.5, -10.9, -1]) cube([25, 4.1, 8]);
-    // M3 tilt axle through both arms
-    translate([0, 0, 26]) rotate([0, 90, 0]) cylinder(d=3.2, h=50, center=true);
+    // press-fit pegs (chamfered tips) into the top-plate sockets
+    for (s = [-1, 1]) translate([s*10, 0, -3.4]) {
+      cylinder(d=5.7, h=3.5);
+      translate([0, 0, -0.9]) cylinder(d1=4.6, d2=5.7, h=1);
+    }
   }
+}
+
+module camstand_cuts() {
+  // ribbon pass-through: the base sits over the top-plate slot, so the
+  // same 25 x 4 slot continues through the base (in front of the arms)
+  translate([-12.5, -10.9, -1]) cube([25, 4.1, 8]);
+  // M3 tilt axle through both arms
+  translate([0, 0, 26]) rotate([0, 90, 0]) cylinder(d=3.2, h=50, center=true);
 }
 
 module camera_plate() {
