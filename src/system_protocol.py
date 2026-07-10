@@ -368,7 +368,7 @@ class SystemProtocol:
                 del history[: max(1, len(history) // 2)]
                 fresh = [m for m in pool if m not in history] or pool
                 live_fresh = [m for m in live if m not in history]
-            if live_fresh and random.random() < 0.5:
+            if live_fresh and random.random() < 0.65:
                 msg = random.choice(live_fresh)
             else:
                 msg = random.choice(fresh)
