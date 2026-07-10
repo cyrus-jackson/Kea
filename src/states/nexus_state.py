@@ -1,0 +1,365 @@
+"""
+nexus_state.py
+--------------
+NEXUS — the default home state and the brain of Kea.
+
+Integrates everything: big clock + date, the System Protocol greeting,
+live Stuttgart weather, and a rail of the seven worlds as procedural
+icon cards. The new idea is DAY PHASES: Nexus recommends a world for
+the hour you're in (conservatory at sunrise, neon city for deep work,
+weather at lunch, orbital for the afternoon, telegraph at dusk, the lab
+in the evening, the abyss after midnight), shown as a NOW / NEXT
+transit board — with a rain override that promotes WX.SYS when an
+umbrella is coming. Press A (or wire the deck toggle to it) to enable
+AUTO-PILOT: Nexus dispatches you to the recommended world after a short
+dwell, so the display follows your day on its own.
+
+The blue hardware button still cycles states; every world's key is
+printed on its card.
+"""
+
+import pygame
+import math
+import random
+import datetime
+
+from config import SCREEN_WIDTH, SCREEN_HEIGHT
+from states.base_state import State
+from backend.weather_api import fetch_stuttgart_weather
+from system_protocol import SystemProtocol
+from ui.glow_text import GlowText
+
+SCALE = SCREEN_HEIGHT / 480.0
+
+
+def s(v):
+    return max(1, int(v * SCALE))
+
+
+def lerp_color(a, b, t):
+    return tuple(max(0, min(255, int(a[i] + (b[i] - a[i]) * t))) for i in range(3))
+
+
+# ── Palette: neutral dark chassis with every punk's accent ──────────────────
+BG_TOP     = (10, 10, 18)
+BG_BOT     = (16, 12, 22)
+GRID       = (24, 22, 34)
+BRASS      = (150, 118, 56)
+NEON_CYAN  = (0, 225, 245)
+NEON_PINK  = (255, 70, 170)
+AMBER      = (255, 176, 44)
+LEAF       = (110, 190, 90)
+TOXIC      = (120, 230, 100)
+PHOSPHOR   = (92, 240, 150)
+SEAFOAM    = (110, 220, 210)
+TEXT_PALE  = (225, 228, 235)
+TEXT_DIM   = (120, 124, 140)
+CARD_BG    = (18, 18, 28)
+CARD_EDGE  = (52, 52, 72)
+
+# Day phases: (start_hour, state_name, board label)
+PHASES = [
+    (6,  "conservatory", "CONSERVATORY"),
+    (9,  "ambient",      "NEON SPRAWL"),
+    (12, "climate",      "WX.SYS"),
+    (13, "orbital",      "ORBITAL CTRL"),
+    (17, "telegraph",    "TELEGRAPH"),
+    (19, "biolab",       "BIO-VAT LAB"),
+    (22, "abyssal",      "ABYSSAL STN"),
+]
+
+# Card rail: (state, label, key hint, accent)
+WORLDS = [
+    ("ambient",      "SPRAWL",  "1", NEON_PINK),
+    ("orbital",      "ORBITAL", "4", PHOSPHOR),
+    ("biolab",       "BIO-VAT", "5", TOXIC),
+    ("telegraph",    "TELEGRF", "6", BRASS),
+    ("conservatory", "GARDEN",  "7", LEAF),
+    ("climate",      "WX.SYS",  "8", AMBER),
+    ("abyssal",      "ABYSSAL", "0", SEAFOAM),
+]
+
+AUTO_DWELL = 15.0     # seconds on the hub before auto-pilot dispatches
+
+
+def phase_for(hour):
+    """Return (index into PHASES) for a given hour."""
+    idx = len(PHASES) - 1
+    for i, (start, _, _) in enumerate(PHASES):
+        if hour >= start:
+            idx = i
+    if hour < PHASES[0][0]:
+        idx = len(PHASES) - 1          # small hours belong to the abyss
+    return idx
+
+
+class NexusState(State):
+    """Home hub: clock, protocol greeting, weather, world rail, day phases."""
+
+    def __init__(self, state_manager):
+        super().__init__(state_manager)
+        pygame.font.init()
+
+        self.protocol = SystemProtocol()
+
+        try:
+            self.font_clock = pygame.font.SysFont("monospace", s(54), bold=True)
+        except Exception:
+            self.font_clock = pygame.font.Font(None, s(60))
+        self.font_date  = pygame.font.Font(None, s(19))
+        self.font_label = pygame.font.Font(None, s(15))
+        self.font_board = pygame.font.Font(None, s(20))
+        self.font_greet = pygame.font.Font(None, s(20))
+
+        self.greeting = GlowText(self.font_greet, self.protocol.next_message(),
+                                 (255, 200, 120), (255, 120, 20), glow_radius=2,
+                                 max_width=SCREEN_WIDTH - s(30))
+        self.greet_timer = 0.0
+
+        # weather
+        self.weather = None
+        self.weather_timer = 1e9           # force fetch on enter
+        self.time_alive = 0.0
+
+        # auto-pilot
+        self.auto_pilot = False
+        self.dwell = 0.0
+
+        # cached clock
+        self._clock_str = ""
+        self._clock_surf = None
+
+        # layout
+        self.rail_y = int(SCREEN_HEIGHT * 0.47)
+        self.card_w = (SCREEN_WIDTH - s(16) - s(6) * 3) // 4
+        self.card_h = s(64)
+
+        self._bg = self._build_background()
+        self._cards = [self._build_card(w) for w in WORLDS]
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Pre-rendered layers
+    # ══════════════════════════════════════════════════════════════════════
+    def _build_background(self):
+        surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        for y in range(SCREEN_HEIGHT):
+            t = y / max(1, SCREEN_HEIGHT - 1)
+            pygame.draw.line(surf, lerp_color(BG_TOP, BG_BOT, t), (0, y), (SCREEN_WIDTH, y))
+        for gx in range(0, SCREEN_WIDTH, s(24)):        # faint blueprint grid
+            pygame.draw.line(surf, GRID, (gx, 0), (gx, SCREEN_HEIGHT))
+        for gy in range(0, SCREEN_HEIGHT, s(24)):
+            pygame.draw.line(surf, GRID, (0, gy), (SCREEN_WIDTH, gy))
+        # brass corner brackets — a nod to every machine in the collection
+        m, l = s(6), s(16)
+        for cx, cy, dx, dy in [(m, m, 1, 1), (SCREEN_WIDTH - m, m, -1, 1),
+                               (m, SCREEN_HEIGHT - m, 1, -1),
+                               (SCREEN_WIDTH - m, SCREEN_HEIGHT - m, -1, -1)]:
+            pygame.draw.line(surf, BRASS, (cx, cy), (cx + dx * l, cy), 2)
+            pygame.draw.line(surf, BRASS, (cx, cy), (cx, cy + dy * l), 2)
+        # section rules
+        for yy in (int(SCREEN_HEIGHT * 0.44), int(SCREEN_HEIGHT * 0.80)):
+            pygame.draw.line(surf, CARD_EDGE, (s(10), yy), (SCREEN_WIDTH - s(10), yy))
+        title = self.font_label.render("K E A  //  N E X U S", True, TEXT_DIM)
+        surf.blit(title, ((SCREEN_WIDTH - title.get_width()) // 2, s(6)))
+        return surf
+
+    def _build_card(self, world):
+        """A world card with a tiny procedural icon of that punk."""
+        state, label, key, accent = world
+        card = pygame.Surface((self.card_w, self.card_h), pygame.SRCALPHA)
+        pygame.draw.rect(card, CARD_BG, card.get_rect(), border_radius=s(5))
+        pygame.draw.rect(card, CARD_EDGE, card.get_rect(), 1, border_radius=s(5))
+        cx, cy = self.card_w // 2, s(24)
+        dim = lerp_color(accent, CARD_BG, 0.35)
+
+        if state == "ambient":            # three towers + a moon
+            for i, (bx, bh) in enumerate([(-10, 14), (0, 22), (10, 17)]):
+                pygame.draw.rect(card, dim, (cx + s(bx) - s(3), cy + s(14) - s(bh),
+                                             s(6), s(bh)))
+            pygame.draw.circle(card, accent, (cx + s(11), cy - s(9)), s(4))
+        elif state == "orbital":          # scope + sweep
+            pygame.draw.circle(card, dim, (cx, cy), s(13), 1)
+            pygame.draw.circle(card, dim, (cx, cy), s(7), 1)
+            pygame.draw.line(card, accent, (cx, cy),
+                             (cx + s(11), cy - s(7)), 2)
+            pygame.draw.circle(card, accent, (cx - s(5), cy + s(4)), s(1))
+        elif state == "biolab":           # vat + bubbles
+            pygame.draw.rect(card, dim, (cx - s(7), cy - s(11), s(14), s(24)),
+                             1, border_radius=s(4))
+            pygame.draw.circle(card, accent, (cx, cy + s(3)), s(4))
+            for by in (-4, -8):
+                pygame.draw.circle(card, dim, (cx + s(4), cy + s(by)), s(1), 1)
+        elif state == "telegraph":        # gear
+            for k in range(8):
+                a = k * math.tau / 8
+                pygame.draw.line(card, dim,
+                                 (cx + math.cos(a) * s(9), cy + math.sin(a) * s(9)),
+                                 (cx + math.cos(a) * s(13), cy + math.sin(a) * s(13)), 3)
+            pygame.draw.circle(card, accent, (cx, cy), s(9), 2)
+            pygame.draw.circle(card, dim, (cx, cy), s(3))
+        elif state == "conservatory":     # stem + leaves
+            pygame.draw.line(card, accent, (cx, cy + s(13)), (cx - s(2), cy - s(11)), 2)
+            for ly, d in ((2, 1), (-3, -1), (-8, 1)):
+                pygame.draw.circle(card, dim, (cx + d * s(6), cy + s(ly)), s(3))
+        elif state == "climate":          # synthwave sun
+            pygame.draw.circle(card, accent, (cx, cy - s(2)), s(9))
+            for i in range(3):
+                pygame.draw.line(card, CARD_BG, (cx - s(10), cy + s(1) + i * s(3)),
+                                 (cx + s(10), cy + s(1) + i * s(3)), 2)
+            pygame.draw.line(card, dim, (cx - s(13), cy + s(11)),
+                             (cx + s(13), cy + s(11)), 1)
+        elif state == "abyssal":          # waves + fish
+            for wy in (-4, 2):
+                pts = [(cx - s(13) + i * s(4),
+                        cy + s(wy) + (s(2) if i % 2 else 0)) for i in range(8)]
+                pygame.draw.lines(card, dim, False, pts, 1)
+            pygame.draw.polygon(card, accent,
+                                [(cx + s(6), cy + s(9)), (cx - s(2), cy + s(6)),
+                                 (cx - s(2), cy + s(12))])
+
+        lab = self.font_label.render(label, True, TEXT_PALE)
+        card.blit(lab, ((self.card_w - lab.get_width()) // 2, self.card_h - s(24)))
+        keyt = self.font_label.render(f"[{key}]", True, TEXT_DIM)
+        card.blit(keyt, ((self.card_w - keyt.get_width()) // 2, self.card_h - s(13)))
+        return card
+
+    # ══════════════════════════════════════════════════════════════════════
+    # State interface
+    # ══════════════════════════════════════════════════════════════════════
+    def enter(self):
+        self.dwell = 0.0
+        if self.weather_timer > 1800:      # refresh at most every 30 min
+            self.weather_timer = 0.0
+            fetch_stuttgart_weather(self._on_weather)
+
+    def _on_weather(self, data):
+        self.weather = data
+
+    def handle_events(self, events):
+        for event in events:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_a:
+                self.auto_pilot = not self.auto_pilot
+                self.dwell = 0.0
+
+    def _recommended(self, now):
+        """(state_name, label, until_str, next_label) for the current hour."""
+        idx = phase_for(now.hour)
+        nxt = PHASES[(idx + 1) % len(PHASES)]
+        cur = PHASES[idx]
+        # rain override: if an umbrella is coming, weather takes the NOW slot
+        if self.weather and not self.weather.get("error") and \
+           self.weather.get("needs_umbrella") and cur[1] != "climate":
+            return "climate", "WX.SYS  ·  RAIN OVERRIDE", "AFTER RAIN", cur[2]
+        return cur[1], cur[2], f"{nxt[0]:02d}:00", nxt[2]
+
+    def update(self, dt):
+        self.time_alive += dt
+        self.weather_timer += dt
+        self.greet_timer += dt
+        if self.greet_timer >= 90.0:       # fresh protocol line every 90 s
+            self.greet_timer = 0.0
+            self.greeting.update_text(self.protocol.next_message())
+
+        if self.auto_pilot:
+            self.dwell += dt
+            if self.dwell >= AUTO_DWELL:
+                self.dwell = 0.0
+                target = self._recommended(datetime.datetime.now())[0]
+                if self.manager.current_state_name != target:
+                    self.manager.change_state(target)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Draw
+    # ══════════════════════════════════════════════════════════════════════
+    def draw(self, surface):
+        surface.blit(self._bg, (0, 0))
+        now = datetime.datetime.now()
+        t = self.time_alive
+
+        # ── clock + date ─────────────────────────────────────────────────
+        clock_str = now.strftime("%H:%M")
+        if clock_str != self._clock_str:
+            self._clock_str = clock_str
+            self._clock_surf = self.font_clock.render(clock_str, True, TEXT_PALE)
+        surface.blit(self._clock_surf,
+                     ((SCREEN_WIDTH - self._clock_surf.get_width()) // 2, s(26)))
+        # blinking colon seconds hint
+        if now.second % 2 == 0:
+            pygame.draw.circle(surface, NEON_CYAN,
+                               (SCREEN_WIDTH // 2 + self._clock_surf.get_width() // 2 + s(8),
+                                s(26) + self._clock_surf.get_height() // 2), s(2))
+        date_str = now.strftime("%A  ·  %d %B  ·  DAY %j").upper()
+        ds = self.font_date.render(date_str, True, TEXT_DIM)
+        surface.blit(ds, ((SCREEN_WIDTH - ds.get_width()) // 2, s(82)))
+
+        # ── protocol greeting ────────────────────────────────────────────
+        gs = self.greeting.get_surface()
+        surface.blit(gs, ((SCREEN_WIDTH - gs.get_width()) // 2, s(102)))
+
+        # ── weather chip ─────────────────────────────────────────────────
+        wy = s(142)
+        if self.weather is None:
+            wtxt = self.font_board.render("SYNCING WEATHER LINK...", True, TEXT_DIM)
+            surface.blit(wtxt, ((SCREEN_WIDTH - wtxt.get_width()) // 2, wy))
+        elif self.weather.get("error"):
+            wtxt = self.font_board.render("WEATHER LINK ERROR", True, NEON_PINK)
+            surface.blit(wtxt, ((SCREEN_WIDTH - wtxt.get_width()) // 2, wy))
+        else:
+            temp = self.weather.get("temp", "?")
+            rain = self.weather.get("rain_chance", 0)
+            umb = "UMBRELLA" if self.weather.get("needs_umbrella") else "DRY RUN"
+            col = AMBER if not self.weather.get("needs_umbrella") else NEON_CYAN
+            wtxt = self.font_board.render(
+                f"STUTTGART  {temp}°C   RAIN {rain}%   {umb}", True, col)
+            surface.blit(wtxt, ((SCREEN_WIDTH - wtxt.get_width()) // 2, wy))
+            # rain probability bar
+            bar_w = int(SCREEN_WIDTH * 0.6)
+            bx = (SCREEN_WIDTH - bar_w) // 2
+            pygame.draw.rect(surface, CARD_EDGE, (bx, wy + s(22), bar_w, s(4)), 1)
+            fill = int(bar_w * min(100, rain) / 100)
+            if fill > 2:
+                pygame.draw.rect(surface, col, (bx + 1, wy + s(23), fill - 2, s(4) - 2))
+
+        # ── world rail (4 + 3 cards) ─────────────────────────────────────
+        rec_state = self._recommended(now)[0]
+        gap = s(6)
+        for i, (world, card) in enumerate(zip(WORLDS, self._cards)):
+            row, col = divmod(i, 4)
+            row_n = 4 if row == 0 else 3
+            x0 = (SCREEN_WIDTH - row_n * self.card_w - (row_n - 1) * gap) // 2
+            x = x0 + col * (self.card_w + gap)
+            y = self.rail_y + row * (self.card_h + s(8))
+            surface.blit(card, (x, y))
+            if world[0] == rec_state:      # pulse ring on the recommended world
+                pulse = 0.5 + 0.5 * math.sin(t * 3.0)
+                pygame.draw.rect(surface, lerp_color(CARD_EDGE, world[3], pulse),
+                                 (x - 1, y - 1, self.card_w + 2, self.card_h + 2),
+                                 2, border_radius=s(6))
+
+        # ── NOW / NEXT transit board ─────────────────────────────────────
+        by = int(SCREEN_HEIGHT * 0.82)
+        _, now_label, until, next_label = self._recommended(now)
+        n1 = self.font_board.render(f"NOW   {now_label}", True, TEXT_PALE)
+        n2 = self.font_board.render(f"NEXT  {next_label}  ·  {until}", True, TEXT_DIM)
+        surface.blit(n1, (s(14), by))
+        surface.blit(n2, (s(14), by + s(20)))
+
+        # auto-pilot status + dispatch countdown
+        if self.auto_pilot:
+            remain = max(0, int(AUTO_DWELL - self.dwell) + 1)
+            ap = self.font_board.render(f"AUTO {remain:02d}s", True, PHOSPHOR)
+        else:
+            ap = self.font_board.render("AUTO OFF · [A]", True, TEXT_DIM)
+        surface.blit(ap, (SCREEN_WIDTH - ap.get_width() - s(14), by))
+        hint = self.font_label.render("BLUE BTN CYCLES WORLDS", True, TEXT_DIM)
+        surface.blit(hint, ((SCREEN_WIDTH - hint.get_width()) // 2, by + s(40)))
+
+    def draw_pomodoro(self, surface, time_left, mode):
+        mins, secs = int(time_left) // 60, int(time_left) % 60
+        c = NEON_PINK if mode == "work" else PHOSPHOR
+        txt = self.font_board.render(f"{mins:02d}:{secs:02d}", True, c)
+        rect = txt.get_rect(topright=(SCREEN_WIDTH - s(12), s(24)))
+        box = rect.inflate(s(10), s(6))
+        pygame.draw.rect(surface, CARD_BG, box, border_radius=s(4))
+        pygame.draw.rect(surface, c, box, 1, border_radius=s(4))
+        surface.blit(txt, rect)

@@ -33,7 +33,10 @@ python3 src/main.py
 
 ## Controls
 
+The app boots into **NEXUS**, the home hub: clock, System Protocol greeting, live weather, and all worlds as cards. It recommends a world for the current **day phase** (garden at sunrise → city for work → weather at lunch → orbital afternoons → telegraph at dusk → lab evenings → abyss at night, with a rain override). Press `A` on the hub to enable **auto-pilot**: Nexus dispatches to the recommended world automatically.
+
 **Keyboard:**
+- `H` nexus (home hub)
 - `1` ambient
 - `2` pomodoro
 - `3` notification
