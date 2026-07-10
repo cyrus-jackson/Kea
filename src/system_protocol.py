@@ -10,6 +10,8 @@ import json
 import os
 import random
 import threading
+import time
+import urllib.request
 from datetime import datetime
 
 USER_NAME = os.getenv("KEA_USER", "CYRUS")
@@ -138,6 +140,171 @@ def _bucket(hour):
     return "night"
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# LIVE DATA FEEDS — free, no-auth realtime APIs rendered in the punk voices.
+# Everything is async, cached and fail-silent: no network, no problem —
+# the local pool always carries the show. Disable with KEA_FEEDS=0.
+# ═══════════════════════════════════════════════════════════════════════════
+FEEDS_ENABLED = os.getenv("KEA_FEEDS", "1").strip().lower() not in {"0", "false", "off"}
+LAT, LON = 48.7428, 9.1015          # Stuttgart (same as weather_api)
+
+
+def _get_json(url, timeout=6):
+    req = urllib.request.Request(url, headers={"User-Agent": "KeaDisplay/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode())
+
+
+def _clip(text, n=88):
+    text = " ".join(str(text).split())
+    return (text[: n - 1].rstrip() + "…") if len(text) > n else text
+
+
+class _Feed:
+    """Background-refreshed cached value. get() never blocks."""
+
+    def __init__(self, ttl, fetcher):
+        self.ttl = ttl
+        self.fetcher = fetcher
+        self.value = None
+        self.stamp = 0.0
+        self._busy = False
+
+    def get(self):
+        if not FEEDS_ENABLED:
+            return None
+        if (time.time() - self.stamp > self.ttl) and not self._busy:
+            self._busy = True
+            threading.Thread(target=self._refresh, daemon=True).start()
+        return self.value
+
+    def _refresh(self):
+        try:
+            v = self.fetcher()
+            if v is not None:
+                self.value = v
+                self.stamp = time.time()
+            else:
+                self.stamp = time.time() - self.ttl + 300
+        except Exception:
+            self.stamp = time.time() - self.ttl + 300   # retry in ~5 min
+        finally:
+            self._busy = False
+
+
+def _fetch_iss():
+    d = _get_json("http://api.open-notify.org/iss-now.json")
+    p = d.get("iss_position", {})
+    return {"lat": float(p["latitude"]), "lon": float(p["longitude"])}
+
+
+def _fetch_astros():
+    d = _get_json("http://api.open-notify.org/astros.json")
+    return {"n": int(d.get("number", 0))}
+
+
+def _fetch_onthisday():
+    now = datetime.now()
+    d = _get_json("https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/"
+                  f"{now.month}/{now.day}")
+    events = [(e.get("year"), e.get("text", "")) for e in d.get("events", [])
+              if e.get("text")]
+    return {"events": random.sample(events, min(6, len(events)))} if events else None
+
+
+def _fetch_wire():
+    ids = _get_json("https://hacker-news.firebaseio.com/v0/topstories.json")[:8]
+    item = _get_json(f"https://hacker-news.firebaseio.com/v0/item/{random.choice(ids)}.json")
+    title = item.get("title")
+    return {"title": title} if title else None
+
+
+def _fetch_wx():
+    d = _get_json("https://api.open-meteo.com/v1/forecast?"
+                  f"latitude={LAT}&longitude={LON}&current_weather=true"
+                  "&daily=sunrise,sunset&timezone=Europe%2FBerlin&forecast_days=1")
+    cur = d.get("current_weather", {})
+    daily = d.get("daily", {})
+    return {
+        "temp": cur.get("temperature"),
+        "wind": cur.get("windspeed", 0),
+        "sunrise": (daily.get("sunrise") or ["T??:??"])[0][-5:],
+        "sunset": (daily.get("sunset") or ["T??:??"])[0][-5:],
+    }
+
+
+_FEEDS = {
+    "iss": _Feed(600, _fetch_iss),
+    "astros": _Feed(6 * 3600, _fetch_astros),
+    "history": _Feed(12 * 3600, _fetch_onthisday),
+    "wire": _Feed(1800, _fetch_wire),
+    "wx": _Feed(1800, _fetch_wx),
+}
+
+
+def _region(lat, lon):
+    """Very coarse 'where is that over' lookup — flavor, not navigation."""
+    if lat < -60:
+        return "THE SOUTHERN OCEAN"
+    if -170 <= lon <= -100:
+        return "THE PACIFIC"
+    if -100 < lon <= -30:
+        return "THE AMERICAS"
+    if -30 < lon <= 20:
+        return "EUROPE" if lat > 35 else ("AFRICA" if lat > -5 else "THE SOUTH ATLANTIC")
+    if 20 < lon <= 60:
+        return "THE STEPPES" if lat > 30 else "THE INDIAN OCEAN"
+    if 60 < lon <= 150:
+        return "ASIA" if lat > 20 else "THE INDIAN OCEAN"
+    return "THE PACIFIC"
+
+
+def _moon_phase():
+    """Local computation — works offline."""
+    days = (datetime.now() - datetime(2000, 1, 6, 18, 14)).total_seconds() / 86400.0
+    frac = (days % 29.530588) / 29.530588
+    names = ["NEW", "WAXING CRESCENT", "FIRST QUARTER", "WAXING GIBBOUS",
+             "FULL", "WANING GIBBOUS", "LAST QUARTER", "WANING CRESCENT"]
+    return names[int((frac * 8 + 0.5) % 8)]
+
+
+def _live_candidates(name):
+    """Render every fresh feed into themed message candidates."""
+    out = []
+    iss = _FEEDS["iss"].get()
+    astros = _FEEDS["astros"].get()
+    if iss:
+        region = _region(iss["lat"], iss["lon"])
+        out += [f"STATION PASS: {region}. LOOK UP, {name}.",
+                f"THE GREAT AIRSHIP RIDES OVER {region} TONIGHT."]
+        if astros and astros["n"]:
+            out += [f"{astros['n']} SOULS IN ORBIT OVER {region} RIGHT NOW.",
+                    f"THE SKY HAS {astros['n']} TENANTS, {name}."]
+    hist = _FEEDS["history"].get()
+    if hist and hist.get("events"):
+        year, text = random.choice(hist["events"])
+        out += [f"MEMORY BANKS // {year}: {_clip(text, 70).upper()}",
+                f"ARCHIVE, {year}: {_clip(text, 74).upper()}"]
+    wire = _FEEDS["wire"].get()
+    if wire:
+        out += [f"THE WIRE // {_clip(wire['title'], 72).upper()}",
+                f"TELEGRAPH INTERCEPT // {_clip(wire['title'], 62).upper()}"]
+    wx = _FEEDS["wx"].get()
+    if wx and wx.get("temp") is not None:
+        t = round(wx["temp"])
+        out += [f"{t}°C ON THE STREETS OF THE SPRAWL.",
+                f"BAROMETER READS {t} DEGREES. STOKE ACCORDINGLY."]
+        if wx.get("wind", 0) >= 25:
+            out.append(f"WIND {round(wx['wind'])} KM/H — MIND YOUR GOGGLES, {name}.")
+        hour = datetime.now().hour
+        if hour < 12:
+            out.append(f"SUNRISE WAS {wx['sunrise']}. FIRST LIGHT ON THE BRASS.")
+        else:
+            out.append(f"SUNSET AT {wx['sunset']}. NEON AFTER THAT, {name}.")
+    out.append(f"{_moon_phase()} MOON TONIGHT, {name}.")
+    return out
+
+
 class SystemProtocol:
     """Fresh, themed, personal status messages. Thread-safe singleton pool."""
 
@@ -186,16 +353,25 @@ class SystemProtocol:
 
     # -- public API ------------------------------------------------------------
     def next_message(self, now=None):
-        """A random themed message not shown recently."""
+        """A random themed message not shown recently. Roughly half the
+        time (when feeds are warm) it carries live data — ISS position,
+        today-in-history, the wire, weather, moon phase — spoken in the
+        same voices as the local pool."""
+        live = _live_candidates(self.name)
         with SystemProtocol._lock:
             history = self._load_history()
             pool = self._pool(now)
             fresh = [m for m in pool if m not in history]
+            live_fresh = [m for m in live if m not in history]
             if not fresh:
                 # pool exhausted for this bucket — forget the oldest half
                 del history[: max(1, len(history) // 2)]
                 fresh = [m for m in pool if m not in history] or pool
-            msg = random.choice(fresh)
+                live_fresh = [m for m in live if m not in history]
+            if live_fresh and random.random() < 0.5:
+                msg = random.choice(live_fresh)
+            else:
+                msg = random.choice(fresh)
             history.append(msg)
             # keep history bounded relative to what exists
             cap = max(60, int(len(pool) * 4))
