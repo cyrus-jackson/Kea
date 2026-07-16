@@ -49,6 +49,7 @@ The app boots into **NEXUS**, the home hub: clock, System Protocol greeting, liv
 - `8` climate
 - `9` greetings
 - `0` abyssal station (oceanpunk deep sea)
+- `D` aerodrome (dieselpunk airfield — dispatches fly by as towed banners)
 - `Esc` quits
 
 **Hardware Buttons:**

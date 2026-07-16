@@ -12,6 +12,7 @@ from states.orbital_state import OrbitalState
 from states.biolab_state import BiolabState
 from states.abyssal_state import AbyssalState
 from states.nexus_state import NexusState
+from states.aerodrome_state import AerodromeState
 from hardware_input import (
     HardwareButtons,
     BUTTON_AMBIENT_EVENT,
@@ -110,6 +111,7 @@ def main():
     manager.add_state('biolab', BiolabState(manager))
     manager.add_state('abyssal', AbyssalState(manager))
     manager.add_state('nexus', NexusState(manager))
+    manager.add_state('aerodrome', AerodromeState(manager))
     
     # Boot into the Nexus home hub
     manager.change_state('nexus')
@@ -164,6 +166,8 @@ def main():
                     manager.change_state('abyssal')
                 elif event.key == pygame.K_h:
                     manager.change_state('nexus')
+                elif event.key == pygame.K_d:
+                    manager.change_state('aerodrome')
                 elif event.key == pygame.K_6:
                     manager.change_state('telegraph')
                 elif event.key == pygame.K_7:
