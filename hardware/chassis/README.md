@@ -15,29 +15,29 @@ Set `part = "..."` in the file, render (F6), export STL.
 | `door` | Vented back door with cable hole | Face down |
 | `camstand` | Fixed camera fork, bolts to the top plate | Base down |
 | `camplate` | Camera plate with hinge tabs (M3 friction tilt) | Flat |
-| `sled` | Pi sled — slides into rails behind the screen, locks with 1 screw | Flat, pads up |
+| `wedge` | Gravity wedge — clamps the Pi+display stack into the cradle | On its flat face |
 
-PETG recommended (PLA fine indoors). **Before printing the shell**, mate the display on the Pi and measure `stack_h`: panel inner face → back of the Pi PCB with the LCD glass touching the panel (default 26 mm) — it sets the length of the four tray bosses.
+PETG recommended (PLA fine indoors). **Nothing to measure anymore**: the stack cradle's shelf and the self-adjusting wedge accommodate any Pi+display thickness from ~20 to ~30 mm.
 
 ## Printing the shell — recommended: two halves, zero supports
 
-Set `part = "shell_left"`, export, then `"shell_right"`. **Lay each half on its flat cut face** in Cura. Because every feature of the cabinet (walls, deck, screen panel, rails, top) runs straight across the width, a half lying on its cut plane prints everything as vertical walls — Cura should show **no red at all**, supports off. Each half is only 55 mm tall and both fit on one bed.
+Set `part = "shell_left"`, export, then `"shell_right"`. **Lay each half on its flat cut face** in Cura. Because every feature of the cabinet (walls, deck, screen panel, cradle shelf and guides, top) runs straight across the width, a half lying on its cut plane prints everything as vertical walls — Cura should show **no red at all**, supports off. Each half is only 55 mm tall and both fit on one bed.
 
 Joining: cut four ~11 mm pieces of 1.75 mm filament, push them into the dowel holes on one cut face (front wall, back wall ×2, top), dry-fit, then glue (superglue for PLA, superglue or epoxy for PETG) and clamp with tape. The cut plane sits 21.5 mm from the left edge — through the blank strip between the toggle and the blue button — so the seam misses the screen opening, every deck hole, and the camera slot; from the front it reads as a subtle edge line, easily hidden with filler or a marker.
 
 Round holes printed sideways would overhang at their crowns, so with `teardrop = true` (the default) every button/encoder/toggle hole and the camstand sockets get a 45° teardrop point on their print-up side — it prints clean and hides under the mounted part. Set `teardrop = false` if you print upright.
 
-**Case thickness** is one knob: `wall` (default 3 mm) drives every wall, the deck, the screen panel and the top; the ledge, nubs, socket depths and camstand pegs all follow it automatically. Stay within 2.5–4 mm — beyond ~4 the KY-040's threaded bushing gets too short to catch its nut through the deck, and remember to re-measure `stack_h`/`pwr_depth` from the new inner face if you change it.
+**Case thickness** is one knob: `wall` (default 3 mm) drives every wall, the deck, the screen panel and the top; the ledge, nubs, socket depths and camstand pegs all follow it automatically. Stay within 2.5–4 mm — beyond ~4 the KY-040's threaded bushing gets too short to catch its nut through the deck, and remember to re-check `pwr_depth` from the new inner face if you change it.
 
-One-piece upright printing (`part = "shell"`) still works if you prefer: set `teardrop = false`, supports needed only under the deck, the top plate, and the sled rails (sand the rail channel smooth after removing them — test-glide the empty sled before loading the Pi).
+One-piece upright printing (`part = "shell"`) still works if you prefer: set `teardrop = false`, supports needed only under the deck, the top plate, and the cradle shelf/flanges.
 
 There are **no screw posts or bosses anywhere**. The bottom-plate ledge is a 1.8 mm micro-bridge and the friction nubs print from the bed; neither needs support in either orientation. Print the **door outer-face down** (lip and ribs up) and the **camstand base-down** (pegs are only 3.5 mm; brim if they worry you). All other parts print flat with no supports.
 
 ## How it goes together
 
-1. **Display/Pi — fully screwless**: drop the Pi into the sled's pocket (locating walls, open where connectors overhang the PCB), mate the display on the GPIO socket, then slide the sled into the two rails from the bottom of the slope until it hits the top stops. The rails are solid blocks rooted in the side walls (no floating brackets), so they print cleanly and won't flex. Friction pads on the rail lips pinch it in place over the last ~10 mm — no lock screw. Once seated, the panel↔sled sandwich holds the whole stack captive: the Pi can't leave the pocket without sliding the sled back out. If the glass is a hair loose against the panel, a strip of foam behind the Pi takes up the slack; if the sled slides too easily, a layer of tape on its edge tightens the pinch. Everything mounts **rotated 90° (portrait)**, GPIO-socket edge vertical; the power jack faces the left wall near the top of the slope, where the wall slot, rail, and sled are all notched for the plug (step 6).
+1. **Display/Pi — the cradle**: mate the display on the Pi's GPIO socket, then through the back door, lean the stack against the screen panel *glass-first* — like standing a picture in a frame. Its bottom edge sits on the **shelf** (a full-width ledge just below the cutout), the two **side guides** center it, and gravity holds it against the panel. Then take the **wedge** part, drop it thin-end-first into the gap between the Pi's back and the cradle's flanges, and nudge it down the slope until snug — it self-adjusts to any stack thickness, so there is nothing to measure and no screws. To remove: pull the wedge up by its tab and lift the stack out. Everything mounts **rotated 90° (portrait)**, GPIO-socket edge vertical; the power jack faces the left wall near the top of the slope (step 6), above where the guides end.
 2. **Controls**: push the 12 mm buttons into the deck holes (blue 30 mm, red 55 mm, green 80 mm from left) and hot-glue from behind, or solder them to a perfboard strip glued under the deck. KY-040 panel-mounts with its own nut (right hole), toggle with its nut (left hole).
-3. **Breadboard**: peel-and-stick to the bottom plate; all button/encoder/servo wiring lands here.
+3. **Breadboard**: the bottom plate now has a **corral fence** sized for the 400-point board (84×56 pocket, open toward the back door for jumpers) — drop it in and it can't wander; peel the adhesive back too if you want it permanent. All button/encoder wiring lands here.
 4. **Camera stand**: press the fork's two chamfered pegs into the top-plate sockets (drop of glue if ever loose). Screw the camera to the plate (M2), hang the plate between the fork arms on an M3×35 bolt with a nyloc nut — tighten until the tilt holds under friction, aim it at your face once, done. (Both SG90s stay in the drawer; if you ever want motion, only the stand part needs redesigning — the shell doesn't change.)
 5. **Ribbon routing**: the camera's ribbon connector is on the *back* of its PCB at the bottom — the plate has a notch there. Fold the ribbon down through the notch, through the matching slot in the stand base and top plate, then down the hollow marquee to the Pi's CSI port. Insert the ribbon into the camera *before* screwing it to the plate.
 6. **Charger**: the stock PSU cable plugs **straight into the Pi through a slot in the side wall** — no adapters or extensions. Dry-fit the Pi+display stack first and set `pwr_side` / `pwr_depth` / `pwr_z` in the `.scad` so the slot lands on the jack (it's oversized ~21×18 mm for tolerance). Orient the display so the Pi's power edge sits on your preferred side, jack toward the bottom.
@@ -61,7 +61,7 @@ The ELEGOO 3.5" occupies header pins 1–26. Pins 27–40 stay exposed — that'
 
 ## Verified dimensions (Pi 3B+ + ELEGOO 3.5", portrait)
 
-Pi 3B+ is identical in outline and port placement to the 3B (85×56 mm), and the ELEGOO 3.5" module covers that footprint fully. Active area **48.96 wide × 73.44 tall** in portrait → the 51×75 cutout gives ~1 mm reveal per side. The rails sit at the panel edges, clearing the 56 mm-wide stack by ~17 mm per side, and both rails and sled are notched around the power slot so nothing crosses the plug's path.
+Pi 3B+ is identical in outline and port placement to the 3B (85×56 mm), and the ELEGOO 3.5" module covers that footprint fully. Active area **48.96 wide × 73.44 tall** in portrait → the 51×75 cutout gives ~1 mm reveal per side. The cradle guides sit 0.5 mm outside the 56 mm stack width, the shelf carries its bottom edge, and the guides stop below the power slot so nothing crosses the plug's path.
 
 ## Display orientation
 

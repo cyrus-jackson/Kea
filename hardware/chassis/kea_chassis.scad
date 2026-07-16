@@ -8,8 +8,8 @@
 // measuring your actual Pi+display stack.
 // ============================================================
 
-part = "shell_right"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
-                // | "sled" | "camstand" | "camplate" | "assembly"
+part = "camstand"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
+                // | "wedge" | "camstand" | "camplate" | "assembly"
                 // RECOMMENDED PRINT: shell_left + shell_right, each lying on
                 // its cut face -> every feature prints as a vertical wall,
                 // NO supports needed anywhere. Align the halves with short
@@ -62,12 +62,8 @@ deck_len = sqrt(deck_y*deck_y + (deck_z-front_h)*(deck_z-front_h)); // ~50.9
 // ---------- CALIBRATE: measure your hardware ----------
 scr_vis   = [51, 75];    // PORTRAIT screen cutout (active area 48.96 x 73.44 + margin)
 disp_pcb  = [56, 85.5];  // display module = full Pi 3B+ footprint, portrait
-stack_h   = 27;          // panel inner face -> BACK of the Pi PCB with the
-                         // display MATED on the GPIO socket and the LCD glass
-                         // touching the panel. Sets the rail depth.
-                         // NOTE: 10 is likely too small — the mated stack is
-                         // usually ~24-27 (glass + display PCB + socket + Pi).
-                         // Measure the assembled sandwich, not just the Pi.
+// (stack thickness no longer matters: the cradle's shelf carries the
+//  stack and the WEDGE part self-adjusts to any thickness 20-30 mm)
 // Power inlet: slot in the side wall aligned with the Pi's micro-USB jack
 // (stock PSU plugs in directly — no adapters). Dry-fit the Pi+display stack
 // and measure these before printing:
@@ -109,7 +105,7 @@ module shell() {
       }
       bottom_ledge();
       bottom_nubs();
-      screen_frame() slope_rails();
+      screen_frame() stack_cradle();
     }
     // open bottom (bottom plate snaps in between the nubs and the ledge)
     translate([wall, wall, -1]) cube([W-2*wall, D-2*wall, wall+2]);
@@ -175,7 +171,7 @@ module bottom_ledge() {
   translate([W-wall-lp, wall, wall+0.8]) cube([lp, D-2*wall, lt]);
 }
 module bottom_nubs() {
-  np = 0.9;   // protrusion (squeezes the plate edges for friction)
+  np = 1.15;  // protrusion (squeezes the plate edges for friction)
   for (x = [W*0.3, W*0.7]) {
     translate([x-3, wall, 0]) cube([6, np, 1.4]);
     translate([x-3, D-wall-np, 0]) cube([6, np, 1.4]);
@@ -184,48 +180,38 @@ module bottom_nubs() {
   translate([W-wall-np, D/2-3, 0]) cube([np, 6, 1.4]);
 }
 
-// Two rails run down the inside of the screen panel; the Pi sled slides
-// in from the bottom of the slope like a drawer, edges captured under the
-// rail lips. NO screws: friction pads on the lips pinch the sled over the
-// last ~10 mm of travel, and the top stops set its final position.
-// Sled back face sits at wall+stack_h+6 (Pi back + 3 mm pads + 3 mm plate).
-module slope_rails() {
-  for (s = [0, 1]) {
-    xw = s ? W-10 : 0;                        // web: SOLID from the side wall
-    xl = s ? W-16 : 7;                        // lip x-start (9 wide)
-    translate([xw, wall, 0]) cube([10, stack_h + 9.3, slen]);         // web
-    translate([xl, wall + stack_h + 6.3, 0]) cube([9, 3, slen]);      // lip
-    translate([xl, wall + stack_h + 3, slen-5]) cube([9, 3.4, 5]);    // top stop
-    // friction pad: 0.45 proud of the lip -> pinches the seated sled
-    translate([xl+1.5, wall + stack_h + 5.85, 55]) cube([6, 0.6, 10]);
-  }
+// ============================================================
+// STACK CRADLE — the fix for "the Pi has nowhere to sit".
+// The display+Pi stack leans against the screen panel like a
+// picture in a frame: its bottom edge RESTS on a solid shelf,
+// two side guides center it, and the printed WEDGE part slides
+// down the slope behind the Pi until it jams snug against the
+// back flanges. Gravity keeps it tight. Works for ANY stack
+// thickness from ~20 to ~30 mm — nothing to measure.
+// ============================================================
+module stack_cradle() {
+  // shelf under the stack's bottom edge (rooted in both side walls)
+  translate([wall, wall, 2.5]) cube([W - 2*wall, 30, 4]);
+  // side guides: vertical ribs just outside the 56 mm stack width
+  for (gx = [23.5, 83.5])
+    translate([gx, wall, 4]) cube([3, 30, 71]);
+  // back flanges: the fixed plane the wedge bears against
+  // (gap in the middle keeps the CSI ribbon path clear)
+  translate([23.5, wall + 29, 8]) cube([21.5, 3, 67]);
+  translate([65, wall + 29, 8]) cube([21.5, 3, 67]);
 }
 
 // ============================================================
-// PI SLED: 89 x 100 plate with a screwless pocket. The Pi 3B+
-// drops between the locating walls onto the 4 pads, display mated
-// on top; once the sled is in the rails the panel sandwiches the
-// stack — nothing else needed. Walls are open where connectors
-// overhang the PCB (power/HDMI edge, USB/Eth + SD short edges).
-// Print flat, pads up. Central opening = airflow + CSI access.
+// WEDGE: drop it thin-end-first between the Pi's back and the
+// cradle flanges, nudge it down the slope until snug. Covers a
+// 2-9.5 mm gap, so any Pi+display stack clamps tight. Pull it
+// up to release the stack. Print lying on its flat face.
 // ============================================================
-module pi_sled() {
-  difference() {
-    union() {
-      cube([89, 100, 3]);
-      for (x = [-1,1], y = [-1,1])            // 3 mm rest pads (no pilots)
-        translate([44.5 + x*24.5, 55 + y*29, 3]) cylinder(d=6, h=3);
-      // pocket walls, 7 mm tall (capture the Pi PCB sitting on the pads)
-      translate([72.8, 12, 3]) cube([2, 86, 7]);       // GPIO edge: full wall
-      translate([14.2, 12, 3]) cube([2, 8, 7]);        // power edge: end stubs
-      translate([14.2, 90, 3]) cube([2, 8, 7]);        //   (ports stay clear)
-      for (sx = [14.2, 63], sy = [10, 98])             // short-edge segments,
-        translate([sx, sy, 3]) cube([11.8, 2, 7]);     //   center open (USB/SD)
-    }
-    translate([24.5, 33, -1]) cube([40, 44, 9]);       // airflow / access
-    // notch for the power plug body (aligned with wall slot + rail notch)
-    translate([pwr_side > 0 ? 73 : -1, pwr_z - 6, -1]) cube([17, 22, 12]);
-  }
+module wedge() {
+  rotate([90, 0, 90]) linear_extrude(58)
+    polygon([[0, 0], [1.5, 0], [9.5, 62], [0, 62]]);
+  // grip tab on the thick end
+  translate([0, 0, 56]) cube([58, 11, 6]);
 }
 
 module deck_holes() {
@@ -239,12 +225,27 @@ module deck_holes() {
 
 // ============================================================
 // BOTTOM PLATE (screwless: pushes in from below past the friction
-// nubs until it stops against the ledge; finger hole to pull it out)
+// nubs until it stops against the ledge; finger hole to pull it out).
+// Now with a breadboard corral: a low fence sized for the 400-point
+// half breadboard (83 x 55) so it sits captive on the floor — use its
+// adhesive back too if you want it permanent. Open on the back side
+// for the jumper wires.
 // ============================================================
 module bottom_plate() {
+  bb_w = 84; bb_d = 56;                       // breadboard + play
+  bx = (W - bb_w) / 2;
+  by = wall + 6;                              // toward the front wall
   difference() {
-    translate([wall+0.75, wall+0.75, 0])
-      cube([W-2*wall-1.5, D-2*wall-1.5, wall]);
+    union() {
+      translate([wall+0.75, wall+0.75, 0])
+        cube([W-2*wall-1.5, D-2*wall-1.5, wall]);
+      // corral fence, 3.5 mm tall, 2 mm thick — open on the back edge
+      translate([bx-2, by-2, wall]) cube([bb_w+4, 2, 3.5]);         // front
+      translate([bx-2, by, wall]) cube([2, bb_d-8, 3.5]);           // left
+      translate([bx+bb_w, by, wall]) cube([2, bb_d-8, 3.5]);        // right
+      for (cx = [bx-2, bx+bb_w])                                    // back corners
+        translate([cx, by+bb_d-2, wall]) cube([2, 2, 3.5]);
+    }
     translate([W/2, D-30, -1]) cylinder(d=14, h=wall+2);  // finger hole
   }
 }
@@ -338,7 +339,7 @@ if (part == "shell_right")
   intersection() { shell(); translate([cut_x, -1, -1]) cube([W-cut_x+1, D+2, H+2]); }
 if (part == "bottom")   bottom_plate();
 if (part == "door")     door();
-if (part == "sled")     pi_sled();
+if (part == "wedge")    wedge();
 if (part == "camstand") camstand();
 if (part == "camplate") camera_plate();
 if (part == "assembly") {
@@ -346,7 +347,6 @@ if (part == "assembly") {
   color("gray") bottom_plate();
   color("dimgray") translate([W/2, D+0.5, 65]) rotate([-90,0,0]) door();
   color("orange") translate([W/2, (sy+D)/2, H]) camstand();
-  color("tomato") screen_frame() translate([10.5, wall+stack_h+6, -5])
-    rotate([90,0,0]) pi_sled();
+  color("tomato") screen_frame() translate([26, wall+19.5, 6]) wedge();
   color("orange") translate([W/2, (sy+D)/2-9.5, H+20]) rotate([90,0,0]) camera_plate();
 }
