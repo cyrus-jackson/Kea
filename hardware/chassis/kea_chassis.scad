@@ -8,7 +8,7 @@
 // measuring your actual Pi+display stack.
 // ============================================================
 
-part = "camstand"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
+part = "assembly"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
                 // | "wedge" | "camstand" | "camplate" | "assembly"
                 // RECOMMENDED PRINT: shell_left + shell_right, each lying on
                 // its cut face -> every feature prints as a vertical wall,
@@ -109,8 +109,9 @@ module shell() {
     }
     // open bottom (bottom plate snaps in between the nubs and the ledge)
     translate([wall, wall, -1]) cube([W-2*wall, D-2*wall, wall+2]);
-    // back door opening
-    translate([15, D-wall-1, 15]) cube([W-30, wall+2, 100]);
+    // back door opening — nearly the whole back wall, so the Pi+display
+    // stack (85 mm long) goes in without contortions
+    translate([10, D-wall-1, 12]) cube([W-20, wall+2, 130]);
     // screen cutout
     screen_frame() translate([W/2, 1.5, slen/2])
       cube([scr_vis[0], wall+6, scr_vis[1]], center=true);
@@ -135,8 +136,8 @@ module shell() {
 
 module dowel_holes() {
   for (p = [[1.5, 15],                 // front wall
-            [D-1.5, 8],                // back wall, below the door opening
-            [D-1.5, 130],              // back wall, above the door opening
+            [D-1.5, 6],                // back wall, below the door opening
+            [D-1.5, 148],              // back wall, above the door opening
             [(sy+D)/2, H-1.5]])        // top plate
     translate([cut_x-6, p[0], p[1]])
       rotate([0, 90, 0]) cylinder(d=2.0, h=12);
@@ -194,11 +195,12 @@ module stack_cradle() {
   translate([wall, wall, 2.5]) cube([W - 2*wall, 30, 4]);
   // side guides: vertical ribs just outside the 56 mm stack width
   for (gx = [23.5, 83.5])
-    translate([gx, wall, 4]) cube([3, 30, 71]);
-  // back flanges: the fixed plane the wedge bears against
-  // (gap in the middle keeps the CSI ribbon path clear)
-  translate([23.5, wall + 29, 8]) cube([21.5, 3, 67]);
-  translate([65, wall + 29, 8]) cube([21.5, 3, 67]);
+    translate([gx, wall, 4]) cube([3, 30, 66]);
+  // back flanges: the fixed plane the wedge bears against — kept SHORT
+  // (bottom half only) so the channel is wide open for insertion.
+  // Gap in the middle keeps the CSI ribbon path clear.
+  translate([23.5, wall + 29, 8]) cube([21.5, 3, 44]);
+  translate([65, wall + 29, 8]) cube([21.5, 3, 44]);
 }
 
 // ============================================================
@@ -257,24 +259,25 @@ module bottom_plate() {
 module door() {
   difference() {
     union() {
-      translate([-46, -56, 0]) cube([92, 112, 2.5]);   // face plate
-      translate([-39.7, -49.7, -2.5]) cube([79.4, 99.4, 2.6]);  // press-fit lip
+      translate([-51, -71, 0]) cube([102, 142, 2.5]);  // face plate
+      translate([-44.7, -64.7, -2.5]) cube([89.4, 129.4, 2.6]);  // press-fit lip
       // crush ribs: 0.5 proud, they squash on first insertion
-      for (ry = [-30, 20]) {
-        translate([-40.2, ry, -2.5]) cube([0.5, 10, 2.6]);
-        translate([39.7, ry, -2.5]) cube([0.5, 10, 2.6]);
+      for (ry = [-45, 25]) {
+        translate([-45.2, ry, -2.5]) cube([0.5, 12, 2.6]);
+        translate([44.7, ry, -2.5]) cube([0.5, 12, 2.6]);
       }
-      for (rx = [-25, 15]) {
-        translate([rx, -50.2, -2.5]) cube([10, 0.5, 2.6]);
-        translate([rx, 49.7, -2.5]) cube([10, 0.5, 2.6]);
+      for (rx = [-30, 18]) {
+        translate([rx, -65.2, -2.5]) cube([12, 0.5, 2.6]);
+        translate([rx, 64.7, -2.5]) cube([12, 0.5, 2.6]);
       }
-      translate([-10, -66, 0]) cube([20, 10, 2.5]);    // pull tab
+      translate([-10, 71, 0]) cube([20, 10, 2.5]);     // pull tab (top edge —
+                                                       // bottom would hit the desk)
     }
     for (i = [-2:2])                                    // vents
-      translate([i*12-1.5, -20, -3]) cube([3, 45, 9]);
+      translate([i*12-1.5, -28, -3]) cube([3, 56, 9]);
     // spare cable hole (e.g. aux 5 V for servos later) — power enters
     // through the side-wall slot instead, no extra parts needed
-    translate([0, -42, -3]) cylinder(d=12, h=9);
+    translate([0, -54, -3]) cylinder(d=12, h=9);
   }
 }
 
@@ -345,7 +348,7 @@ if (part == "camplate") camera_plate();
 if (part == "assembly") {
   color("SteelBlue", 0.85) shell();
   color("gray") bottom_plate();
-  color("dimgray") translate([W/2, D+0.5, 65]) rotate([-90,0,0]) door();
+  color("dimgray") translate([W/2, D+0.5, 77]) rotate([-90,0,0]) door();
   color("orange") translate([W/2, (sy+D)/2, H]) camstand();
   color("tomato") screen_frame() translate([26, wall+19.5, 6]) wedge();
   color("orange") translate([W/2, (sy+D)/2-9.5, H+20]) rotate([90,0,0]) camera_plate();
