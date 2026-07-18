@@ -22,6 +22,7 @@ import math
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
 from current_affairs import CurrentAffairs
+from backend import lifebook
 
 SCALE = SCREEN_HEIGHT / 480.0
 
@@ -81,7 +82,7 @@ class BiolabState(State):
                                      SCREEN_WIDTH - s(24), s(20))
 
         self.time_alive = 0.0
-        self.batch = 1
+        self.batch = lifebook.get("biolab_batch", 1)     # remembered
         self.reculture_timer = 0.0
         self._reculture()
 
@@ -228,6 +229,7 @@ class BiolabState(State):
         if self.reculture_timer >= self.RECULTURE_INTERVAL:
             self.reculture_timer = 0.0
             self.batch += 1
+            lifebook.set_value("biolab_batch", self.batch)
             self._reculture()
 
         # bubbles rise

@@ -39,6 +39,8 @@ class PomodoroState(State):
         self.transition_timer = TRANSITION_TIME
 
     def _switch_to_break(self):
+        from backend import lifebook
+        lifebook.bump("pomodoros")          # a work session completed
         self.break_count += 1
         self.mode = 'break'
         self.time_left = LONG_BREAK_TIME if self.break_count % 3 == 0 else BREAK_TIME

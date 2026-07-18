@@ -24,6 +24,7 @@ from config import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE
 from states.base_state import State
 from ui.glow_text import GlowText
 from current_affairs import CurrentAffairs
+from backend import world_weather
 
 SCALE = SCREEN_HEIGHT / 480.0
 
@@ -428,6 +429,13 @@ class AmbientState(State):
     def update(self, dt):
         self.time_alive += dt
         self.reflection_timer += dt * 3.0
+
+        # the real sky drives the city: rain, wind, and storms are live
+        self._wx_timer = getattr(self, "_wx_timer", 0.0) - dt
+        if self._wx_timer <= 0:
+            self._wx_timer = 30.0
+            wx = world_weather.conditions()
+            self.set_weather(wx["rain"], -wx["wind"] * 0.6)
 
         for car in self.traffic:
             car["x"] += car["speed"] * dt

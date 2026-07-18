@@ -18,6 +18,7 @@ import datetime
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
 from current_affairs import CurrentAffairs
+from backend import lifebook
 
 # ── ITA2 / Baudot-Murray 5-bit codes (authentic) ────────────────────────────
 ITA2 = {
@@ -137,7 +138,7 @@ class TelegraphState(State):
         self._steam_area = pygame.Surface((s(90), s(80)), pygame.SRCALPHA)
 
         self._dispatch_no = random.randint(1000, 9999)
-        self._chars_sent  = 0
+        self._chars_sent  = lifebook.get("chars_tx", 0)   # lifetime total
 
         self._encode_message(self.current_affairs.get_current_message())
 
@@ -399,6 +400,7 @@ class TelegraphState(State):
         if self.tape_x >= len(self.slots) * self.SLOT_W:
             self.current_affairs.update(dt)
             self._dispatch_no += 1
+            lifebook.set_value("chars_tx", self._chars_sent)  # save per dispatch
             self._encode_message(self.current_affairs.get_current_message())
         else:
             self.current_affairs.update(dt)

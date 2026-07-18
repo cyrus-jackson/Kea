@@ -13,6 +13,8 @@ from states.biolab_state import BiolabState
 from states.abyssal_state import AbyssalState
 from states.nexus_state import NexusState
 from states.aerodrome_state import AerodromeState
+from states.docket_state import DocketState
+from backend import lifebook
 from hardware_input import (
     HardwareButtons,
     BUTTON_AMBIENT_EVENT,
@@ -112,6 +114,8 @@ def main():
     manager.add_state('abyssal', AbyssalState(manager))
     manager.add_state('nexus', NexusState(manager))
     manager.add_state('aerodrome', AerodromeState(manager))
+    manager.add_state('docket', DocketState(manager))
+    lifebook.bump('boots')
     
     # Boot into the Nexus home hub
     manager.change_state('nexus')
@@ -139,7 +143,13 @@ def main():
                 if manager.current_state_name != 'pomodoro':
                     manager.change_state('pomodoro')
             elif event.type == BUTTON_NOTIFICATION_EVENT:
-                if manager.current_state_name != 'pomodoro':
+                # states may consume the green button (e.g. the Docket
+                # stamps a reminder DONE); otherwise it opens notification
+                cur = manager.current_state
+                if cur is not None and hasattr(cur, 'on_green_button') \
+                        and cur.on_green_button():
+                    pass
+                elif manager.current_state_name != 'pomodoro':
                     manager.change_state('notification')
             
             # Global Key Inputs for Testing
@@ -168,6 +178,8 @@ def main():
                     manager.change_state('nexus')
                 elif event.key == pygame.K_d:
                     manager.change_state('aerodrome')
+                elif event.key == pygame.K_r:
+                    manager.change_state('docket')
                 elif event.key == pygame.K_6:
                     manager.change_state('telegraph')
                 elif event.key == pygame.K_7:

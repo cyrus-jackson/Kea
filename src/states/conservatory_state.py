@@ -22,6 +22,7 @@ import datetime
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
 from current_affairs import CurrentAffairs
+from backend import world_weather, lifebook
 
 SCALE = SCREEN_HEIGHT / 480.0
 
@@ -105,7 +106,8 @@ class ConservatoryState(State):
         self.grow_timer = 0.0
         self.prune_timer = 0.0
         self.pruning = False
-        self.generation = 1
+        self.generation = lifebook.get("conservatory_gen", 1)   # remembered
+        self.rain_streaks = []          # rain running down the glass
         self._seed_garden()
 
         # ambience particles: [x, y, phase, speed]
@@ -312,6 +314,7 @@ class ConservatoryState(State):
                 self.plant_surf.fill((0, 0, 0, 0))
                 self.pruning = False
                 self.generation += 1
+                lifebook.set_value("conservatory_gen", self.generation)
                 self._seed_garden()
         elif not self.tips:
             self.prune_timer += dt
@@ -339,6 +342,22 @@ class ConservatoryState(State):
             c[0] += c[2] * dt
             if c[0] > SCREEN_WIDTH + s(20):
                 c[0] = -c[3].get_width()
+
+        # real rain runs down the glass
+        rain = world_weather.conditions()["rain"]
+        want = int(rain * 26)
+        while len(self.rain_streaks) < want:
+            self.rain_streaks.append([random.uniform(2, SCREEN_WIDTH - 2),
+                                      random.uniform(0, self.shelf_y),
+                                      random.uniform(14, 30) * SCALE,
+                                      random.uniform(4, 9) * SCALE])
+        while len(self.rain_streaks) > want:
+            self.rain_streaks.pop()
+        for st_ in self.rain_streaks:
+            st_[1] += st_[2] * dt          # slow slide down the pane
+            if st_[1] > self.shelf_y:
+                st_[0] = random.uniform(2, SCREEN_WIDTH - 2)
+                st_[1] = -st_[3]
 
     def _rebuild_sky(self, now):
         hour_f = now.hour + now.minute / 60.0
@@ -391,6 +410,11 @@ class ConservatoryState(State):
                 col = (255, 250, 200)
                 if tw > 0.4:
                     pygame.draw.circle(surface, col, (int(m[0]), int(m[1])), 1)
+
+        # rain on the glass (in front of the garden, behind the frame)
+        for sx_, sy_, _spd, ln in self.rain_streaks:
+            pygame.draw.line(surface, (188, 208, 216),
+                             (int(sx_), int(sy_)), (int(sx_), int(sy_ + ln)), 1)
 
         # glasshouse frame + planter
         surface.blit(self._frame_surf, (0, 0))

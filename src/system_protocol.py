@@ -302,6 +302,16 @@ def _live_candidates(name):
         else:
             out.append(f"SUNSET AT {wx['sunset']}. NEON AFTER THAT, {name}.")
     out.append(f"{_moon_phase()} MOON TONIGHT, {name}.")
+    # open reminders nag their way into every world's ticker
+    try:
+        from backend.reminders import ReminderService, stage_for
+        import time as _time
+        for r in ReminderService.instance().active()[:3]:
+            stage = stage_for(_time.time() - r["ts"])
+            if stage in ("FINAL CALL", "OVERDUE"):
+                out.append(f"DOCKET // {stage}: {_clip(r['text'], 60).upper()}")
+    except Exception:
+        pass
     return out
 
 

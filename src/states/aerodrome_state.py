@@ -22,6 +22,7 @@ import datetime
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
 from current_affairs import CurrentAffairs
+from backend import world_weather
 
 SCALE = SCREEN_HEIGHT / 480.0
 
@@ -263,8 +264,9 @@ class AerodromeState(State):
         self.time_alive += dt
         self.current_affairs.update(dt)
 
+        wind_mult = 1.0 + world_weather.conditions()["wind"] / 25.0
         for c in self.clouds:
-            c[0] += c[2] * dt
+            c[0] += c[2] * wind_mult * dt
             if c[0] > SCREEN_WIDTH + s(20):
                 c[0] = -c[3].get_width()
 
@@ -276,10 +278,11 @@ class AerodromeState(State):
         self.rings = [r + s(26) * dt for r in self.rings]
         self.rings = [r for r in self.rings if r < s(64)]
 
-        # zeppelin
+        # zeppelin — grounded when the real Stuttgart wind is up
+        wx = world_weather.conditions()
         if self.zep is None:
             self.zep_timer -= dt
-            if self.zep_timer <= 0:
+            if self.zep_timer <= 0 and wx["wind"] < 32:
                 self._spawn_zeppelin()
         else:
             self.zep["x"] += self.zep["vx"] * dt

@@ -26,6 +26,8 @@ import datetime
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
 from backend.weather_api import fetch_stuttgart_weather
+from backend.reminders import ReminderService
+from backend import lifebook
 from system_protocol import SystemProtocol
 from ui.glow_text import GlowText
 
@@ -116,9 +118,10 @@ class NexusState(State):
                                  max_width=SCREEN_WIDTH - s(30))
         self.greet_timer = 0.0
 
-        # weather
+        # weather + reminders
         self.weather = None
         self.weather_timer = 1e9           # force fetch on enter
+        self.reminders = ReminderService.instance()
         self.time_alive = 0.0
 
         # auto-pilot
@@ -246,6 +249,10 @@ class NexusState(State):
         idx = phase_for(now.hour)
         nxt = PHASES[(idx + 1) % len(PHASES)]
         cur = PHASES[idx]
+        # docket override beats everything: overdue reminders demand the board
+        if self.reminders.overdue():
+            return "docket", f"DOCKET  ·  {len(self.reminders.overdue())} OVERDUE", \
+                   "WHEN DONE", cur[2]
         # rain override: if an umbrella is coming, weather takes the NOW slot
         if self.weather and not self.weather.get("error") and \
            self.weather.get("needs_umbrella") and cur[1] != "climate":
@@ -256,6 +263,7 @@ class NexusState(State):
         self.time_alive += dt
         self.weather_timer += dt
         self.greet_timer += dt
+        self.reminders.update(dt)          # keep the docket feed warm
         if self.greet_timer >= 90.0:       # fresh protocol line every 90 s
             self.greet_timer = 0.0
             self.greeting.update_text(self.protocol.next_message())
@@ -291,6 +299,17 @@ class NexusState(State):
         date_str = now.strftime("%A  ·  %d %B  ·  DAY %j").upper()
         ds = self.font_date.render(date_str, True, TEXT_DIM)
         surface.blit(ds, ((SCREEN_WIDTH - ds.get_width()) // 2, s(82)))
+
+        # docket badge: open reminders, red when something is overdue
+        n_open = self.reminders.count()
+        if n_open:
+            urgent = bool(self.reminders.overdue())
+            bcol = (200, 60, 45) if urgent else AMBER
+            btxt = self.font_label.render(f"DOCKET {n_open}", True, (245, 240, 230))
+            brect = pygame.Rect(s(10), s(26), btxt.get_width() + s(12), s(17))
+            if not urgent or int(t * 2) % 2 == 0:
+                pygame.draw.rect(surface, bcol, brect, border_radius=s(4))
+                surface.blit(btxt, (brect.x + s(6), brect.y + s(3)))
 
         # ── protocol greeting ────────────────────────────────────────────
         gs = self.greeting.get_surface()
@@ -351,7 +370,16 @@ class NexusState(State):
         else:
             ap = self.font_board.render("AUTO OFF · [A]", True, TEXT_DIM)
         surface.blit(ap, (SCREEN_WIDTH - ap.get_width() - s(14), by))
-        hint = self.font_label.render("BLUE BTN CYCLES WORLDS", True, TEXT_DIM)
+        # rotate between the control hint and the machine's life story
+        if int(t / 8) % 2 == 0:
+            hint_str = "BLUE BTN CYCLES WORLDS"
+        else:
+            hint_str = (f"GEN {lifebook.get('conservatory_gen', 1):02d} · "
+                        f"BATCH {lifebook.get('biolab_batch', 1):02d} · "
+                        f"{lifebook.get('pomodoros', 0)} FOCUS · "
+                        f"{lifebook.get('chars_tx', 0)} TX · "
+                        f"BOOT {lifebook.get('boots', 0)}")
+        hint = self.font_label.render(hint_str, True, TEXT_DIM)
         surface.blit(hint, ((SCREEN_WIDTH - hint.get_width()) // 2, by + s(40)))
 
     def draw_pomodoro(self, surface, time_left, mode):

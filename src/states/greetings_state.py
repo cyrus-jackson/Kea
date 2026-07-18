@@ -43,6 +43,7 @@ PANEL_BG = (13, 20, 32)
 TEXT_DIM = (108, 130, 155)
 
 CHANNELS = {
+    "docket":   ("DISPATCH DOCKET", (200, 60, 45)),
     "orbital":  ("ORBITAL RELAY",  (92, 240, 150)),
     "archive":  ("ARCHIVE",        (216, 168, 88)),
     "wire":     ("THE WIRE",       (0, 225, 245)),
@@ -54,6 +55,8 @@ CHANNELS = {
 
 def classify(text):
     t = text.upper()
+    if "DOCKET //" in t:
+        return "docket"
     if any(k in t for k in ("STATION PASS", "SOULS IN ORBIT", "AIRSHIP RIDES",
                             "SKY HAS", "TENANTS")):
         return "orbital"
@@ -253,7 +256,12 @@ class GreetingsState(State):
         accent = self._accent()
         dim = lerp_color(accent, PANEL_BG, 0.35)
         ch = self.channel
-        if ch == "orbital":
+        if ch == "docket":       # a filed card with a stamp mark
+            pygame.draw.rect(surface, dim, (cx - r, cy - r + s(2), r * 2, r * 2 - s(4)), 1)
+            pygame.draw.line(surface, accent, (cx - r + s(3), cy - s(2)),
+                             (cx + r - s(3), cy - s(2)), 1)
+            pygame.draw.circle(surface, accent, (cx + s(4), cy + s(4)), s(4), 1)
+        elif ch == "orbital":
             pygame.draw.circle(surface, dim, (cx, cy), r, 1)
             a = self.global_time * 1.5
             pygame.draw.circle(surface, accent,
