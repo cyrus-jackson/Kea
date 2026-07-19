@@ -79,6 +79,7 @@ WORLDS = [
     ("conservatory", "GARDEN",  "7", LEAF),
     ("climate",      "WX.SYS",  "8", AMBER),
     ("abyssal",      "ABYSSAL", "0", SEAFOAM),
+    ("orrery",       "ORRERY",  "O", (196, 156, 80)),
 ]
 
 AUTO_DWELL = 15.0     # seconds on the hub before auto-pilot dispatches
@@ -213,6 +214,13 @@ class NexusState(State):
                                  (cx + s(10), cy + s(1) + i * s(3)), 2)
             pygame.draw.line(card, dim, (cx - s(13), cy + s(11)),
                              (cx + s(13), cy + s(11)), 1)
+        elif state == "orrery":           # tilted orbit + planet on its arm
+            r = pygame.Rect(0, 0, s(26), s(12))
+            r.center = (cx, cy)
+            pygame.draw.ellipse(card, dim, r, 1)
+            pygame.draw.circle(card, accent, (cx, cy), s(2))
+            pygame.draw.line(card, dim, (cx, cy), (cx + s(10), cy + s(4)), 1)
+            pygame.draw.circle(card, accent, (cx + s(10), cy + s(4)), s(3))
         elif state == "abyssal":          # waves + fish
             for wy in (-4, 2):
                 pts = [(cx - s(13) + i * s(4),
@@ -369,7 +377,7 @@ class NexusState(State):
         gap = s(6)
         for i, (world, card) in enumerate(zip(WORLDS, self._cards)):
             row, col = divmod(i, 4)
-            row_n = 4 if row == 0 else 3
+            row_n = min(4, len(WORLDS) - row * 4)
             x0 = (SCREEN_WIDTH - row_n * self.card_w - (row_n - 1) * gap) // 2
             x = x0 + col * (self.card_w + gap)
             y = self.rail_y + row * (self.card_h + s(8))

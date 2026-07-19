@@ -51,6 +51,7 @@ The app boots into **NEXUS**, the home hub: clock, System Protocol greeting, liv
 - `0` abyssal station (oceanpunk deep sea)
 - `D` aerodrome (dieselpunk airfield — dispatches fly by as towed banners)
 - `R` dispatch docket (your phone reminders as aging paper cards)
+- `O` the orrery (clockpunk — live 3D solar system at today's real planetary positions)
 
 ## Reminders from your phone (the Dispatch Docket)
 
