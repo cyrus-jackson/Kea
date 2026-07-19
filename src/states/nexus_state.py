@@ -86,6 +86,8 @@ WORLDS = [
     ("starport",     "STARPRT", "S", (130, 200, 255)),
     ("docket",       "DOCKET",  "R", (200, 60, 45)),
     ("greetings",    "PROTOCL", "9", (255, 160, 60)),
+    ("pomodoro",     "FOCUS",   "2", (228, 174, 86)),
+    ("logbook",      "LOGBOOK", "L", (172, 136, 68)),
 ]
 
 AUTO_DWELL = 15.0     # seconds on the hub before auto-pilot dispatches
@@ -141,9 +143,10 @@ class NexusState(State):
         self._clock_str = ""
         self._clock_surf = None
 
-        # layout: 4 x 3 rail holding the whole collection
+        # layout: 5 x 3 rail holding the whole collection
+        self.cols = 5
         self.rail_y = s(200)
-        self.card_w = (SCREEN_WIDTH - s(16) - s(6) * 3) // 4
+        self.card_w = (SCREEN_WIDTH - s(16) - s(5) * (self.cols - 1)) // self.cols
         self.card_h = s(56)
 
         self._bg = self._build_background()
@@ -236,6 +239,21 @@ class NexusState(State):
                              (cx + s(13), cy + s(7)), 2)
             pygame.draw.line(card, accent, (cx - s(6), cy + s(11)),
                              (cx + s(6), cy + s(11)), 1)
+        elif state == "pomodoro":         # hourglass
+            pygame.draw.polygon(card, dim, [(cx - s(8), cy - s(10)),
+                                            (cx + s(8), cy - s(10)),
+                                            (cx, cy)])
+            pygame.draw.polygon(card, accent, [(cx, cy),
+                                               (cx + s(8), cy + s(10)),
+                                               (cx - s(8), cy + s(10))])
+            for by in (cy - s(12), cy + s(10)):
+                pygame.draw.rect(card, dim, (cx - s(10), by, s(20), s(2)))
+        elif state == "logbook":          # open ledger
+            pygame.draw.rect(card, dim, (cx - s(11), cy - s(8), s(22), s(17)), 1)
+            pygame.draw.line(card, accent, (cx, cy - s(8)), (cx, cy + s(9)), 1)
+            for ly in (cy - s(4), cy, cy + s(4)):
+                pygame.draw.line(card, dim, (cx - s(8), ly), (cx - s(2), ly), 1)
+                pygame.draw.line(card, dim, (cx + s(2), ly), (cx + s(8), ly), 1)
         elif state == "docket":           # filed card + stamp
             pygame.draw.rect(card, dim, (cx - s(9), cy - s(9), s(18), s(20)), 1,
                              border_radius=s(2))
@@ -401,10 +419,10 @@ class NexusState(State):
 
         # ── world rail (4 + 3 cards) ─────────────────────────────────────
         rec_state = self._recommended(now)[0]
-        gap = s(6)
+        gap = s(5)
         for i, (world, card) in enumerate(zip(WORLDS, self._cards)):
-            row, col = divmod(i, 4)
-            row_n = min(4, len(WORLDS) - row * 4)
+            row, col = divmod(i, self.cols)
+            row_n = min(self.cols, len(WORLDS) - row * self.cols)
             x0 = (SCREEN_WIDTH - row_n * self.card_w - (row_n - 1) * gap) // 2
             x = x0 + col * (self.card_w + gap)
             y = self.rail_y + row * (self.card_h + s(8))

@@ -55,6 +55,7 @@ Run `python3 tools/smoke_test.py` after changes: it renders every state headless
 - `R` dispatch docket (your phone reminders as aging paper cards)
 - `O` the orrery (clockpunk — live 3D solar system at today's real planetary positions)
 - `S` starport bay 94 (twin-sun desert dock; dispatches arrive as a hologram)
+- `L` the logbook (the machine's own history, kept in ink)
 
 ## Reminders from your phone (the Dispatch Docket)
 
@@ -68,7 +69,9 @@ On iOS, a Shortcuts automation ("When my Reminder is due → Get Contents of URL
 
 ## Living worlds
 
-Real Stuttgart weather (Open-Meteo, 15-min refresh) drives the scenes: rain and lightning in the neon city, gales ground the aerodrome zeppelin and hurry the clouds, and rain streaks down the conservatory glass. The machine also keeps long-term memory in `~/.kea_lifebook.json`: garden generations, specimen batches, telegraph characters, completed pomodoros, and boots — shown on the Nexus footer.
+Real Stuttgart weather (Open-Meteo, 15-min refresh) drives the scenes: rain and lightning in the neon city, gales ground the aerodrome zeppelin and hurry the clouds, and rain streaks down the conservatory glass. The machine also keeps long-term memory in `~/.kea_lifebook.json`: garden generations, specimen batches, telegraph characters, completed pomodoros, dispatches delivered and boots — summarised on the Nexus footer and written out in full on **the Logbook** (`L`), which also charts a week of focus sessions and tracks the next milestone.
+
+The **Pomodoro** (`2`) is an hourglass: sand drains in real time, the stream stops when you pause, and the instrument flips between sessions. Amber for focus, green for rest; three brass studs count the cycle to the long rest. GREEN starts/holds, RED resets.
 - `Esc` quits
 
 **Hardware Buttons:**
