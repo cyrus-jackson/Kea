@@ -194,16 +194,9 @@ module bottom_nubs() {
 module stack_cradle() {
   // shelf under the stack's bottom edge (rooted in both side walls)
   translate([wall, wall, 2.5]) cube([W - 2*wall, 30, 4]);
-  // side guides with WIRE WINDOWS: the Pi's exposed GPIO pins live in
-  // the gap between the two boards at the stack's edge, and jumpers
-  // exit sideways — so the guide middles are open (46 x 25 window per
-  // side). Solid top/bottom segments + a spine at the panel side keep
-  // the guiding function.
-  for (gx = [23.5, 83.5]) {
-    translate([gx, wall, 4]) cube([3, 30, 8]);      // bottom segment
-    translate([gx, wall, 58]) cube([3, 30, 12]);    // top segment
-    translate([gx, wall, 4]) cube([3, 5, 66]);      // spine along the panel
-  }
+  // side guides: vertical ribs just outside the 56 mm stack width
+  for (gx = [23.5, 83.5])
+    translate([gx, wall, 4]) cube([3, 30, 66]);
   // back flanges: the fixed plane the wedge bears against — kept SHORT
   // (bottom half only) so the channel is wide open for insertion.
   // Gap in the middle keeps the CSI ribbon path clear.
