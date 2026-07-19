@@ -71,6 +71,23 @@ On iOS, a Shortcuts automation ("When my Reminder is due → Get Contents of URL
 
 Real Stuttgart weather (Open-Meteo, 15-min refresh) drives the scenes: rain and lightning in the neon city, gales ground the aerodrome zeppelin and hurry the clouds, and rain streaks down the conservatory glass. The machine also keeps long-term memory in `~/.kea_lifebook.json`: garden generations, specimen batches, telegraph characters, completed pomodoros, dispatches delivered and boots — summarised on the Nexus footer and written out in full on **the Logbook** (`L`), which also charts a week of focus sessions and tracks the next milestone.
 
+## Kea's voice
+
+Kea chirps. Every utterance is synthesised from scratch at startup — no sound files — as pitch-swept tones with vibrato, the astromech recipe. It speaks when things happen, from whichever screen you're on:
+
+| Moment | Sound |
+|---|---|
+| Boot | `wake` — a pleased rising flourish |
+| You change worlds | `blip` — soft acknowledgment |
+| A dispatch arrives | `curious` — questioning trill |
+| A reminder goes overdue | `worried` — falling warble (once per reminder) |
+| You stamp one DONE | `happy` — bright chirp |
+| Focus session ends | `focus_done`, or `proud` for a full cycle |
+| Break ends | `focus_start` |
+| Annunciator opens | `alarm` / `worried` / `question` by severity |
+
+Press `M` to mute (there's a VOICE lamp on the Annunciator). `KEA_VOICE=0` disables it entirely, `KEA_VOICE_VOL=0.4` sets the level. Synthesis runs on a worker thread and adapts to the mixer's real sample rate; with no audio device every call becomes a silent no-op, so it can never take the display down. Utterances are rate-limited (0.35 s floor, 2.5 s per-phrase cooldown) so Kea stays charming rather than chatty.
+
 The **Pomodoro** (`2`) is an hourglass: sand drains in real time, the stream stops when you pause, and the instrument flips between sessions. Amber for focus, green for rest; three brass studs count the cycle to the long rest. GREEN starts/holds, RED resets.
 - `Esc` quits
 

@@ -65,6 +65,8 @@ class ReminderService:
         self._load()
         self._poll_timer = 0.0
         self._busy = False
+        self._announced = set()      # ids Kea has already fretted about
+        self._nag_timer = 0.0
 
     # -- persistence ---------------------------------------------------------
     def _load(self):
@@ -88,13 +90,31 @@ class ReminderService:
     # -- polling -------------------------------------------------------------
     def update(self, dt):
         """Call from any state's update(); cheap, never blocks."""
-        if not ENABLED:
-            return
-        self._poll_timer -= dt
-        if self._poll_timer <= 0 and not self._busy:
-            self._poll_timer = POLL_EVERY
-            self._busy = True
-            threading.Thread(target=self._poll, daemon=True).start()
+        if ENABLED:                       # only fetching needs the network
+            self._poll_timer -= dt
+            if self._poll_timer <= 0 and not self._busy:
+                self._poll_timer = POLL_EVERY
+                self._busy = True
+                threading.Thread(target=self._poll, daemon=True).start()
+
+        # Kea frets about anything that slips past its deadline, no matter
+        # which screen you happen to be looking at — and whether or not the
+        # network is up, since these reminders are already on disk.
+        self._nag_timer -= dt
+        if self._nag_timer <= 0:
+            self._nag_timer = 5.0
+            now = time.time()
+            for r in self.reminders:
+                if r["done_ts"] is not None or r["id"] in self._announced:
+                    continue
+                if stage_for(now - r["ts"]) in ("FINAL CALL", "OVERDUE"):
+                    self._announced.add(r["id"])
+                    try:
+                        from backend import voice
+                        voice.say("worried")
+                    except Exception:
+                        pass
+                    break
 
     def _poll(self):
         try:
@@ -124,6 +144,12 @@ class ReminderService:
                     new.append(text)
                 if new:
                     self._save()
+            if new:
+                try:                       # a dispatch just landed
+                    from backend import voice
+                    voice.say("curious")
+                except Exception:
+                    pass
         except Exception:
             pass
         finally:
@@ -149,7 +175,13 @@ class ReminderService:
             for r in self.reminders:
                 if r["id"] == rid and r["done_ts"] is None:
                     r["done_ts"] = int(time.time())
+                    self._announced.discard(rid)
                     self._save()
+                    try:                   # Kea is pleased for you
+                        from backend import voice
+                        voice.say("happy", force=True)
+                    except Exception:
+                        pass
                     return r["text"]
         return None
 

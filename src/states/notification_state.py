@@ -196,6 +196,15 @@ class NotificationState(State):
             # no sensor (desktop): not a condition, just unreported
             lamps.append(("THERMAL", "ok", "--", "SENSOR NOT PRESENT.", None))
 
+        # VOICE ─────────────────────────────────────────────────────────
+        from backend import voice
+        if voice.is_muted():
+            lamps.append(("VOICE", "info", "MUTE", "KEA IS KEEPING QUIET.", None))
+        elif voice.is_ready():
+            lamps.append(("VOICE", "ok", "ON", "VOICE READY.", None))
+        else:
+            lamps.append(("VOICE", "info", "...", "VOICE WARMING UP.", None))
+
         # SYSTEM ────────────────────────────────────────────────────────
         boots = lifebook.get("boots", 0)
         lamps.append(("SYSTEM", "ok", vitals.uptime_str(),
@@ -219,6 +228,11 @@ class NotificationState(State):
         self.top = self._pick_top()
         prev = getattr(self.manager, "previous_state_name", None)
         self.return_to = prev if prev and prev != "notification" else "nexus"
+        # the panel speaks its own severity
+        from backend import voice
+        rank = SEV_RANK[self.top[1]]
+        voice.say("alarm" if rank >= 3 else
+                  "worried" if rank == 2 else "question", force=True)
 
     def on_green_button(self):
         """Green again = go where the top alert can be dealt with."""

@@ -17,6 +17,7 @@ from states.docket_state import DocketState
 from states.orrery_state import OrreryState
 from states.starport_state import StarportState
 from states.logbook_state import LogbookState
+from backend import voice
 from backend import lifebook
 from hardware_input import (
     HardwareButtons,
@@ -47,6 +48,7 @@ class StateManager:
 
         if name != self.current_state_name:
             self.previous_state_name = self.current_state_name
+            voice.say("blip")          # soft acknowledgment, rate-limited
 
         self.current_state = self.states.get(name)
         self.current_state_name = name
@@ -80,8 +82,9 @@ class StateManager:
 
 # --- Main App ---
 def main():
-    # Pre-init mixer to avoid ALSA underrun errors
-    pygame.mixer.pre_init(44100, -16, 2, 4096)
+    # Pre-init mixer to avoid ALSA underrun errors. 1024 keeps Kea's
+    # chirps snappy (~23 ms) instead of lagging a tenth of a second.
+    pygame.mixer.pre_init(44100, -16, 2, 1024)
     pygame.init()
     
     # 200x300 Display Surface
@@ -126,6 +129,10 @@ def main():
     manager.add_state('starport', StarportState(manager))
     manager.add_state('logbook', LogbookState(manager))
     lifebook.bump('boots')
+
+    # Kea's voice: synthesised in the background, greets us when ready
+    voice.init()
+    voice.say_when_ready('wake')
     
     # Boot into the Nexus home hub
     manager.change_state('nexus')
@@ -196,6 +203,8 @@ def main():
                     manager.change_state('starport')
                 elif event.key == pygame.K_l:
                     manager.change_state('logbook')
+                elif event.key == pygame.K_m:
+                    voice.toggle_mute()
                 elif event.key == pygame.K_6:
                     manager.change_state('telegraph')
                 elif event.key == pygame.K_7:

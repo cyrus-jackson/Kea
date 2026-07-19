@@ -117,12 +117,14 @@ class PomodoroState(State):
         self.transition_timer = TRANSITION_TIME
 
     def _switch_to_break(self):
-        from backend import lifebook
+        from backend import lifebook, voice
         lifebook.bump("pomodoros")          # a work session completed
         lifebook.bump_day("focus")         # and into today's bucket
         self.break_count += 1
         self.mode = 'break'
         long_rest = self.break_count % CYCLE == 0
+        # a full cycle earns a small fanfare; a single session, a chime
+        voice.say("proud" if long_rest else "focus_done", force=True)
         self.time_left = LONG_BREAK_TIME if long_rest else BREAK_TIME
         self.session_len = self.time_left
         self.running = True
@@ -131,10 +133,12 @@ class PomodoroState(State):
             self.manager.change_state('pomodoro')
 
     def _switch_to_work(self):
+        from backend import voice
         self.mode = 'work'
         self.time_left = WORK_TIME
         self.session_len = WORK_TIME
         self.running = True
+        voice.say("focus_start", force=True)
         self._begin_transition('FOCUS')
         if self.manager.current_state_name != 'pomodoro':
             self.manager.change_state('pomodoro')
