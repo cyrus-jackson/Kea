@@ -120,8 +120,9 @@ module shell() {
     deck_frame() deck_holes();
     // camera stand peg sockets (press-fit, no screws)
     camstand_sockets();
-    // camera ribbon slot
-    translate([W/2-12.5, sy+1.5, H-wall-1]) cube([25, 4, wall+2]);
+    // camera ribbon slot — positioned relative to the camstand center so
+    // it stays aligned with the stand's own pass-through at ANY tilt
+    translate([W/2-12.5, (sy+D)/2 - 10.9, H-wall-1]) cube([25, 4.1, wall+2]);
     // marquee label
     translate([W/2, sy+1.2, sz+marq/2]) rotate([90,0,0])
       linear_extrude(1.4) text("K E A", size=11, font="DejaVu Sans:style=Bold",
