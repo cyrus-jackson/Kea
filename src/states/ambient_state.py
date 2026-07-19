@@ -134,12 +134,13 @@ class AmbientState(State):
             pygame.draw.line(self.cached_reflection_fade, (shade, shade, shade),
                              (0, y), (SCREEN_WIDTH, y))
 
-        # ticker
+        # ticker: single line, marquee when long — never truncates
         self.current_affairs = CurrentAffairs()
         affairs_font = pygame.font.Font(None, s(20))
         self.affairs_text = GlowText(affairs_font, self.current_affairs.get_current_message(),
-                                     (255, 200, 120), (255, 120, 20), glow_radius=2,
-                                     max_width=SCREEN_WIDTH - s(60))
+                                     (255, 200, 120), (255, 120, 20), glow_radius=2)
+        self.ticker_scroll = 0.0
+        self.ticker_hold = 2.0
         self.ticker_band = pygame.Surface((SCREEN_WIDTH, s(46)), pygame.SRCALPHA)
         for y in range(s(46)):
             a = int(150 * (y / s(46)))
@@ -498,6 +499,17 @@ class AmbientState(State):
 
         if self.current_affairs.update(dt):
             self.affairs_text.update_text(self.current_affairs.get_current_message())
+            self.ticker_scroll = 0.0
+            self.ticker_hold = 2.0
+        aw = self.affairs_text.get_surface().get_width()
+        if aw > SCREEN_WIDTH - s(24):
+            if self.ticker_hold > 0:
+                self.ticker_hold -= dt
+            else:
+                self.ticker_scroll += s(26) * dt
+                if self.ticker_scroll > aw + s(40):
+                    self.ticker_scroll = 0.0
+                    self.ticker_hold = 2.0
 
     # ══════════════════════════════════════════════════════════════════════
     # Draw
@@ -622,11 +634,19 @@ class AmbientState(State):
                                  (ripple["x"] + w / 2, ripple["y"]), 1)
             surface.blit(self.cached_weather_surf, (0, 0))
 
-        # ── ticker ───────────────────────────────────────────────────────
+        # ── ticker (marquee when long) ───────────────────────────────────
         surface.blit(self.ticker_band, (0, SCREEN_HEIGHT - self.ticker_band.get_height()))
         af = self.affairs_text.get_surface()
-        self.affairs_text.draw(surface, ((SCREEN_WIDTH - af.get_width()) // 2,
-                                         SCREEN_HEIGHT - af.get_height() - s(12)))
+        ay = SCREEN_HEIGHT - af.get_height() - s(12)
+        if af.get_width() <= SCREEN_WIDTH - s(24):
+            self.affairs_text.draw(surface, ((SCREEN_WIDTH - af.get_width()) // 2, ay))
+        else:
+            prev_clip = surface.get_clip()
+            surface.set_clip(pygame.Rect(s(12), ay, SCREEN_WIDTH - s(24), af.get_height()))
+            x0 = s(12) - int(self.ticker_scroll)
+            surface.blit(af, (x0, ay))
+            surface.blit(af, (x0 + af.get_width() + s(40), ay))
+            surface.set_clip(prev_clip)
 
     def draw_pomodoro(self, surface, time_left, mode):
         mins, secs = int(time_left) // 60, int(time_left) % 60

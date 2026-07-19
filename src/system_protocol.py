@@ -283,12 +283,12 @@ def _live_candidates(name):
     hist = _FEEDS["history"].get()
     if hist and hist.get("events"):
         year, text = random.choice(hist["events"])
-        out += [f"MEMORY BANKS // {year}: {_clip(text, 70).upper()}",
-                f"ARCHIVE, {year}: {_clip(text, 74).upper()}"]
+        out += [f"MEMORY BANKS // {year}: {_clip(text, 170).upper()}",
+                f"ARCHIVE, {year}: {_clip(text, 170).upper()}"]
     wire = _FEEDS["wire"].get()
     if wire:
-        out += [f"THE WIRE // {_clip(wire['title'], 72).upper()}",
-                f"TELEGRAPH INTERCEPT // {_clip(wire['title'], 62).upper()}"]
+        out += [f"THE WIRE // {_clip(wire['title'], 130).upper()}",
+                f"TELEGRAPH INTERCEPT // {_clip(wire['title'], 130).upper()}"]
     wx = _FEEDS["wx"].get()
     if wx and wx.get("temp") is not None:
         t = round(wx["temp"])
@@ -309,7 +309,7 @@ def _live_candidates(name):
         for r in ReminderService.instance().active()[:3]:
             stage = stage_for(_time.time() - r["ts"])
             if stage in ("FINAL CALL", "OVERDUE"):
-                out.append(f"DOCKET // {stage}: {_clip(r['text'], 60).upper()}")
+                out.append(f"DOCKET // {stage}: {r['text'].upper()}")
     except Exception:
         pass
     return out

@@ -88,7 +88,12 @@ class GreetingsState(State):
         self.protocol = SystemProtocol()
 
         self.title_font = pygame.font.Font(None, s(24))
-        self.greeting_font = pygame.font.Font(None, s(28))
+        # adaptive message fonts: long transmissions drop a size instead of
+        # ever being truncated
+        self.msg_fonts = [(70, pygame.font.Font(None, s(28))),
+                          (150, pygame.font.Font(None, s(22))),
+                          (10**9, pygame.font.Font(None, s(18)))]
+        self.greeting_font = self.msg_fonts[0][1]
         self.meta_font = pygame.font.Font(None, s(15))
 
         self.target_greeting = ""
@@ -159,6 +164,10 @@ class GreetingsState(State):
         self.channel = classify(text)
         self.rx_time = datetime.datetime.now().strftime("%H:%M:%S")
         accent = self._accent()
+        for limit, font in self.msg_fonts:      # pick a size the panel can hold
+            if len(text) <= limit:
+                self.greeting_font = font
+                break
         self.greeting_glow = GlowText(
             self.greeting_font, "", (255, 255, 255),
             lerp_color(accent, (0, 0, 0), 0.25), 4,

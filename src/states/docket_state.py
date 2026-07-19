@@ -244,10 +244,19 @@ class DocketState(State):
         for hy in range(rect.y + s(10), rect.bottom - s(6), s(14)):
             pygame.draw.circle(surface, WOOD, (rect.x + s(7), hy), s(2))
 
-        font = self.font_card if big else self.font_small
-        max_lines = 3 if big else 1
-        lines = self._wrap(text, font, rect.w - s(92), max_lines)
-        ty = rect.y + (s(14) if big else s(7))
+        if big:
+            # try the big font first; if the text wouldn't fit in 3 lines,
+            # drop to the small font with 4 lines — never truncate the
+            # reminder you're supposed to act on
+            font, max_lines = self.font_card, 3
+            lines = self._wrap(text, font, rect.w - s(92), max_lines)
+            if lines and lines[-1].endswith("…"):
+                font, max_lines = self.font_small, 4
+                lines = self._wrap(text, font, rect.w - s(92), max_lines)
+        else:
+            font, max_lines = self.font_small, 1
+            lines = self._wrap(text, font, rect.w - s(92), max_lines)
+        ty = rect.y + (s(12) if big else s(7))
         for line in lines:
             surface.blit(font.render(line, True, INK), (rect.x + s(16), ty))
             ty += font.get_linesize()

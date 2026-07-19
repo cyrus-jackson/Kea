@@ -113,10 +113,12 @@ class NexusState(State):
         self.font_board = pygame.font.Font(None, s(20))
         self.font_greet = pygame.font.Font(None, s(20))
 
+        # single-line greeting; long lines marquee instead of truncating
         self.greeting = GlowText(self.font_greet, self.protocol.next_message(),
-                                 (255, 200, 120), (255, 120, 20), glow_radius=2,
-                                 max_width=SCREEN_WIDTH - s(30))
+                                 (255, 200, 120), (255, 120, 20), glow_radius=2)
         self.greet_timer = 0.0
+        self.greet_scroll = 0.0
+        self.greet_hold = 2.0
 
         # weather + reminders
         self.weather = None
@@ -267,6 +269,19 @@ class NexusState(State):
         if self.greet_timer >= 90.0:       # fresh protocol line every 90 s
             self.greet_timer = 0.0
             self.greeting.update_text(self.protocol.next_message())
+            self.greet_scroll = 0.0
+            self.greet_hold = 2.0
+
+        # marquee for greetings wider than the screen
+        gw = self.greeting.get_surface().get_width()
+        if gw > SCREEN_WIDTH - s(24):
+            if self.greet_hold > 0:
+                self.greet_hold -= dt
+            else:
+                self.greet_scroll += s(26) * dt
+                if self.greet_scroll > gw + s(40):
+                    self.greet_scroll = 0.0
+                    self.greet_hold = 2.0
 
         if self.auto_pilot:
             self.dwell += dt
@@ -311,9 +326,19 @@ class NexusState(State):
                 pygame.draw.rect(surface, bcol, brect, border_radius=s(4))
                 surface.blit(btxt, (brect.x + s(6), brect.y + s(3)))
 
-        # ── protocol greeting ────────────────────────────────────────────
+        # ── protocol greeting (marquee when long) ────────────────────────
         gs = self.greeting.get_surface()
-        surface.blit(gs, ((SCREEN_WIDTH - gs.get_width()) // 2, s(102)))
+        gy = s(102)
+        if gs.get_width() <= SCREEN_WIDTH - s(24):
+            surface.blit(gs, ((SCREEN_WIDTH - gs.get_width()) // 2, gy))
+        else:
+            prev_clip = surface.get_clip()
+            surface.set_clip(pygame.Rect(s(12), gy, SCREEN_WIDTH - s(24),
+                                         gs.get_height()))
+            x0 = s(12) - int(self.greet_scroll)
+            surface.blit(gs, (x0, gy))
+            surface.blit(gs, (x0 + gs.get_width() + s(40), gy))
+            surface.set_clip(prev_clip)
 
         # ── weather chip ─────────────────────────────────────────────────
         wy = s(142)
