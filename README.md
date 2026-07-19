@@ -33,7 +33,9 @@ python3 src/main.py
 
 ## Controls
 
-The app boots into **NEXUS**, the home hub: clock, System Protocol greeting, live weather, and all worlds as cards. It recommends a world for the current **day phase** (garden at sunrise → city for work → weather at lunch → orbital afternoons → telegraph at dusk → lab evenings → abyss at night, with a rain override). Press `A` on the hub to enable **auto-pilot**: Nexus dispatches to the recommended world automatically.
+The app boots into **NEXUS**, the home hub: clock, System Protocol greeting, live weather, and **every screen as a card on a 4×3 rail**. It recommends a world for the current **day phase** — garden at sunrise → neon city for work → weather at lunch → orbital afternoons → aerodrome → telegraph at dusk → bio-lab evenings → starport at night → the abyss after 23:00 — with a rain override and a docket override when reminders go overdue. Press `A` on the hub to enable **auto-pilot**: Nexus dispatches to the recommended world automatically.
+
+Run `python3 tools/smoke_test.py` after changes: it renders every state headlessly and verifies each Nexus card and day phase points at a registered state.
 
 **Keyboard:**
 - `H` nexus (home hub)
@@ -52,6 +54,7 @@ The app boots into **NEXUS**, the home hub: clock, System Protocol greeting, liv
 - `D` aerodrome (dieselpunk airfield — dispatches fly by as towed banners)
 - `R` dispatch docket (your phone reminders as aging paper cards)
 - `O` the orrery (clockpunk — live 3D solar system at today's real planetary positions)
+- `S` starport bay 94 (twin-sun desert dock; dispatches arrive as a hologram)
 
 ## Reminders from your phone (the Dispatch Docket)
 

@@ -59,27 +59,33 @@ TEXT_DIM   = (120, 124, 140)
 CARD_BG    = (18, 18, 28)
 CARD_EDGE  = (52, 52, 72)
 
-# Day phases: (start_hour, state_name, board label)
+# Day phases: (start_hour, state_name, board label) — the full collection
 PHASES = [
     (6,  "conservatory", "CONSERVATORY"),
     (9,  "ambient",      "NEON SPRAWL"),
     (12, "climate",      "WX.SYS"),
     (13, "orbital",      "ORBITAL CTRL"),
+    (15, "aerodrome",    "AERODROME"),
     (17, "telegraph",    "TELEGRAPH"),
     (19, "biolab",       "BIO-VAT LAB"),
-    (22, "abyssal",      "ABYSSAL STN"),
+    (21, "starport",     "STARPORT B-94"),
+    (23, "abyssal",      "ABYSSAL STN"),
 ]
 
-# Card rail: (state, label, key hint, accent)
+# Card rail: every screen in the machine (4 x 3)
 WORLDS = [
     ("ambient",      "SPRAWL",  "1", NEON_PINK),
+    ("climate",      "WX.SYS",  "8", AMBER),
     ("orbital",      "ORBITAL", "4", PHOSPHOR),
     ("biolab",       "BIO-VAT", "5", TOXIC),
     ("telegraph",    "TELEGRF", "6", BRASS),
     ("conservatory", "GARDEN",  "7", LEAF),
-    ("climate",      "WX.SYS",  "8", AMBER),
     ("abyssal",      "ABYSSAL", "0", SEAFOAM),
+    ("aerodrome",    "AERODRM", "D", (216, 150, 70)),
     ("orrery",       "ORRERY",  "O", (196, 156, 80)),
+    ("starport",     "STARPRT", "S", (130, 200, 255)),
+    ("docket",       "DOCKET",  "R", (200, 60, 45)),
+    ("greetings",    "PROTOCL", "9", (255, 160, 60)),
 ]
 
 AUTO_DWELL = 15.0     # seconds on the hub before auto-pilot dispatches
@@ -135,10 +141,10 @@ class NexusState(State):
         self._clock_str = ""
         self._clock_surf = None
 
-        # layout
-        self.rail_y = int(SCREEN_HEIGHT * 0.47)
+        # layout: 4 x 3 rail holding the whole collection
+        self.rail_y = s(200)
         self.card_w = (SCREEN_WIDTH - s(16) - s(6) * 3) // 4
-        self.card_h = s(64)
+        self.card_h = s(56)
 
         self._bg = self._build_background()
         self._cards = [self._build_card(w) for w in WORLDS]
@@ -162,8 +168,8 @@ class NexusState(State):
                                (SCREEN_WIDTH - m, SCREEN_HEIGHT - m, -1, -1)]:
             pygame.draw.line(surf, BRASS, (cx, cy), (cx + dx * l, cy), 2)
             pygame.draw.line(surf, BRASS, (cx, cy), (cx, cy + dy * l), 2)
-        # section rules
-        for yy in (int(SCREEN_HEIGHT * 0.44), int(SCREEN_HEIGHT * 0.80)):
+        # section rules: framing the world rail
+        for yy in (s(192), s(390)):
             pygame.draw.line(surf, CARD_EDGE, (s(10), yy), (SCREEN_WIDTH - s(10), yy))
         title = self.font_label.render("K E A  //  N E X U S", True, TEXT_DIM)
         surf.blit(title, ((SCREEN_WIDTH - title.get_width()) // 2, s(6)))
@@ -175,7 +181,7 @@ class NexusState(State):
         card = pygame.Surface((self.card_w, self.card_h), pygame.SRCALPHA)
         pygame.draw.rect(card, CARD_BG, card.get_rect(), border_radius=s(5))
         pygame.draw.rect(card, CARD_EDGE, card.get_rect(), 1, border_radius=s(5))
-        cx, cy = self.card_w // 2, s(24)
+        cx, cy = self.card_w // 2, s(17)
         dim = lerp_color(accent, CARD_BG, 0.35)
 
         if state == "ambient":            # three towers + a moon
@@ -214,6 +220,27 @@ class NexusState(State):
                                  (cx + s(10), cy + s(1) + i * s(3)), 2)
             pygame.draw.line(card, dim, (cx - s(13), cy + s(11)),
                              (cx + s(13), cy + s(11)), 1)
+        elif state == "aerodrome":        # zeppelin
+            hullr = pygame.Rect(0, 0, s(24), s(10))
+            hullr.center = (cx, cy - s(2))
+            pygame.draw.ellipse(card, dim, hullr)
+            pygame.draw.ellipse(card, accent, hullr, 1)
+            pygame.draw.polygon(card, dim, [(cx - s(12), cy - s(2)),
+                                            (cx - s(17), cy - s(7)),
+                                            (cx - s(15), cy - s(1))])
+            pygame.draw.rect(card, accent, (cx - s(3), cy + s(4), s(6), s(3)))
+        elif state == "starport":         # twin suns over the horizon
+            pygame.draw.circle(card, accent, (cx + s(3), cy - s(2)), s(7))
+            pygame.draw.circle(card, dim, (cx - s(7), cy - s(6)), s(4))
+            pygame.draw.line(card, dim, (cx - s(13), cy + s(7)),
+                             (cx + s(13), cy + s(7)), 2)
+            pygame.draw.line(card, accent, (cx - s(6), cy + s(11)),
+                             (cx + s(6), cy + s(11)), 1)
+        elif state == "docket":           # filed card + stamp
+            pygame.draw.rect(card, dim, (cx - s(9), cy - s(9), s(18), s(20)), 1,
+                             border_radius=s(2))
+            pygame.draw.line(card, dim, (cx - s(6), cy - s(4)), (cx + s(6), cy - s(4)), 1)
+            pygame.draw.circle(card, accent, (cx + s(3), cy + s(4)), s(4), 1)
         elif state == "orrery":           # tilted orbit + planet on its arm
             r = pygame.Rect(0, 0, s(26), s(12))
             r.center = (cx, cy)
@@ -389,7 +416,7 @@ class NexusState(State):
                                  2, border_radius=s(6))
 
         # ── NOW / NEXT transit board ─────────────────────────────────────
-        by = int(SCREEN_HEIGHT * 0.82)
+        by = s(398)
         _, now_label, until, next_label = self._recommended(now)
         n1 = self.font_board.render(f"NOW   {now_label}", True, TEXT_PALE)
         n2 = self.font_board.render(f"NEXT  {next_label}  ·  {until}", True, TEXT_DIM)

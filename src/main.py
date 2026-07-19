@@ -15,6 +15,7 @@ from states.nexus_state import NexusState
 from states.aerodrome_state import AerodromeState
 from states.docket_state import DocketState
 from states.orrery_state import OrreryState
+from states.starport_state import StarportState
 from backend import lifebook
 from hardware_input import (
     HardwareButtons,
@@ -117,6 +118,7 @@ def main():
     manager.add_state('aerodrome', AerodromeState(manager))
     manager.add_state('docket', DocketState(manager))
     manager.add_state('orrery', OrreryState(manager))
+    manager.add_state('starport', StarportState(manager))
     lifebook.bump('boots')
     
     # Boot into the Nexus home hub
@@ -184,6 +186,8 @@ def main():
                     manager.change_state('docket')
                 elif event.key == pygame.K_o:
                     manager.change_state('orrery')
+                elif event.key == pygame.K_s:
+                    manager.change_state('starport')
                 elif event.key == pygame.K_6:
                     manager.change_state('telegraph')
                 elif event.key == pygame.K_7:
