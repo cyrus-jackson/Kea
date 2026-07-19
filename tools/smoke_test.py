@@ -64,6 +64,7 @@ class FakeManager:
 for cls in STATES:
     try:
         st = cls(FakeManager())
+        st.enter()                                 # states may rely on it
         for _ in range(20):
             st.update(1 / 30)
         st.draw(surface)

@@ -33,7 +33,8 @@ class StateManager:
         self.state_names = []
         self.current_state = None
         self.current_state_name = None
-        
+        self.previous_state_name = None   # so transient states can go back
+
     def add_state(self, name, state):
         self.states[name] = state
         if name not in self.state_names:
@@ -42,7 +43,10 @@ class StateManager:
     def change_state(self, name):
         if self.current_state:
             self.current_state.exit()
-            
+
+        if name != self.current_state_name:
+            self.previous_state_name = self.current_state_name
+
         self.current_state = self.states.get(name)
         self.current_state_name = name
         
