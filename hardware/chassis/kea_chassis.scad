@@ -8,9 +8,8 @@
 // measuring your actual Pi+display stack.
 // ============================================================
 
-part = "shell"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
+part = "assembly"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
                 // | "wedge" | "camstand" | "camplate" | "assembly"
-                // | "riser_base" | "riser_tower" (print 2x) | "riser_tray"
                 // RECOMMENDED PRINT: shell_left + shell_right, each lying on
                 // its cut face -> every feature prints as a vertical wall,
                 // NO supports needed anywhere. Align the halves with short
@@ -218,18 +217,10 @@ module stack_cradle() {
 // up to release the stack. Print lying on its flat face.
 // ============================================================
 module wedge() {
-  difference() {
-    union() {
-      rotate([90, 0, 90]) linear_extrude(58)
-        polygon([[0, 0], [1.5, 0], [9.5, 62], [0, 62]]);
-      // grip tab on the thick end
-      translate([0, 0, 56]) cube([58, 11, 6]);
-    }
-    // wire pass-through: GPIO jumpers from the Pi's exposed pins run
-    // through here. The cutout sits over the cradle's center gap, so
-    // the wedge still bears on both flanges at its solid side rails.
-    translate([17, -1, 8]) cube([24, 13, 44]);
-  }
+  rotate([90, 0, 90]) linear_extrude(58)
+    polygon([[0, 0], [1.5, 0], [9.5, 62], [0, 62]]);
+  // grip tab on the thick end
+  translate([0, 0, 56]) cube([58, 11, 6]);
 }
 
 module deck_holes() {
@@ -349,52 +340,6 @@ module camera_plate() {
 }
 
 // ============================================================
-// BREADBOARD RISER — freestanding adjustable elevator, so the
-// breadboard can sit at whatever height keeps the jumpers short.
-// Three flat parts, no supports: base (mortises), two ladder
-// towers (tab into the base), and a tray that slides into any
-// rung pair — 6 levels, 10 mm apart. Stands anywhere on the
-// bottom plate; the tray also carries a fence for the 83x55
-// half breadboard. Lift the tray, move it a rung, done.
-// ============================================================
-module riser_base() {
-  difference() {
-    union() {
-      cube([100, 50, 3]);
-      for (fx = [2, 92], fy = [2, 42])          // feet: clear the tab tips
-        translate([fx, fy, -1.5]) cube([6, 6, 1.5]);
-    }
-    for (x = [3, 93.6]) translate([x, 5, -1]) cube([3.4, 40, 5]);  // mortises
-    translate([22, 8, -1]) cube([56, 34, 5]);   // lightening hole
-  }
-}
-
-module riser_tower() {
-  // printed flat: x = depth (50), y = height (75)
-  difference() {
-    cube([50, 75, 3]);
-    for (h = [16, 26, 36, 46, 56, 66])          // ladder slots for the tray
-      translate([5, h, -1]) cube([40, 3.6, 5]);
-    translate([12, 4, -1]) cube([26, 8, 5]);    // wire pass at floor level
-  }
-  translate([5.3, -4, 0]) cube([39.4, 4, 3]);   // tab into the base mortise
-}
-
-module riser_tray() {
-  union() {
-    difference() {
-      cube([87, 50, 3]);
-      translate([30, 12, -1]) cube([27, 26, 5]);  // lightening + zip-tie hole
-    }
-    for (tx = [-6, 87])                            // side tabs -> tower slots
-      translate([tx, 6, 0]) cube([6, 38, 3]);
-    // breadboard fence (pocket 83.6 wide, open front/back for wires)
-    translate([1.4, 0, 3]) cube([2, 50, 3.5]);
-    translate([85.0 - 1.4, 0, 3]) cube([2, 50, 3.5]);
-  }
-}
-
-// ============================================================
 // RENDER
 // ============================================================
 if (part == "shell")    shell();
@@ -405,9 +350,6 @@ if (part == "shell_right")
 if (part == "bottom")   bottom_plate();
 if (part == "door")     door();
 if (part == "wedge")    wedge();
-if (part == "riser_base")  riser_base();
-if (part == "riser_tower") riser_tower();
-if (part == "riser_tray")  riser_tray();
 if (part == "camstand") camstand();
 if (part == "camplate") camera_plate();
 if (part == "assembly") {
