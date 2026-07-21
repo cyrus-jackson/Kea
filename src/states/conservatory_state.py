@@ -107,7 +107,8 @@ class ConservatoryState(State):
         self.prune_timer = 0.0
         self.pruning = False
         self.generation = lifebook.get("conservatory_gen", 1)   # remembered
-        self.rain_streaks = []          # rain running down the glass
+        self.rain_streaks = []
+        self.grow_lamp = False          # rain running down the glass
         self._seed_garden()
 
         # ambience particles: [x, y, phase, speed]
@@ -285,6 +286,14 @@ class ConservatoryState(State):
     # ══════════════════════════════════════════════════════════════════════
     # State interface
     # ══════════════════════════════════════════════════════════════════════
+    def on_toggle(self, on):
+        """Toggle: grow lamps — the garden fills in noticeably faster."""
+        self.grow_lamp = on
+        self.GROW_TICK = 0.09 if on else 0.28
+
+    def toggle_label(self):
+        return "GROW LAMP"
+
     def update(self, dt):
         self.time_alive += dt
 

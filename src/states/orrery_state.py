@@ -95,6 +95,7 @@ class OrreryState(State):
 
         self._bg = self._build_bg()
         self._front_name = "EARTH"
+        self.labels = False            # toggle: name every planet
 
     # ══════════════════════════════════════════════════════════════════════
     def _build_bg(self):
@@ -147,6 +148,13 @@ class OrreryState(State):
         return out
 
     # ══════════════════════════════════════════════════════════════════════
+    def on_toggle(self, on):
+        """Toggle: engrave every planet's name beside its bead."""
+        self.labels = on
+
+    def toggle_label(self):
+        return "NAME PLANETS"
+
     def update(self, dt):
         self.time_alive += dt
 
@@ -229,6 +237,10 @@ class OrreryState(State):
                 pygame.draw.circle(surface, lerp_color(shaded, IVORY, 0.5),
                                    (int(p[0] - pr * 0.3), int(p[1] - pr * 0.3)),
                                    max(1, pr // 3))
+                if self.labels:
+                    nm = self.font_label.render(name, True, IVORY)
+                    surface.blit(nm, (int(p[0]) + pr + s(3),
+                                      int(p[1]) - nm.get_height() // 2))
                 if name == "SATURN":                 # the ring
                     ring = pygame.Rect(0, 0, int(pr * 3.4), int(pr * 1.3))
                     ring.center = (int(p[0]), int(p[1]))

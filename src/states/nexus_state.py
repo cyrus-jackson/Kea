@@ -298,6 +298,14 @@ class NexusState(State):
     def _on_weather(self, data):
         self.weather = data
 
+    def on_toggle(self, on):
+        """Toggle: the auto-pilot lever."""
+        self.auto_pilot = on
+        self.dwell = 0.0
+
+    def toggle_label(self):
+        return "AUTO-PILOT"
+
     def move_cursor(self, delta):
         """Encoder turned: walk the world rail."""
         from backend import voice

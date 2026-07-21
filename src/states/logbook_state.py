@@ -72,6 +72,7 @@ class LogbookState(State):
         self.time_alive = 0.0
         self.stats = []
         self.week = []
+        self.span = 7
         self.milestone = None
 
         self.page = pygame.Rect(s(14), s(16), SCREEN_WIDTH - s(28),
@@ -131,7 +132,7 @@ class LogbookState(State):
             ("CHARACTERS SENT", lifebook.get("chars_tx", 0)),
             ("AWAKENINGS", lifebook.get("boots", 0)),
         ]
-        self.week = lifebook.recent_days("focus", 7)
+        self.week = lifebook.recent_days("focus", getattr(self, "span", 7))
 
         # next milestone: whichever tally is closest to its next threshold
         best = None
@@ -149,6 +150,14 @@ class LogbookState(State):
 
     def enter(self):
         self._gather()
+
+    def on_toggle(self, on):
+        """Toggle: chart the last 28 days instead of the last 7."""
+        self.span = 28 if on else 7
+        self._gather()
+
+    def toggle_label(self):
+        return "MONTH VIEW"
 
     def update(self, dt):
         prev = self.time_alive
@@ -188,7 +197,9 @@ class LogbookState(State):
 
         # ── a week of focus, in ink bars ────────────────────────────────
         chart_y = y + s(10)
-        head = self.font_small.render("FOCUS, THIS WEEK", True, INK)
+        head = self.font_small.render(
+            "FOCUS, THIS MONTH" if getattr(self, "span", 7) > 7
+            else "FOCUS, THIS WEEK", True, INK)
         surface.blit(head, (px, chart_y))
         base = chart_y + s(62)
         pygame.draw.line(surface, INK, (px, base), (px + pw, base), 1)
@@ -203,16 +214,18 @@ class LogbookState(State):
                 pygame.draw.rect(surface, INK, bar)
                 pygame.draw.rect(surface, lerp_color(INK, PAPER, 0.35),
                                  (bar.x, bar.y, bar.w, s(2)))
-                cnt = self.font_small.render(str(count), True, INK)
-                surface.blit(cnt, (bx + bw // 2 - cnt.get_width() // 2,
-                                   base - bh - s(13)))
+                if len(self.week) <= 10:
+                    cnt = self.font_small.render(str(count), True, INK)
+                    surface.blit(cnt, (bx + bw // 2 - cnt.get_width() // 2,
+                                       base - bh - s(13)))
             else:
                 pygame.draw.line(surface, INK_FAINT,
                                  (bx, base - 1), (bx + bw, base - 1), 1)
-            initial = self.font_small.render(day.strftime("%a")[0].upper(),
-                                             True, INK_FAINT)
-            surface.blit(initial, (bx + bw // 2 - initial.get_width() // 2,
-                                   base + s(4)))
+            if len(self.week) <= 10:
+                initial = self.font_small.render(day.strftime("%a")[0].upper(),
+                                                 True, INK_FAINT)
+                surface.blit(initial, (bx + bw // 2 - initial.get_width() // 2,
+                                       base + s(4)))
 
         # ── the next milestone, in red ink ──────────────────────────────
         my = base + s(24)

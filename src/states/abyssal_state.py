@@ -75,6 +75,7 @@ class AbyssalState(State):
                                     self.hud_bot.y - self.hud_top.bottom)
 
         self.time_alive = 0.0
+        self.floodlight = False        # toggle: full illumination
 
         # fish school: slots around a wandering leader
         self.fish = []
@@ -235,6 +236,13 @@ class AbyssalState(State):
     # ══════════════════════════════════════════════════════════════════════
     # Update
     # ══════════════════════════════════════════════════════════════════════
+    def on_toggle(self, on):
+        """Toggle: the station's floodlights, revealing the whole trench."""
+        self.floodlight = on
+
+    def toggle_label(self):
+        return "FLOODLIGHT"
+
     def update(self, dt):
         self.time_alive += dt
         t = self.time_alive
@@ -432,6 +440,11 @@ class AbyssalState(State):
         # marine snow (nearest layer)
         for p in self.snow:
             surface.fill(SNOW, (int(p[0]), int(p[1]), 1, 1))
+
+        if self.floodlight:            # wash the abyss in cold light
+            glow = pygame.Surface((SCREEN_WIDTH, self.sea_rect.h), pygame.SRCALPHA)
+            glow.fill((120, 190, 200, 46))
+            surface.blit(glow, (0, self.sea_rect.y))
 
         # ── HUD ──────────────────────────────────────────────────────────
         surface.blit(self._hud_surf, (0, 0))

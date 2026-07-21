@@ -76,6 +76,7 @@ class AerodromeState(State):
         # zeppelin
         self.zep = None
         self.zep_timer = 2.0
+        self.moored = False
 
         # banner plane
         self.plane = None
@@ -260,6 +261,13 @@ class AerodromeState(State):
         }
 
     # ══════════════════════════════════════════════════════════════════════
+    def on_toggle(self, on):
+        """Toggle: night mooring — hold the zeppelin at the mast."""
+        self.moored = on
+
+    def toggle_label(self):
+        return "MOOR AIRSHIP"
+
     def update(self, dt):
         self.time_alive += dt
         self.current_affairs.update(dt)
@@ -282,7 +290,7 @@ class AerodromeState(State):
         wx = world_weather.conditions()
         if self.zep is None:
             self.zep_timer -= dt
-            if self.zep_timer <= 0 and wx["wind"] < 32:
+            if self.zep_timer <= 0 and wx["wind"] < 32 and not self.moored:
                 self._spawn_zeppelin()
         else:
             self.zep["x"] += self.zep["vx"] * dt

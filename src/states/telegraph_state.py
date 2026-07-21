@@ -358,6 +358,13 @@ class TelegraphState(State):
     # ══════════════════════════════════════════════════════════════════════
     # State interface
     # ══════════════════════════════════════════════════════════════════════
+    def on_toggle(self, on):
+        """Toggle: run the tape at double speed."""
+        self.scroll_spd = self.BASE_SPEED * SCALE * (2.2 if on else 1.0)
+
+    def toggle_label(self):
+        return "FAST TAPE"
+
     def update(self, dt):
         self.tape_x += self.scroll_spd * dt
         ratio = self.scroll_spd / (self.BASE_SPEED * SCALE)

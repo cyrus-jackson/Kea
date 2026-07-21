@@ -82,6 +82,7 @@ class BiolabState(State):
                                      SCREEN_WIDTH - s(24), s(20))
 
         self.time_alive = 0.0
+        self.uv = False                                  # toggle: UV lamp
         self.batch = lifebook.get("biolab_batch", 1)     # remembered
         self.reculture_timer = 0.0
         self._reculture()
@@ -222,6 +223,13 @@ class BiolabState(State):
     # ══════════════════════════════════════════════════════════════════════
     # Update
     # ══════════════════════════════════════════════════════════════════════
+    # ── toggle: kill the room lights, the specimens fluoresce ───────────
+    def on_toggle(self, on):
+        self.uv = on
+
+    def toggle_label(self):
+        return "UV LAMP"
+
     def update(self, dt):
         self.time_alive += dt
 
@@ -279,6 +287,11 @@ class BiolabState(State):
     def draw(self, surface):
         surface.blit(self._frame_surf, (0, 0))
         t = self.time_alive
+
+        if self.uv:                       # room lights down, violet wash
+            wash = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            wash.fill((40, 8, 70, 150))
+            surface.blit(wash, (0, 0))
 
         for vat in self.vats:
             self._draw_vat(surface, vat, t)
@@ -345,6 +358,15 @@ class BiolabState(State):
                 ny = py + math.sin(tc["angle"]) * tc["len"] / 4
                 pygame.draw.line(surface, sp["dark"], (px, py), (nx, ny), max(1, s(3) - k))
                 px, py = nx, ny
+
+        if self.uv:                        # everything alive glows under UV
+            sp = dict(sp)
+            sp["bright"] = lerp_color(sp["bright"], (190, 255, 130), 0.75)
+            sp["dark"] = lerp_color(sp["dark"], (120, 230, 90), 0.6)
+            glow = pygame.Surface((int(br * 6), int(br * 6)), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (150, 255, 120, 46),
+                               (int(br * 3), int(br * 3)), int(br * 2.6))
+            surface.blit(glow, (int(cx - br * 3), int(cy - br * 3)))
 
         # lobed body
         for la, ld, lr in sp["lobes"]:

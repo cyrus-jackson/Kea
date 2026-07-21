@@ -112,6 +112,18 @@ class PomodoroState(State):
     def enter(self):
         pass
 
+    # ── the deck toggle is this screen's run lever ──────────────────────
+    def on_toggle(self, on):
+        """Up = running, down = held. A position switch is exactly the
+        right shape for a timer's run state."""
+        if on != self.running:
+            self.running = on
+            from backend import voice
+            voice.say("focus_start" if on else "blip")
+
+    def toggle_label(self):
+        return "RUN TIMER"
+
     def _begin_transition(self, mode_name):
         self.transition_mode = mode_name
         self.transition_timer = TRANSITION_TIME

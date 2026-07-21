@@ -100,6 +100,8 @@ class AmbientState(State):
 
         self.generate_city()
 
+        self.force_storm = False       # toggle: manual storm override
+
         # traffic (street + sky)
         self.traffic = self.gen_traffic(num_cars=16, speed=20)
         self.traffic.extend(self.gen_sky_traffic(num_cars=2, speed=10))
@@ -162,6 +164,14 @@ class AmbientState(State):
     # ══════════════════════════════════════════════════════════════════════
     # City generation (everything here runs once per generation)
     # ══════════════════════════════════════════════════════════════════════
+    def on_toggle(self, on):
+        """Toggle: override the real sky and let it pour."""
+        self.force_storm = on
+        self._wx_timer = 0.0           # apply on the next update
+
+    def toggle_label(self):
+        return "SUMMON STORM"
+
     def set_weather(self, rain_intensity, wind_speed):
         self.rain_intensity = max(0.0, min(1.0, rain_intensity))
         self.wind_speed = wind_speed
@@ -436,7 +446,10 @@ class AmbientState(State):
         if self._wx_timer <= 0:
             self._wx_timer = 30.0
             wx = world_weather.conditions()
-            self.set_weather(wx["rain"], -wx["wind"] * 0.6)
+            if self.force_storm:          # toggle: summon a storm on demand
+                self.set_weather(0.95, -34.0)
+            else:
+                self.set_weather(wx["rain"], -wx["wind"] * 0.6)
 
         for car in self.traffic:
             car["x"] += car["speed"] * dt

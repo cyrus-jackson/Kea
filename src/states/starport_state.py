@@ -75,6 +75,7 @@ class StarportState(State):
 
         # freighter event loop
         self.ship_state = "inbound"       # inbound | landed | depart | gone
+        self.grounded = False
         self.ship_t = 0.0
         self.ship_wait = 0.0
         self.dust = []                    # [x, y, vx, vy, life]
@@ -175,6 +176,13 @@ class StarportState(State):
                               math.cos(a) * v, -abs(math.sin(a)) * v * 0.45,
                               random.uniform(0.5, 1.1)])
 
+    def on_toggle(self, on):
+        """Toggle: ground all traffic; the pad stays clear."""
+        self.grounded = on
+
+    def toggle_label(self):
+        return "GROUND TRAFFIC"
+
     def update(self, dt):
         self.time_alive += dt
         t = self.time_alive
@@ -214,7 +222,8 @@ class StarportState(State):
             self.ship_state = "gone"
             self.ship_t = 0.0
             self.ship_wait = random.uniform(10.0, 22.0)
-        elif self.ship_state == "gone" and self.ship_t >= self.ship_wait:
+        elif self.ship_state == "gone" and self.ship_t >= self.ship_wait \
+                and not self.grounded:
             self.ship_state = "inbound"
             self.ship_t = 0.0
 

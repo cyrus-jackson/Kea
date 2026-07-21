@@ -101,6 +101,7 @@ class GreetingsState(State):
         self.next_greeting = None
         self.channel = "protocol"
         self.rx_time = ""
+        self.local_only = False
 
         self.phase = "typing"
         self.phase_timer = 0.0
@@ -195,6 +196,17 @@ class GreetingsState(State):
                 self._set_greeting(self.fun_messages[0])
 
     # ══════════════════════════════════════════════════════════════════════
+    def on_toggle(self, on):
+        """Toggle: cut the uplinks and run on local protocol only."""
+        from backend import voice
+        import system_protocol as sp
+        sp.FEEDS_ENABLED = not on
+        self.local_only = on
+        voice.say("blip")
+
+    def toggle_label(self):
+        return "LOCAL ONLY"
+
     def update(self, dt):
         self.global_time += dt
         self.phase_timer += dt

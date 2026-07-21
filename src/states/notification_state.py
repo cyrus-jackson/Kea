@@ -83,6 +83,7 @@ class NotificationState(State):
         self.time_alive = 0.0
         self.return_to = "nexus"
         self.lamps = []
+        self.hold = False
         self.top = None
 
         # lamp grid: 2 columns x 3 rows, filling the panel to the footer
@@ -255,6 +256,15 @@ class NotificationState(State):
             self.lamps = self._gather()
             self.top = self._pick_top()
 
+    def on_toggle(self, on):
+        """Toggle: hold the panel up instead of auto-returning."""
+        self.hold = on
+        if on:
+            self.timer = 0.0
+
+    def toggle_label(self):
+        return "HOLD PANEL"
+
     def _dwell(self):
         self._ensure()
         return DWELL_ALERT if SEV_RANK[self.top[1]] >= 2 else DWELL_CLEAR
@@ -267,7 +277,7 @@ class NotificationState(State):
         if int(self.timer * 2) != int(prev_timer * 2):
             self.lamps = self._gather()          # refresh twice a second
             self.top = self._pick_top()
-        if self.timer >= self._dwell():
+        if not self.hold and self.timer >= self._dwell():
             self.manager.change_state(self.return_to)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -382,6 +392,7 @@ class NotificationState(State):
                              (bar.x, bar.y, max(1, int(bar.w * remain)), bar.h),
                              border_radius=s(2))
         back = self.font_lamp.render(
+            "HELD — FLIP TOGGLE TO RELEASE" if self.hold else
             f"RETURNING TO {self.return_to.upper()}  ·  "
             f"{max(0.0, self._dwell() - self.timer):.0f}S",
             True, LABEL_DIM)

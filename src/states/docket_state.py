@@ -78,6 +78,7 @@ class DocketState(State):
 
         self.time_alive = 0.0
         self._last_count = self.service.count()
+        self.show_done = False        # toggle flips to the completed pile
 
         # animations
         self.capsule = None          # y progress of arriving tube capsule
@@ -132,6 +133,13 @@ class DocketState(State):
         return lines
 
     # ══════════════════════════════════════════════════════════════════════
+    # ── toggle: flip the board over to what you've already done ─────────
+    def on_toggle(self, on):
+        self.show_done = on
+
+    def toggle_label(self):
+        return "SHOW DONE"
+
     def on_green_button(self):
         """Main routes the green hardware button here. True = consumed."""
         if self.stamp_anim is None and self.service.count() > 0:
@@ -189,6 +197,32 @@ class DocketState(State):
                              (tx - s(4), int(cy), s(8), s(18)), 1, border_radius=s(4))
 
         card_w = SCREEN_WIDTH - s(44)
+
+        # ── toggle view: the completed pile, newest first ───────────────
+        if self.show_done:
+            done = sorted([r for r in self.service.reminders if r["done_ts"]],
+                          key=lambda r: r["done_ts"], reverse=True)
+            lbl = self.font_small.render(
+                f"DELIVERED · {len(done)} TOTAL", True, DONE_GRN)
+            surface.blit(lbl, (s(14), s(64)))
+            if not done:
+                none = self.font_card.render("NOTHING STAMPED YET.", True, PAPER_OLD)
+                surface.blit(none, ((SCREEN_WIDTH - none.get_width()) // 2,
+                                    int(SCREEN_HEIGHT * 0.42)))
+                return
+            for i, r in enumerate(done[:6]):
+                card = pygame.Rect(s(12), s(82) + i * s(52), card_w, s(44))
+                self._draw_card(surface, card, r["text"], None, now, big=False)
+                # struck through, with the time it was cleared
+                pygame.draw.line(surface, INK_FAINT,
+                                 (card.x + s(16), card.centery - s(4)),
+                                 (card.right - s(52), card.centery - s(4)), 1)
+                when = datetime.datetime.fromtimestamp(r["done_ts"]).strftime("%H:%M")
+                ts = self.font_small.render(when, True, DONE_GRN)
+                surface.blit(ts, (card.right - ts.get_width() - s(8),
+                                  card.bottom - s(16)))
+            return
+
         if not active and self.stamp_anim is None:
             self._draw_empty(surface, t)
             return

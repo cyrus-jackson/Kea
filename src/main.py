@@ -32,6 +32,38 @@ from hardware_input import (
 from states.nexus_state import WORLDS
 
 
+_chip_font = None
+
+
+def _draw_toggle_chip(surface, manager):
+    """Small badge naming what the physical toggle does on this screen."""
+    cur = manager.current_state
+    if cur is None or not hasattr(cur, 'toggle_label'):
+        return
+    label = cur.toggle_label()
+    if not label:
+        return
+    global _chip_font
+    scale = surface.get_height() / 480.0
+    if _chip_font is None:
+        _chip_font = pygame.font.Font(None, max(11, int(14 * scale)))
+    on = manager.toggle_on
+    fg = (18, 18, 20) if on else (150, 155, 165)
+    bg = (240, 208, 90) if on else (30, 32, 38)
+    pad = max(3, int(5 * scale))
+    txt = _chip_font.render(("▲ " if on else "▽ ") + label, True, fg)
+    rect = txt.get_rect()
+    box = pygame.Rect(max(3, int(6 * scale)),
+                      surface.get_height() - rect.h - pad * 2 - max(3, int(5 * scale)),
+                      rect.w + pad * 2, rect.h + pad * 2)
+    chip = pygame.Surface(box.size, pygame.SRCALPHA)
+    chip.fill((*bg, 235 if on else 150))
+    surface.blit(chip, box.topleft)
+    if on:
+        pygame.draw.rect(surface, (255, 240, 170), box, 1)
+    surface.blit(txt, (box.x + pad, box.y + pad))
+
+
 def _tune(manager, direction):
     """Encoder turned outside Nexus: tune through the worlds like a dial."""
     names = [w[0] for w in WORLDS]
@@ -53,6 +85,7 @@ class StateManager:
         self.current_state = None
         self.current_state_name = None
         self.previous_state_name = None   # so transient states can go back
+        self.toggle_on = False            # physical switch position
 
     def add_state(self, name, state):
         self.states[name] = state
@@ -72,6 +105,13 @@ class StateManager:
         
         if self.current_state:
             self.current_state.enter()
+            # a position switch means what it points at: re-apply it so the
+            # new screen's mode always matches where the lever actually is
+            if hasattr(self.current_state, 'on_toggle'):
+                try:
+                    self.current_state.on_toggle(self.toggle_on)
+                except Exception:
+                    pass
 
     def next_state(self):
         """Cycles to the next available state sequentially."""
@@ -202,15 +242,18 @@ def main():
                 else:
                     manager.change_state('nexus')   # press = go home
             elif event.type == TOGGLE_EVENT:
-                if TOGGLE_ROLE == 'mute':
+                manager.toggle_on = event.on
+                cur = manager.current_state
+                # the screen you're on gets first refusal on the switch
+                if cur is not None and hasattr(cur, 'on_toggle'):
+                    cur.on_toggle(event.on)
+                elif TOGGLE_ROLE == 'mute':
                     voice.set_muted(event.on)
                 elif TOGGLE_ROLE == 'autopilot':
                     nx = manager.states.get('nexus')
                     if nx is not None:
                         nx.auto_pilot = event.on
                         nx.dwell = 0.0
-                        if event.on and manager.current_state_name != 'nexus':
-                            manager.change_state('nexus')
                 voice.say('question' if event.on else 'blip')
 
             # Global Key Inputs for Testing
@@ -296,6 +339,10 @@ def main():
                     manager.current_state.draw_pomodoro(logical_surface, pomodoro_state_obj.time_left, pomodoro_state_obj.mode)
                 else:
                     pomodoro_state_obj.draw_overlay(logical_surface)
+
+        # Toggle indicator: the lever's meaning changes per screen, so say
+        # what it's doing here. Drawn centrally to stay consistent.
+        _draw_toggle_chip(logical_surface, manager)
         
         # Rotate and blit to screen
         if ROTATION != 0:

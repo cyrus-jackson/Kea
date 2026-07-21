@@ -221,6 +221,13 @@ class OrbitalState(State):
     # ══════════════════════════════════════════════════════════════════════
     # Update
     # ══════════════════════════════════════════════════════════════════════
+    def on_toggle(self, on):
+        """Toggle: long-range sweep — the scope reaches further out."""
+        self.SWEEP_SPEED = 2.4 if on else 1.1
+
+    def toggle_label(self):
+        return "FAST SWEEP"
+
     def update(self, dt):
         self.time_alive += dt
         self.sweep = (self.sweep + self.SWEEP_SPEED * dt) % math.tau

@@ -32,6 +32,7 @@ class ClimateState(State):
         self.current_affairs = CurrentAffairs()
         self.weather_data = None
         self.loading = True
+        self.fahrenheit = False
 
         pygame.font.init()
         self.font_header = pygame.font.Font(None, s(22))
@@ -191,7 +192,10 @@ class ClimateState(State):
         rain_chance = data.get("rain_chance", 0)
         umbrella = "UMBRELLA: YES" if data.get("needs_umbrella") else "UMBRELLA: NO"
         try:
-            temp_str = f"{round(float(temp))}°"
+            _t = float(temp)
+            if getattr(self, "fahrenheit", False):
+                _t = _t * 9 / 5 + 32
+            temp_str = f"{round(_t)}°"
         except (TypeError, ValueError):
             temp_str = "--°"
 
@@ -220,6 +224,15 @@ class ClimateState(State):
                     random.randint(s(8), s(18)),       # length
                     NEON_MAGENTA if random.random() < 0.12 else NEON_CYAN,
                 ])
+
+    def on_toggle(self, on):
+        """Toggle: read temperatures in Fahrenheit."""
+        self.fahrenheit = on
+        if self.weather_data and not self.weather_data.get("error"):
+            self._on_weather_fetched(self.weather_data)   # re-render readouts
+
+    def toggle_label(self):
+        return "DEG F"
 
     def update(self, dt):
         self.animation_timer += dt
