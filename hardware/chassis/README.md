@@ -56,11 +56,15 @@ The ELEGOO 3.5" occupies header pins 1–26. Pins 27–40 stay exposed — that'
 | Red btn (pomodoro) | 20 | 38 | existing, to GND |
 | Green btn (notification) | 26 | 37 | existing, to GND |
 | Encoder CLK / DT / SW | 5 / 6 / 16 | 29 / 31 / 36 | KY-040: GND to ground, **+ starts unconnected** — but test it (see below) |
-| Toggle (3-pin ON-ON) | 19 | 35 | centre pin to GPIO 19, **one** outer pin to GND (leave the other unused) |
+| Toggle (3-pin ON-ON) | 19 | 35 | **centre** pin to GPIO 19, **one** outer leg to GND, third leg unused |
 | GND | — | 30/34/39 | breadboard ground rail |
 | (spare) | 12 / 13 | 32 / 33 | hardware-PWM pins, free for servos later |
 
 **Deck behaviour.** The dial browses the world rail on Nexus (press to enter) and tunes straight through the worlds anywhere else (press returns home). The toggle drives auto-pilot by default — set `KEA_TOGGLE_ROLE=mute` to make it a voice mute switch instead, or `none` to ignore it.
+
+**The toggle is a plain SPDT** — three legs, no electronics, so none of the KY-040's pull-up complications apply. Centre leg (the common pole) to GPIO 19; one outer leg to any ground; leave the third empty. Flipped toward the grounded leg the pin reads LOW = ON; flipped the other way the common floats and the Pi's internal pull-up holds it HIGH = OFF. It doesn't matter *which* outer leg you ground — that only decides which physical direction means "on". If it ends up backwards once the switch is nutted into the deck, set `KEA_TOGGLE_INVERT=1` rather than unsoldering.
+
+Ground is common across the whole header, so in practice run **one** ground wire to the breadboard's ground rail and land the buttons, encoder and toggle grounds there.
 
 Nothing here touches the 5 V rail, so no stacking header is needed for the buttons: each switch simply shorts its pin to ground and the Pi's internal pull-ups supply the rest. If you haven't wired the encoder or toggle yet, set `KEA_ENCODER=0` / `KEA_TOGGLE=0` — floating inputs can otherwise read as random presses.
 

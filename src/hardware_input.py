@@ -52,6 +52,9 @@ TOGGLE_PIN = 19
 
 # What the physical toggle does: "autopilot" | "mute" | "none"
 TOGGLE_ROLE = os.getenv("KEA_TOGGLE_ROLE", "autopilot").strip().lower()
+# Which way is "on". Set 1 if the switch ends up backwards once it's
+# nutted into the deck — cheaper than unsoldering the ground leg.
+TOGGLE_INVERT = os.getenv("KEA_TOGGLE_INVERT", "0").strip().lower() in {"1", "true", "on"}
 # Set 0 if you haven't wired the encoder/toggle yet (floating pins are noisy)
 ENC_ENABLED = os.getenv("KEA_ENCODER", "1").strip().lower() not in {"0", "false", "off"}
 TOGGLE_ENABLED = os.getenv("KEA_TOGGLE", "1").strip().lower() not in {"0", "false", "off"}
@@ -95,8 +98,8 @@ class HardwareButtons:
 
         if TOGGLE_ENABLED:
             GPIO.setup(TOGGLE_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-            # switch shorted to ground = engaged
-            self.toggle_on = GPIO.input(TOGGLE_PIN) == GPIO.LOW
+            # switch shorted to ground = engaged (unless inverted)
+            self.toggle_on = (GPIO.input(TOGGLE_PIN) == GPIO.LOW) != TOGGLE_INVERT
             self.previous_states[TOGGLE_PIN] = GPIO.input(TOGGLE_PIN)
 
         if ENC_ENABLED:
@@ -159,7 +162,7 @@ class HardwareButtons:
             current = GPIO.input(TOGGLE_PIN)
             if current != self.previous_states.get(TOGGLE_PIN):
                 self.previous_states[TOGGLE_PIN] = current
-                self.toggle_on = current == GPIO.LOW
+                self.toggle_on = (current == GPIO.LOW) != TOGGLE_INVERT
                 print(f"Toggle -> {'ON' if self.toggle_on else 'OFF'}")
                 _post(TOGGLE_EVENT, on=self.toggle_on)
 
