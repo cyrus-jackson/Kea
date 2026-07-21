@@ -55,14 +55,25 @@ The ELEGOO 3.5" occupies header pins 1–26. Pins 27–40 stay exposed — that'
 | Blue btn (cycle) | 21 | 40 | existing, to GND |
 | Red btn (pomodoro) | 20 | 38 | existing, to GND |
 | Green btn (notification) | 26 | 37 | existing, to GND |
-| Encoder CLK / DT / SW | 5 / 6 / 16 | 29 / 31 / 36 | KY-040: **leave + unconnected**, GND to ground. Internal pull-ups do the rest |
+| Encoder CLK / DT / SW | 5 / 6 / 16 | 29 / 31 / 36 | KY-040: GND to ground, **+ starts unconnected** — but test it (see below) |
 | Toggle (3-pin ON-ON) | 19 | 35 | centre pin to GPIO 19, **one** outer pin to GND (leave the other unused) |
 | GND | — | 30/34/39 | breadboard ground rail |
 | (spare) | 12 / 13 | 32 / 33 | hardware-PWM pins, free for servos later |
 
 **Deck behaviour.** The dial browses the world rail on Nexus (press to enter) and tunes straight through the worlds anywhere else (press returns home). The toggle drives auto-pilot by default — set `KEA_TOGGLE_ROLE=mute` to make it a voice mute switch instead, or `none` to ignore it.
 
-Nothing here touches the 5 V rail, so no stacking header is needed: every switch simply shorts its pin to ground and the Pi's internal pull-ups supply the rest. If you haven't wired the encoder or toggle yet, set `KEA_ENCODER=0` / `KEA_TOGGLE=0` — floating inputs can otherwise read as random presses.
+Nothing here touches the 5 V rail, so no stacking header is needed for the buttons: each switch simply shorts its pin to ground and the Pi's internal pull-ups supply the rest. If you haven't wired the encoder or toggle yet, set `KEA_ENCODER=0` / `KEA_TOGGLE=0` — floating inputs can otherwise read as random presses.
+
+### The KY-040 `+` pin — test before you trust it
+
+Pins 27–40 (everything the display leaves exposed) carry **no 3.3 V and no 5 V**, only ground. So the KY-040's `+` pin has nowhere convenient to go, and it starts unconnected.
+
+That is usually fine, but not always. The breakout board has 10 kΩ pull-ups from CLK and DT up to `+`. With `+` floating, grounding one data line drags the other down through those two resistors — roughly 3.3 V × 20 kΩ/70 kΩ ≈ **0.94 V**, which lands in the Pi's undefined input band (0.8–1.3 V). When that happens the second channel reads as noise and rotation decodes erratically or not at all.
+
+Run `python3 tools/test_encoder.py` and don't touch the knob. If it reports CLK and DT resting HIGH and steady, you're done — leave `+` off. If it warns, pick one:
+
+1. **Desolder R1 and R2** from the KY-040 (the two 10 kΩ pull-ups). The Pi's internal pull-ups then work perfectly on their own. No extra parts.
+2. **Feed `+` from 3.3 V** — pin 1 or 17, which needs a 2×20 stacking header to reach under the display. **3.3 V only, never 5 V**: the KY-040's pull-ups would otherwise push 5 V into GPIO 5/6 and damage the Pi.
 
 **Power:** with no servos, everything you're wiring (buttons, encoder, toggle) needs only GPIO + ground — and grounds ARE on the exposed pins 27–40. No stacking header, no cap, no external 5 V: the 2.5 A PSU into the Pi covers the lot.
 

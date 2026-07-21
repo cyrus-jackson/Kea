@@ -8,7 +8,7 @@
 // measuring your actual Pi+display stack.
 // ============================================================
 
-part = "shell_right"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
+part = "bottom"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
                 // | "wedge" | "camstand" | "camplate" | "assembly"
                 // | "riser_base" | "riser_tower" (print 2x) | "riser_tray"
                 // RECOMMENDED PRINT: shell_left + shell_right, each lying on
