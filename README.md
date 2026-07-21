@@ -91,6 +91,13 @@ Press `M` to mute (there's a VOICE lamp on the Annunciator). `KEA_VOICE=0` disab
 The **Pomodoro** (`2`) is an hourglass: sand drains in real time, the stream stops when you pause, and the instrument flips between sessions. Amber for focus, green for rest; three brass studs count the cycle to the long rest. GREEN starts/holds, RED resets.
 - `Esc` quits
 
+**Rotary dial (KY-040) & toggle:**
+- **Turn** — on Nexus, browses the world rail; anywhere else, tunes straight through the worlds like a radio dial
+- **Press** — on Nexus, enters the highlighted world; anywhere else, returns home
+- **Toggle** — auto-pilot on/off (or voice mute with `KEA_TOGGLE_ROLE=mute`)
+- Desktop stand-ins: `←`/`→` turn, `Enter` press, `T` toggle
+- Not wired yet? `KEA_ENCODER=0` / `KEA_TOGGLE=0` keeps floating pins quiet
+
 **Hardware Buttons:**
 - **Blue Button:** BCM GPIO 21 (Cycles through all available states)
 - **Red Button:** BCM GPIO 20 (Assigned to action `2` / pomodoro)

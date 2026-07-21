@@ -55,10 +55,14 @@ The ELEGOO 3.5" occupies header pins 1–26. Pins 27–40 stay exposed — that'
 | Blue btn (cycle) | 21 | 40 | existing, to GND |
 | Red btn (pomodoro) | 20 | 38 | existing, to GND |
 | Green btn (notification) | 26 | 37 | existing, to GND |
-| Encoder CLK / DT / SW | 5 / 6 / 16 | 29 / 31 / 36 | leave KY-040 VCC unconnected; enable internal pull-ups (`PUD_UP`) |
-| Toggle (privacy/mode) | 19 | 35 | to GND, read as input |
+| Encoder CLK / DT / SW | 5 / 6 / 16 | 29 / 31 / 36 | KY-040: **leave + unconnected**, GND to ground. Internal pull-ups do the rest |
+| Toggle (3-pin ON-ON) | 19 | 35 | centre pin to GPIO 19, **one** outer pin to GND (leave the other unused) |
 | GND | — | 30/34/39 | breadboard ground rail |
 | (spare) | 12 / 13 | 32 / 33 | hardware-PWM pins, free for servos later |
+
+**Deck behaviour.** The dial browses the world rail on Nexus (press to enter) and tunes straight through the worlds anywhere else (press returns home). The toggle drives auto-pilot by default — set `KEA_TOGGLE_ROLE=mute` to make it a voice mute switch instead, or `none` to ignore it.
+
+Nothing here touches the 5 V rail, so no stacking header is needed: every switch simply shorts its pin to ground and the Pi's internal pull-ups supply the rest. If you haven't wired the encoder or toggle yet, set `KEA_ENCODER=0` / `KEA_TOGGLE=0` — floating inputs can otherwise read as random presses.
 
 **Power:** with no servos, everything you're wiring (buttons, encoder, toggle) needs only GPIO + ground — and grounds ARE on the exposed pins 27–40. No stacking header, no cap, no external 5 V: the 2.5 A PSU into the Pi covers the lot.
 

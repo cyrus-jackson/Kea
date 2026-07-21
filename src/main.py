@@ -24,7 +24,24 @@ from hardware_input import (
     BUTTON_AMBIENT_EVENT,
     BUTTON_POMODORO_EVENT,
     BUTTON_NOTIFICATION_EVENT,
+    ENCODER_TURN_EVENT,
+    ENCODER_PRESS_EVENT,
+    TOGGLE_EVENT,
+    TOGGLE_ROLE,
 )
+from states.nexus_state import WORLDS
+
+
+def _tune(manager, direction):
+    """Encoder turned outside Nexus: tune through the worlds like a dial."""
+    names = [w[0] for w in WORLDS]
+    try:
+        i = names.index(manager.current_state_name)
+    except ValueError:
+        i = 0 if direction > 0 else len(names) - 1
+        manager.change_state(names[i])
+        return
+    manager.change_state(names[(i + direction) % len(names)])
 
 
 # --- State Manager ---
@@ -169,6 +186,33 @@ def main():
                 elif manager.current_state_name != 'pomodoro':
                     manager.change_state('notification')
             
+            # --- Rotary encoder: browse on Nexus, tune elsewhere ---
+            elif event.type == ENCODER_TURN_EVENT:
+                cur = manager.current_state
+                if manager.current_state_name == 'nexus' and \
+                        hasattr(cur, 'move_cursor'):
+                    cur.move_cursor(event.direction)
+                else:
+                    _tune(manager, event.direction)
+            elif event.type == ENCODER_PRESS_EVENT:
+                cur = manager.current_state
+                if manager.current_state_name == 'nexus' and \
+                        hasattr(cur, 'activate') and cur.activate():
+                    pass
+                else:
+                    manager.change_state('nexus')   # press = go home
+            elif event.type == TOGGLE_EVENT:
+                if TOGGLE_ROLE == 'mute':
+                    voice.set_muted(event.on)
+                elif TOGGLE_ROLE == 'autopilot':
+                    nx = manager.states.get('nexus')
+                    if nx is not None:
+                        nx.auto_pilot = event.on
+                        nx.dwell = 0.0
+                        if event.on and manager.current_state_name != 'nexus':
+                            manager.change_state('nexus')
+                voice.say('question' if event.on else 'blip')
+
             # Global Key Inputs for Testing
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
@@ -205,6 +249,18 @@ def main():
                     manager.change_state('logbook')
                 elif event.key == pygame.K_m:
                     voice.toggle_mute()
+                # desktop stand-ins for the deck hardware
+                elif event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+                    d = 1 if event.key == pygame.K_RIGHT else -1
+                    pygame.event.post(pygame.event.Event(ENCODER_TURN_EVENT,
+                                                         direction=d))
+                elif event.key == pygame.K_RETURN:
+                    pygame.event.post(pygame.event.Event(ENCODER_PRESS_EVENT))
+                elif event.key == pygame.K_t:
+                    nx = manager.states.get('nexus')
+                    on = not (nx.auto_pilot if nx else False) \
+                        if TOGGLE_ROLE == 'autopilot' else not voice.is_muted()
+                    pygame.event.post(pygame.event.Event(TOGGLE_EVENT, on=on))
                 elif event.key == pygame.K_6:
                     manager.change_state('telegraph')
                 elif event.key == pygame.K_7:

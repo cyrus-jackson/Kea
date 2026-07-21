@@ -139,6 +139,11 @@ class NexusState(State):
         self.auto_pilot = False
         self.dwell = 0.0
 
+        # encoder cursor: -1 until the knob is touched, so the rail stays
+        # clean until you actually reach for it
+        self.cursor = -1
+        self.cursor_seen = 0.0
+
         # cached clock
         self._clock_str = ""
         self._clock_surf = None
@@ -293,6 +298,25 @@ class NexusState(State):
     def _on_weather(self, data):
         self.weather = data
 
+    def move_cursor(self, delta):
+        """Encoder turned: walk the world rail."""
+        from backend import voice
+        if self.cursor < 0:
+            self.cursor = 0                      # first touch selects card 1
+        else:
+            self.cursor = (self.cursor + delta) % len(WORLDS)
+        self.cursor_seen = self.time_alive
+        self.dwell = 0.0                         # you're driving now
+        voice.say("blip")
+        return WORLDS[self.cursor][0]
+
+    def activate(self):
+        """Encoder pressed: enter the highlighted world."""
+        if 0 <= self.cursor < len(WORLDS):
+            self.manager.change_state(WORLDS[self.cursor][0])
+            return True
+        return False
+
     def handle_events(self, events):
         for event in events:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_a:
@@ -432,6 +456,13 @@ class NexusState(State):
                 pygame.draw.rect(surface, lerp_color(CARD_EDGE, world[3], pulse),
                                  (x - 1, y - 1, self.card_w + 2, self.card_h + 2),
                                  2, border_radius=s(6))
+            if i == self.cursor:           # the encoder's selection
+                sel = pygame.Rect(x - s(3), y - s(3),
+                                  self.card_w + s(6), self.card_h + s(6))
+                pygame.draw.rect(surface, TEXT_PALE, sel, 2, border_radius=s(7))
+                for cxp, cyp in ((sel.left, sel.top), (sel.right, sel.top),
+                                 (sel.left, sel.bottom), (sel.right, sel.bottom)):
+                    pygame.draw.circle(surface, world[3], (cxp, cyp), s(2))
 
         # ── NOW / NEXT transit board ─────────────────────────────────────
         by = s(398)
@@ -449,8 +480,10 @@ class NexusState(State):
             ap = self.font_board.render("AUTO OFF · [A]", True, TEXT_DIM)
         surface.blit(ap, (SCREEN_WIDTH - ap.get_width() - s(14), by))
         # rotate between the control hint and the machine's life story
-        if int(t / 8) % 2 == 0:
-            hint_str = "BLUE BTN CYCLES WORLDS"
+        if 0 <= self.cursor < len(WORLDS) and t - self.cursor_seen < 6.0:
+            hint_str = f"PRESS DIAL TO ENTER {WORLDS[self.cursor][1]}"
+        elif int(t / 8) % 2 == 0:
+            hint_str = "DIAL BROWSES  ·  PRESS ENTERS"
         else:
             hint_str = (f"GEN {lifebook.get('conservatory_gen', 1):02d} · "
                         f"BATCH {lifebook.get('biolab_batch', 1):02d} · "
