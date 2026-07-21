@@ -10,7 +10,13 @@ on this build (see the note about the + pin below).
 
 Turn the knob slowly one click at a time. You should see exactly one
 CW or CCW per click and the REST line should read 1 1 between clicks.
-Press the knob and flip the toggle to check those too. Ctrl-C to quit.
+
+Then press the knob (its shaft switch is the SW pin) and flip the
+toggle. A PRESS on its own is correct; a PRESS that drags a stray CW
+or CCW along with it means the board's SW pull-up is dragging the
+floating + rail down — same cure as below, desolder the pull-ups.
+
+Ctrl-C to quit.
 """
 
 import sys
