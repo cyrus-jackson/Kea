@@ -68,6 +68,16 @@ tg_prev = GPIO.input(TOGGLE)
 bad = 0
 last_print = 0.0
 
+# Short-detection: if SW simply mirrors DT (or CLK) while you turn, the
+# two lines are the same electrical node — a shared breadboard row, a
+# solder bridge, or a jumper on the wrong pad. Symptom is a PRESS on
+# every detent without touching the knob.
+samples = 0
+sw_eq_dt = 0
+sw_eq_clk = 0
+warned_short = False
+toggle_moved = False
+
 try:
     while True:
         clk, dt = GPIO.input(CLK), GPIO.input(DT)
@@ -95,7 +105,27 @@ try:
         tg = GPIO.input(TOGGLE)
         if tg != tg_prev:
             tg_prev = tg
+            toggle_moved = True
             print(f"  TOGGLE -> {'ON (shorted to GND)' if tg == 0 else 'OFF'}")
+
+        # correlate SW against the data lines while the knob is moving
+        samples += 1
+        if sw == dt:
+            sw_eq_dt += 1
+        if sw == clk:
+            sw_eq_clk += 1
+        if not warned_short and detents >= 3 and samples > 400:
+            if sw_eq_dt / samples > 0.98:
+                warned_short = True
+                print("\n[FAULT] SW mirrors DT exactly — those two pins are "
+                      "the same node.\n        Check that the SW jumper is on "
+                      "its own breadboard row and\n        lands on the SW pad "
+                      "(GPIO16 / pin 36), not DT.\n")
+            elif sw_eq_clk / samples > 0.98:
+                warned_short = True
+                print("\n[FAULT] SW mirrors CLK exactly — those two pins are "
+                      "the same node.\n        Check the SW jumper's row and "
+                      "pad (GPIO16 / pin 36).\n")
 
         now = time.time()
         if now - last_print > 0.5:
@@ -108,4 +138,9 @@ except KeyboardInterrupt:
     print(f"\n\n{detents} detents, {bad} illegal transitions.")
     if detents and bad > detents:
         print("More glitches than detents — see the + pin note above.")
+    if samples and sw_eq_dt / samples > 0.98 and detents >= 3:
+        print("SW mirrored DT for the whole run: those pins are shorted.")
+    if not toggle_moved:
+        print(f"Toggle never changed (stayed {'LOW/ON' if tg_prev == 0 else 'HIGH/OFF'})"
+              " — flip it during the test to confirm it works.")
     GPIO.cleanup()
