@@ -28,7 +28,15 @@ except ImportError:
     sys.exit("RPi.GPIO not found — run this on the Pi "
              "(sudo apt install python3-rpi.gpio)")
 
+import os
+
 CLK, DT, SW, TOGGLE = 5, 6, 16, 19
+# Spare GPIO driven HIGH to feed the KY-040's + pin (its pull-ups draw
+# under 1 mA). Set KEA_ENCODER_VCC=-1 to leave + unpowered.
+try:
+    ENC_VCC = int(os.getenv("KEA_ENCODER_VCC", "12"))
+except ValueError:
+    ENC_VCC = 12
 
 _QUAD = (0, -1, 1, 0,
          1, 0, 0, -1,
@@ -38,12 +46,19 @@ REST = 0b11
 
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
+if ENC_VCC >= 0:
+    GPIO.setup(ENC_VCC, GPIO.OUT)
+    GPIO.output(ENC_VCC, GPIO.HIGH)
 for pin in (CLK, DT, SW, TOGGLE):
     GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 print(__doc__)
 print(f"CLK=BCM{CLK} (pin 29)   DT=BCM{DT} (pin 31)   "
-      f"SW=BCM{SW} (pin 36)   TOGGLE=BCM{TOGGLE} (pin 35)\n")
+      f"SW=BCM{SW} (pin 36)   TOGGLE=BCM{TOGGLE} (pin 35)")
+if ENC_VCC >= 0:
+    print(f"KY-040 '+' should be wired to BCM{ENC_VCC} "
+          f"(pin {'32' if ENC_VCC == 12 else '33' if ENC_VCC == 13 else '?'}) "
+          "— driven HIGH as a 3.3 V rail\n")
 
 # ── idle sanity check: both data lines must sit HIGH when untouched ────────
 time.sleep(0.2)
@@ -115,17 +130,24 @@ try:
         if sw == clk:
             sw_eq_clk += 1
         if not warned_short and detents >= 3 and samples > 400:
-            if sw_eq_dt / samples > 0.98:
+            if sw_eq_dt / samples > 0.98 or sw_eq_clk / samples > 0.98:
                 warned_short = True
-                print("\n[FAULT] SW mirrors DT exactly — those two pins are "
-                      "the same node.\n        Check that the SW jumper is on "
-                      "its own breadboard row and\n        lands on the SW pad "
-                      "(GPIO16 / pin 36), not DT.\n")
-            elif sw_eq_clk / samples > 0.98:
-                warned_short = True
-                print("\n[FAULT] SW mirrors CLK exactly — those two pins are "
-                      "the same node.\n        Check the SW jumper's row and "
-                      "pad (GPIO16 / pin 36).\n")
+                other = "DT" if sw_eq_dt / samples > 0.98 else "CLK"
+                print(f"\n[FAULT] SW is following {other} instead of the "
+                      "button.\n"
+                      "        Almost always the KY-040's '+' pin having no "
+                      "supply: its\n"
+                      "        onboard pull-ups then couple the lines "
+                      "together through\n"
+                      "        the floating rail, sagging SW to ~1.1 V which "
+                      "reads LOW.\n"
+                      f"        Fix: wire '+' to BCM{ENC_VCC} (pin 32), which "
+                      "this tool drives\n"
+                      "        HIGH as a 3.3 V rail. Or desolder the board's "
+                      "pull-ups.\n"
+                      "        If '+' is already wired, then the two pins are "
+                      "genuinely\n"
+                      "        shorted — check the breadboard rows.\n")
 
         now = time.time()
         if now - last_print > 0.5:
@@ -139,7 +161,8 @@ except KeyboardInterrupt:
     if detents and bad > detents:
         print("More glitches than detents — see the + pin note above.")
     if samples and sw_eq_dt / samples > 0.98 and detents >= 3:
-        print("SW mirrored DT for the whole run: those pins are shorted.")
+        print("SW mirrored DT all run — power the KY-040's '+' pin "
+              f"from BCM{ENC_VCC} (pin 32).")
     if not toggle_moved:
         print(f"Toggle never changed (stayed {'LOW/ON' if tg_prev == 0 else 'HIGH/OFF'})"
               " — flip it during the test to confirm it works.")

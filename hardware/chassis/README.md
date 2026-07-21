@@ -55,10 +55,12 @@ The ELEGOO 3.5" occupies header pins 1–26. Pins 27–40 stay exposed — that'
 | Blue btn (cycle) | 21 | 40 | existing, to GND |
 | Red btn (pomodoro) | 20 | 38 | existing, to GND |
 | Green btn (notification) | 26 | 37 | existing, to GND |
-| Encoder CLK / DT / SW | 5 / 6 / 16 | 29 / 31 / 36 | KY-040: GND to ground, **+ starts unconnected** — but test it (see below) |
+| Encoder CLK / DT / SW | 5 / 6 / 16 | 29 / 31 / 36 | KY-040 data lines |
+| Encoder **+** | 12 | 32 | driven HIGH as a 3.3 V rail for the board's pull-ups (see below) |
+| Encoder GND | — | 30/34/39 | to the breadboard ground rail |
 | Toggle (3-pin ON-ON) | 19 | 35 | **centre** pin to GPIO 19, **one** outer leg to GND, third leg unused |
 | GND | — | 30/34/39 | breadboard ground rail |
-| (spare) | 12 / 13 | 32 / 33 | hardware-PWM pins, free for servos later |
+| (spare) | 13 | 33 | hardware-PWM pin, free for a servo later |
 
 **Deck behaviour.** The dial browses the world rail on Nexus (press to enter) and tunes straight through the worlds anywhere else (press returns home). The toggle drives auto-pilot by default — set `KEA_TOGGLE_ROLE=mute` to make it a voice mute switch instead, or `none` to ignore it.
 
@@ -74,10 +76,11 @@ Pins 27–40 (everything the display leaves exposed) carry **no 3.3 V and no 5 V
 
 That is usually fine, but not always. The breakout board has 10 kΩ pull-ups from CLK and DT up to `+`. With `+` floating, grounding one data line drags the other down through those two resistors — roughly 3.3 V × 20 kΩ/70 kΩ ≈ **0.94 V**, which lands in the Pi's undefined input band (0.8–1.3 V). When that happens the second channel reads as noise and rotation decodes erratically or not at all.
 
-Run `python3 tools/test_encoder.py` and don't touch the knob. If it reports CLK and DT resting HIGH and steady, you're done — leave `+` off. If it warns, pick one:
+The tell-tale is subtle: **everything looks fine at rest** (nothing is grounded, so the rail floats up and all lines read HIGH) and only misbehaves while turning. The classic symptom is a phantom PRESS on every detent, because grounding DT sags SW to ~0.8–0.95 V through the resistor pair.
 
-1. **Desolder R1 and R2** from the KY-040 (the two 10 kΩ pull-ups). The Pi's internal pull-ups then work perfectly on their own. No extra parts.
-2. **Feed `+` from 3.3 V** — pin 1 or 17, which needs a 2×20 stacking header to reach under the display. **3.3 V only, never 5 V**: the KY-040's pull-ups would otherwise push 5 V into GPIO 5/6 and damage the Pi.
+**The fix needs no extra parts: drive `+` from a spare GPIO.** Those pull-ups draw under 1 mA in total and a Pi GPIO sources up to 16 mA, so wire the KY-040's `+` to **BCM 12 (pin 32)** — conveniently right beside the encoder's other pins. Kea and `test_encoder.py` both set that pin as an output and drive it HIGH at startup, giving a solid 3.3 V rail from the exposed header. Change it with `KEA_ENCODER_VCC=13`, or `-1` to leave `+` unpowered.
+
+Alternatives if you'd rather not spend a GPIO: **desolder R1/R2/R3** from the KY-040 so the Pi's internal pull-ups work alone, or run `+` to real 3.3 V (pin 1 or 17) via a stacking header. **3.3 V only, never 5 V** — through those pull-ups, 5 V would go straight into GPIO 5/6 and damage the Pi.
 
 **Power:** with no servos, everything you're wiring (buttons, encoder, toggle) needs only GPIO + ground — and grounds ARE on the exposed pins 27–40. No stacking header, no cap, no external 5 V: the 2.5 A PSU into the Pi covers the lot.
 

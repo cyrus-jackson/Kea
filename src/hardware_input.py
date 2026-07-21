@@ -50,6 +50,18 @@ BUTTON_CONFIG = {
 ENC_CLK, ENC_DT, ENC_SW = 5, 6, 16
 TOGGLE_PIN = 19
 
+# The KY-040's + pin powers its onboard 10k pull-ups. Pins 27-40 carry no
+# 3.3 V rail, and leaving + floating makes those pull-ups couple the data
+# lines to each other through it (ground DT and SW sags to ~1.1 V, inside
+# the Pi's undefined band, so it reads as a phantom button press).
+# The pull-ups draw well under 1 mA total, so a spare GPIO driven HIGH is
+# a perfectly good 3.3 V supply — GPIO12 (pin 32) sits right next to the
+# encoder's pins. Set KEA_ENCODER_VCC=-1 if you power + some other way.
+try:
+    ENC_VCC = int(os.getenv("KEA_ENCODER_VCC", "12"))
+except ValueError:
+    ENC_VCC = 12
+
 # What the physical toggle does: "autopilot" | "mute" | "none"
 TOGGLE_ROLE = os.getenv("KEA_TOGGLE_ROLE", "autopilot").strip().lower()
 # Which way is "on". Set 1 if the switch ends up backwards once it's
@@ -103,6 +115,10 @@ class HardwareButtons:
             self.previous_states[TOGGLE_PIN] = GPIO.input(TOGGLE_PIN)
 
         if ENC_ENABLED:
+            if ENC_VCC >= 0:
+                # stand-in 3.3 V rail for the KY-040's pull-ups
+                GPIO.setup(ENC_VCC, GPIO.OUT)
+                GPIO.output(ENC_VCC, GPIO.HIGH)
             for pin in (ENC_CLK, ENC_DT, ENC_SW):
                 GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
             self._enc_thread = threading.Thread(target=self._encoder_loop,
