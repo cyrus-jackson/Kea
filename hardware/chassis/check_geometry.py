@@ -89,6 +89,27 @@ check("ribbon slot inside the flat top", sy + 1 < shell_slot_y
 check("camstand sockets inside the flat top",
       sy + 4 < py - 2.75 and py + 2.75 < D - wall, f"sockets at y={py:.1f}")
 
+# ── rear-roof insertion relief must stop behind the camstand sockets ─────
+def opt_param(name, default):
+    m = re.search(rf"^{name}\s*=\s*(-?[\d.]+)\s*;", src, re.M)
+    return float(m.group(1)) if m else default
+
+roof_relief = bool(re.search(r"^roof_relief\s*=\s*true\s*;", src, re.M))
+if roof_relief:
+    relief_front = opt_param("relief_front", 119)
+    relief_x0 = opt_param("relief_x0", 26)
+    relief_x1 = opt_param("relief_x1", 100)
+    stack_x0, stack_x1 = (W - STACK_W) / 2, (W + STACK_W) / 2
+    check("roof relief clears the camstand sockets",
+          relief_front > py + 2.75,
+          f"relief starts y={relief_front}, socket back edge y={py + 2.75:.1f}")
+    check("roof relief spans the stack width",
+          relief_x0 <= stack_x0 + 1 and relief_x1 >= stack_x1 - 1,
+          f"relief x{relief_x0:.0f}-{relief_x1:.0f} vs stack x{stack_x0:.0f}-{stack_x1:.0f}")
+    check("roof relief leaves a wall-tie strip each side",
+          relief_x0 >= wall + 1 and relief_x1 <= W - wall - 1,
+          f"relief x{relief_x0:.0f}-{relief_x1:.0f} inside walls {wall:.0f}..{W-wall:.0f}")
+
 # ── power slot: inside the side wall, clear of guides and top ────────────
 pyg = deck_y + pwr_z * math.sin(math.radians(tilt)) \
     + pwr_depth * math.cos(math.radians(tilt))
