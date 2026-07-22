@@ -95,6 +95,16 @@ module deck_frame() {                   // local: x=width, y=up-deck, +z=out of 
 // ============================================================
 profile = [[0,0],[D,0],[D,H],[sy,H],[sy,sz],[deck_y,deck_z],[0,front_h]];
 
+// ---------- Back door opening ----------
+// The opening now reaches HIGH up the back wall so the Pi+display's top
+// edge clears the rail as you angle the stack in from behind. Raising it
+// meant the door's old protruding pull-tab no longer fit under the ceiling,
+// so the door uses a finger scallop instead (see module door).
+door_z0  = 12;    // opening floor (sits just above the bottom-plate ledge)
+door_top = 158;   // opening ceiling. Keep <= 160: above that the door
+                  // faceplate (opening + 6 mm margin) runs past the roof.
+door_dz  = H - 4; // seam dowel, tucked in the thin rail above the opening
+
 module shell() {
   difference() {
     union() {
@@ -110,9 +120,9 @@ module shell() {
     }
     // open bottom (bottom plate snaps in between the nubs and the ledge)
     translate([wall, wall, -1]) cube([W-2*wall, D-2*wall, wall+2]);
-    // back door opening — nearly the whole back wall, so the Pi+display
-    // stack (85 mm long) goes in without contortions
-    translate([10, D-wall-1, 12]) cube([W-20, wall+2, 130]);
+    // back door opening — nearly the whole back wall, raised high (door_top)
+    // so the stack's top edge clears the rail while you angle it in
+    translate([10, D-wall-1, door_z0]) cube([W-20, wall+2, door_top-door_z0]);
     // screen cutout
     screen_frame() translate([W/2, 1.5, slen/2])
       cube([scr_vis[0], wall+6, scr_vis[1]], center=true);
@@ -139,7 +149,7 @@ module shell() {
 module dowel_holes() {
   for (p = [[1.5, 15],                 // front wall
             [D-1.5, 6],                // back wall, below the door opening
-            [D-1.5, 148],              // back wall, above the door opening
+            [D-1.5, door_dz],          // back wall, in the rail above the door
             [(sy+D)/2, H-1.5]])        // top plate
     translate([cut_x-6, p[0], p[1]])
       rotate([0, 90, 0]) cylinder(d=2.0, h=12);
@@ -267,27 +277,31 @@ module bottom_plate() {
 // wedges into the opening; pull tab at the bottom to pop it out)
 // ============================================================
 module door() {
+  doh = door_top - door_z0;        // opening height (tracks the shell)
+  fh  = doh + 12;                  // faceplate height (6 mm margin top+bottom)
+  lh  = doh - 0.6;                 // lip height (0.3 mm clearance each end)
   difference() {
     union() {
-      translate([-51, -71, 0]) cube([102, 142, 2.5]);  // face plate
-      translate([-44.7, -64.7, -2.5]) cube([89.4, 129.4, 2.6]);  // press-fit lip
+      translate([-51, -fh/2, 0]) cube([102, fh, 2.5]);          // face plate
+      translate([-44.7, -lh/2, -2.5]) cube([89.4, lh, 2.6]);    // press-fit lip
       // crush ribs: 0.5 proud, they squash on first insertion
-      for (ry = [-45, 25]) {
+      for (ry = [-(doh/2-20), (doh/2-32)]) {
         translate([-45.2, ry, -2.5]) cube([0.5, 12, 2.6]);
         translate([44.7, ry, -2.5]) cube([0.5, 12, 2.6]);
       }
       for (rx = [-30, 18]) {
-        translate([rx, -65.2, -2.5]) cube([12, 0.5, 2.6]);
-        translate([rx, 64.7, -2.5]) cube([12, 0.5, 2.6]);
+        translate([rx, -lh/2-0.2, -2.5]) cube([12, 0.5, 2.6]);
+        translate([rx,  lh/2-0.3, -2.5]) cube([12, 0.5, 2.6]);
       }
-      translate([-10, 71, 0]) cube([20, 10, 2.5]);     // pull tab (top edge —
-                                                       // bottom would hit the desk)
     }
     for (i = [-2:2])                                    // vents
       translate([i*12-1.5, -28, -3]) cube([3, 56, 9]);
     // spare cable hole (e.g. aux 5 V for servos later) — power enters
     // through the side-wall slot instead, no extra parts needed
     translate([0, -54, -3]) cylinder(d=12, h=9);
+    // finger scallop bitten out of the top edge — replaces the old pull
+    // tab, which no longer fit once the opening rose near the ceiling
+    translate([0, fh/2, -3]) cylinder(d=13, h=9);
   }
 }
 
@@ -407,7 +421,7 @@ if (part == "camplate") camera_plate();
 if (part == "assembly") {
   color("SteelBlue", 0.85) shell();
   color("gray") bottom_plate();
-  color("dimgray") translate([W/2, D+0.5, 77]) rotate([-90,0,0]) door();
+  color("dimgray") translate([W/2, D+0.5, (door_z0+door_top)/2]) rotate([-90,0,0]) door();
   color("orange") translate([W/2, (sy+D)/2, H]) camstand();
   color("tomato") screen_frame() translate([26, wall+19.5, 6]) wedge();
   color("orange") translate([W/2, (sy+D)/2-9.5, H+20]) rotate([90,0,0]) camera_plate();

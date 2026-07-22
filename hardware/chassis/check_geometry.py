@@ -62,7 +62,12 @@ check("shell halves fit bed (split print, lying on cut face)",
       f"footprint {D:.0f}x{H:.0f}, tallest half {W - cut_x:.1f}")
 check("one-piece shell fits bed (upright)",
       W <= BED_X and D <= BED_Y and H <= BED_Z, f"{W:.0f}x{D:.0f}x{H:.0f}")
-check("door fits bed", 102 <= BED_X and 142 <= BED_Y)
+door_z0, door_top = param("door_z0"), param("door_top")
+door_open_h = door_top - door_z0
+door_face_h = door_open_h + 12
+door_dz = H - 4                                  # matches `door_dz = H - 4` in scad
+check("door fits bed", 102 <= BED_X and door_face_h + 2 <= BED_Y,
+      f"faceplate {door_face_h:.0f} tall")
 
 # ── the screen slope must carry the whole stack ──────────────────────────
 check("slope long enough for the stack + shelf",
@@ -102,11 +107,16 @@ check("power slot cutter clears the cradle guides",
 
 # ── door: opening leaves solid rails; dowels in solid wall ───────────────
 check("solid rail above door opening for the top dowel",
-      142 + 4 < 148 - 1 and 148 + 1 < H - 1, f"dowel z=148, wall top {H:.1f}")
+      door_top + 2 < door_dz and door_dz + 1 < H,
+      f"opening top z={door_top:.0f}, dowel z={door_dz:.1f}, wall top {H:.1f}")
 check("solid rail below door opening for the bottom dowel",
-      6 + 1 < 12, "dowel z=6, opening starts z=12")
-check("door face + top tab fit the back wall",
-      77 + 71 + 10 <= H, f"tab top at z=158, wall top {H:.1f}")
+      6 + 1 < door_z0, f"dowel z=6, opening starts z={door_z0:.0f}")
+check("door faceplate fits under the back-wall ceiling",
+      (door_z0 + door_top) / 2 + door_face_h / 2 <= H,
+      f"faceplate top z={(door_z0 + door_top) / 2 + door_face_h / 2:.1f}, "
+      f"wall top {H:.1f}")
+check("raised opening actually clears the seated stack top",
+      door_top >= 140, f"opening top z={door_top:.0f}")
 check("front dowel inside front wall", 15 < front_h - 2)
 check("top dowel inside the flat top", sy + 2 < py < D - 2)
 
