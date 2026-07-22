@@ -38,6 +38,7 @@ front_h = param("front_h")
 deck_y, deck_z = param("deck_y"), param("deck_z")
 tilt, slen, marq = param("tilt"), param("slen"), param("marq")
 cut_x = param("cut_x")
+enc_d, tog_d = param("enc_d"), param("tog_d")
 pwr_side, pwr_depth, pwr_z = param("pwr_side"), param("pwr_depth"), param("pwr_z")
 
 sy = deck_y + slen * math.sin(math.radians(tilt))
@@ -62,7 +63,8 @@ check("shell halves fit bed (split print, lying on cut face)",
       f"footprint {D:.0f}x{H:.0f}, tallest half {W - cut_x:.1f}")
 check("one-piece shell fits bed (upright)",
       W <= BED_X and D <= BED_Y and H <= BED_Z, f"{W:.0f}x{D:.0f}x{H:.0f}")
-door_z0, door_top = param("door_z0"), param("door_top")
+door_z0 = param("door_z0")
+door_top = H - 7                                 # matches `door_top = H - 7` in scad
 door_open_h = door_top - door_z0
 door_face_h = door_open_h + 12
 door_dz = H - 4                                  # matches `door_dz = H - 4` in scad
@@ -73,9 +75,12 @@ check("door fits bed", 102 <= BED_X and door_face_h + 2 <= BED_Y,
 check("slope long enough for the stack + shelf",
       slen >= 6.5 + STACK_L + 2,
       f"slope {slen}, needs {6.5 + STACK_L + 2:.1f}")
-check("stack fits between cradle guides",
-      23.5 + 3 + 0.4 <= (W - STACK_W) / 2 + 0.6,
-      "guides at 23.5/83.5 vs 56 mm stack centered")
+gx0 = (W - 56) / 2 - 3.5                          # left guide (tracks W in scad)
+gx1 = (W + 56) / 2 + 0.5                          # right guide
+check("cradle guides sit just outside the stack, inside the walls",
+      gx0 >= wall and gx0 + 3 <= (W - STACK_W) / 2 + 0.6
+      and gx1 >= (W + STACK_W) / 2 - 0.6 and gx1 + 3 <= W - wall,
+      f"guides x={gx0:.1f}/{gx1:.1f}, stack x={(W-STACK_W)/2:.1f}-{(W+STACK_W)/2:.1f}")
 
 # ── ribbon slot: shell cut must align with the camstand's own slot ───────
 py = (sy + D) / 2                                     # camstand center depth
@@ -103,7 +108,7 @@ check("power slot lands inside the side wall",
       10 < pyg < D - 6 and 12 < pzg < H - 8,
       f"slot center global y={pyg:.1f} z={pzg:.1f}")
 check("power slot cutter clears the cradle guides",
-      19 < 23.5, "cutter reaches x=19, guides start x=23.5")
+      19 < gx0, f"cutter reaches x=19, left guide starts x={gx0:.1f}")
 
 # ── door: opening leaves solid rails; dowels in solid wall ───────────────
 check("solid rail above door opening for the top dowel",
@@ -115,8 +120,10 @@ check("door faceplate fits under the back-wall ceiling",
       (door_z0 + door_top) / 2 + door_face_h / 2 <= H,
       f"faceplate top z={(door_z0 + door_top) / 2 + door_face_h / 2:.1f}, "
       f"wall top {H:.1f}")
+stack_top_z = deck_z + (6.5 + STACK_L) * math.cos(math.radians(tilt))
 check("raised opening actually clears the seated stack top",
-      door_top >= 140, f"opening top z={door_top:.0f}")
+      door_top >= stack_top_z, f"opening top z={door_top:.1f}, "
+      f"seated stack top z={stack_top_z:.1f}")
 check("front dowel inside front wall", 15 < front_h - 2)
 check("top dowel inside the flat top", sy + 2 < py < D - 2)
 
@@ -124,17 +131,18 @@ check("top dowel inside the flat top", sy + 2 < py < D - 2)
 check("marquee tall enough for the label", marq >= 16)
 
 # ── deck seam: cut plane clear of holes ──────────────────────────────────
+tog_x = 14                                        # toggle center (scad)
+blue_x = W / 2 - 25                               # leftmost button center (scad)
 check("cut plane clear of toggle and blue button",
-      16 + 6.4 / 2 + 0.7 < cut_x < 30 - 12.4 / 2 - 0.7,
-      f"cut at {cut_x}, toggle ends {16 + 3.2:.1f}, button starts {30 - 6.2:.1f}")
+      tog_x + 6.4 / 2 + 0.7 < cut_x < blue_x - 12.4 / 2 - 0.7,
+      f"cut at {cut_x}, toggle ends {tog_x + 3.2:.1f}, "
+      f"button starts {blue_x - 6.2:.1f}")
 
-# ── riser under the slope ────────────────────────────────────────────────
-riser_front_y = 70
-t_at = (riser_front_y - deck_y) / math.sin(math.radians(tilt))
-ceiling = deck_z + t_at * math.cos(math.radians(tilt)) if t_at < slen else H - wall
-check("breadboard riser fits under the slope at its front edge",
-      1.5 + 3 + 66 + 3 + 8.5 <= ceiling - 2,
-      f"riser max stack 82 vs ceiling {ceiling:.1f} at y={riser_front_y}")
+# ── deck controls fit the (narrower) deck ────────────────────────────────
+check("encoder + buttons stay inside the side walls",
+      tog_x - tog_d / 2 > wall and (W - 14) + enc_d / 2 < W - wall
+      and (W / 2 + 25) + 12.4 / 2 < W - wall,
+      f"toggle L edge {tog_x - tog_d / 2:.1f}, encoder R edge {(W-14)+enc_d/2:.1f}")
 
 # ── report ───────────────────────────────────────────────────────────────
 for name, ok, detail in checks:

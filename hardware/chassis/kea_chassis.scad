@@ -10,7 +10,6 @@
 
 part = "shell_right"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
                 // | "wedge" | "camstand" | "camplate" | "assembly"
-                // | "riser_base" | "riser_tower" (print 2x) | "riser_tray"
                 // RECOMMENDED PRINT: shell_left + shell_right, each lying on
                 // its cut face -> every feature prints as a vertical wall,
                 // NO supports needed anywhere. Align the halves with short
@@ -37,22 +36,26 @@ module tear_cyl(d, h, center=false, dir=1) {
 }
 
 // ---------- Main body ----------
-W        = 110;   // exterior width
-D        = 130;   // exterior depth
-cut_x    = 21.5;  // split-print plane: near the left side, between the
-                  // toggle (ends ~19.2) and the blue button (starts ~23.8),
+// Trimmed to the minimum the fixed-size display + control row need — the
+// breadboard is gone, so nothing lives under the slope any more. The
+// display (56 x 85.5) sets the width and slope-length floors; depth,
+// marquee and deck were carrying slack and got pulled in.
+W        = 104;   // exterior width (56 stack + control row + walls)
+D        = 118;   // exterior depth (was 130; back overhang pulled in)
+cut_x    = 19;    // split-print plane: near the left side, between the
+                  // toggle (ends ~17.2) and the blue button (starts ~20.8),
                   // clear of the screen opening and camera slot
 wall     = 3;     // CASE THICKNESS: one knob for every wall, the deck, the
                   // screen panel and the top. Everything derives from it
                   // (ledge, nubs, camstand pegs, socket depths). Keep it
-                  // 2.5-4: above ~4 the KY-040's bushing thread gets too
-                  // short to catch its nut through the deck.
-front_h  = 35;    // front panel height
-deck_y   = 48;    // control deck end (depth)
-deck_z   = 52;    // control deck end (height)
+                  // 2.5-4: above ~4 the 12 mm button/encoder bushings get
+                  // too short to catch their nuts through the deck.
+front_h  = 30;    // front panel height (was 35)
+deck_y   = 42;    // control deck end (depth) (was 48)
+deck_z   = 48;    // control deck end (height) (was 52)
 tilt     = 25;    // screen tilt back from vertical (deg)
-slen     = 100;   // screen panel length along slope (portrait display)
-marq     = 24;    // marquee height above screen panel
+slen     = 94;    // screen panel length along slope (85.5 display + shelf)
+marq     = 18;    // marquee height above screen panel (was 24)
 
 sy = deck_y + slen*sin(tilt);      // top of slope, depth  (~99.6)
 sz = deck_z + slen*cos(tilt);      // top of slope, height (~125.7)
@@ -75,7 +78,8 @@ pwr_z     = 82;          // along-slope position of jack center — near the TOP
                          //   use ~18 instead if the power edge sits low)
 
 // ---------- Small parts ----------
-btn_d     = 12.4;        // 12 mm pushbutton hole
+btn_d     = 12.4;        // 12 mm THREADED panel-mount pushbutton (nut behind,
+                         // like the encoder/toggle) — no perfboard, no glue
 enc_d     = 7.5;         // KY-040 shaft bushing hole
 tog_d     = 6.4;         // mini toggle hole
 cam_holes = [21, 12.5];  // Pi camera v1 hole pattern, 2 mm holes
@@ -101,8 +105,8 @@ profile = [[0,0],[D,0],[D,H],[sy,H],[sy,sz],[deck_y,deck_z],[0,front_h]];
 // meant the door's old protruding pull-tab no longer fit under the ceiling,
 // so the door uses a finger scallop instead (see module door).
 door_z0  = 12;    // opening floor (sits just above the bottom-plate ledge)
-door_top = 158;   // opening ceiling. Keep <= 160: above that the door
-                  // faceplate (opening + 6 mm margin) runs past the roof.
+door_top = H - 7; // opening ceiling — as high as the faceplate (opening +
+                  // 6 mm margin) can go and still fit under the roof
 door_dz  = H - 4; // seam dowel, tucked in the thin rail above the opening
 
 module shell() {
@@ -203,16 +207,18 @@ module bottom_nubs() {
 // thickness from ~20 to ~30 mm — nothing to measure.
 // ============================================================
 module stack_cradle() {
+  gx0 = (W-56)/2 - 3.5;    // left guide, just outside the 56 mm stack
+  gx1 = (W+56)/2 + 0.5;    // right guide
   // shelf under the stack's bottom edge (rooted in both side walls)
   translate([wall, wall, 2.5]) cube([W - 2*wall, 30, 4]);
-  // side guides: vertical ribs just outside the 56 mm stack width
-  for (gx = [23.5, 83.5])
-    translate([gx, wall, 4]) cube([3, 30, 66]);
+  // side guides: vertical ribs just outside the stack width
+  translate([gx0, wall, 4]) cube([3, 30, 66]);
+  translate([gx1, wall, 4]) cube([3, 30, 66]);
   // back flanges: the fixed plane the wedge bears against — kept SHORT
   // (bottom half only) so the channel is wide open for insertion.
   // Gap in the middle keeps the CSI ribbon path clear.
-  translate([23.5, wall + 29, 8]) cube([21.5, 3, 44]);
-  translate([65, wall + 29, 8]) cube([21.5, 3, 44]);
+  translate([gx0, wall + 29, 8]) cube([21.5, 3, 44]);
+  translate([gx1 + 3 - 21.5, wall + 29, 8]) cube([21.5, 3, 44]);
 }
 
 // ============================================================
@@ -237,38 +243,25 @@ module wedge() {
 }
 
 module deck_holes() {
-  // 3 buttons: blue / red / green (GPIO 21 / 20 / 26)
-  for (bx = [30, 55, 80])
+  // 3 buttons: blue / red / green (GPIO 21 / 20 / 26), centered, 25 mm apart
+  for (bx = [W/2-25, W/2, W/2+25])
     translate([bx, 32, 0]) tear_cyl(d=btn_d, h=24, center=true);
   // KY-040 rotary encoder (right), mini toggle (left)
-  translate([94, 16, 0]) tear_cyl(d=enc_d, h=24, center=true);
-  translate([16, 16, 0]) tear_cyl(d=tog_d, h=24, center=true, dir=-1);  // left half
+  translate([W-14, 16, 0]) tear_cyl(d=enc_d, h=24, center=true);
+  translate([14, 16, 0]) tear_cyl(d=tog_d, h=24, center=true, dir=-1);  // left half
 }
 
 // ============================================================
 // BOTTOM PLATE (screwless: pushes in from below past the friction
 // nubs until it stops against the ledge; finger hole to pull it out).
-// Now with a breadboard corral: a low fence sized for the 400-point
-// half breadboard (83 x 55) so it sits captive on the floor — use its
-// adhesive back too if you want it permanent. Open on the back side
-// for the jumper wires.
+// Plain floor now — the breadboard and its corral are gone; every
+// control is panel-mounted and wired straight to the Pi header.
 // ============================================================
 module bottom_plate() {
-  bb_w = 84; bb_d = 56;                       // breadboard + play
-  bx = (W - bb_w) / 2;
-  by = wall + 6;                              // toward the front wall
   difference() {
-    union() {
-      translate([wall+0.75, wall+0.75, 0])
-        cube([W-2*wall-1.5, D-2*wall-1.5, wall]);
-      // corral fence, 3.5 mm tall, 2 mm thick — open on the back edge
-      translate([bx-2, by-2, wall]) cube([bb_w+4, 2, 3.5]);         // front
-      translate([bx-2, by, wall]) cube([2, bb_d-8, 3.5]);           // left
-      translate([bx+bb_w, by, wall]) cube([2, bb_d-8, 3.5]);        // right
-      for (cx = [bx-2, bx+bb_w])                                    // back corners
-        translate([cx, by+bb_d-2, wall]) cube([2, 2, 3.5]);
-    }
-    translate([W/2, D-30, -1]) cylinder(d=14, h=wall+2);  // finger hole
+    translate([wall+0.75, wall+0.75, 0])
+      cube([W-2*wall-1.5, D-2*wall-1.5, wall]);
+    translate([W/2, D-25, -1]) cylinder(d=14, h=wall+2);  // finger hole
   }
 }
 
@@ -357,52 +350,6 @@ module camera_plate() {
 }
 
 // ============================================================
-// BREADBOARD RISER — freestanding adjustable elevator, so the
-// breadboard can sit at whatever height keeps the jumpers short.
-// Three flat parts, no supports: base (mortises), two ladder
-// towers (tab into the base), and a tray that slides into any
-// rung pair — 6 levels, 10 mm apart. Stands anywhere on the
-// bottom plate; the tray also carries a fence for the 83x55
-// half breadboard. Lift the tray, move it a rung, done.
-// ============================================================
-module riser_base() {
-  difference() {
-    union() {
-      cube([100, 50, 3]);
-      for (fx = [2, 92], fy = [2, 42])          // feet: clear the tab tips
-        translate([fx, fy, -1.5]) cube([6, 6, 1.5]);
-    }
-    for (x = [3, 93.6]) translate([x, 5, -1]) cube([3.4, 40, 5]);  // mortises
-    translate([22, 8, -1]) cube([56, 34, 5]);   // lightening hole
-  }
-}
-
-module riser_tower() {
-  // printed flat: x = depth (50), y = height (75)
-  difference() {
-    cube([50, 75, 3]);
-    for (h = [16, 26, 36, 46, 56, 66])          // ladder slots for the tray
-      translate([5, h, -1]) cube([40, 3.6, 5]);
-    translate([12, 4, -1]) cube([26, 8, 5]);    // wire pass at floor level
-  }
-  translate([5.3, -4, 0]) cube([39.4, 4, 3]);   // tab into the base mortise
-}
-
-module riser_tray() {
-  union() {
-    difference() {
-      cube([87, 50, 3]);
-      translate([30, 12, -1]) cube([27, 26, 5]);  // lightening + zip-tie hole
-    }
-    for (tx = [-6, 87])                            // side tabs -> tower slots
-      translate([tx, 6, 0]) cube([6, 38, 3]);
-    // breadboard fence (pocket 83.6 wide, open front/back for wires)
-    translate([1.4, 0, 3]) cube([2, 50, 3.5]);
-    translate([85.0 - 1.4, 0, 3]) cube([2, 50, 3.5]);
-  }
-}
-
-// ============================================================
 // RENDER
 // ============================================================
 if (part == "shell")    shell();
@@ -413,9 +360,6 @@ if (part == "shell_right")
 if (part == "bottom")   bottom_plate();
 if (part == "door")     door();
 if (part == "wedge")    wedge();
-if (part == "riser_base")  riser_base();
-if (part == "riser_tower") riser_tower();
-if (part == "riser_tray")  riser_tray();
 if (part == "camstand") camstand();
 if (part == "camplate") camera_plate();
 if (part == "assembly") {
