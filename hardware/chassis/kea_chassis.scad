@@ -95,16 +95,6 @@ module deck_frame() {                   // local: x=width, y=up-deck, +z=out of 
 // ============================================================
 profile = [[0,0],[D,0],[D,H],[sy,H],[sy,sz],[deck_y,deck_z],[0,front_h]];
 
-// Insertion relief: the flat roof used to overhang the whole back, so the
-// Pi+display couldn't swing in — its top corner caught the rear roof lip.
-// This opens the rear roof from the back edge forward to `relief_front`,
-// which stops just BEHIND the camstand sockets (at py=114.8, back edge
-// ~117.6) so the camera mount and its front roof strip stay solid.
-roof_relief   = true;   // false = original solid roof
-relief_front  = 119;    // depth where the opening starts (must be > 117.6)
-relief_x0     = 26;     // left edge of the opening (clears the seam dowels)
-relief_x1     = 100;    // right edge (leaves a wall-tie strip to the right)
-
 module shell() {
   difference() {
     union() {
@@ -123,12 +113,6 @@ module shell() {
     // back door opening — nearly the whole back wall, so the Pi+display
     // stack (85 mm long) goes in without contortions
     translate([10, D-wall-1, 12]) cube([W-20, wall+2, 130]);
-    // insertion relief: open the REAR roof so the stack's top corner can
-    // swing up and clear as you tip it onto the slope. Stops behind the
-    // camstand (relief_front), so the camera mount survives.
-    if (roof_relief)
-      translate([relief_x0, relief_front, H-wall-1])
-        cube([relief_x1-relief_x0, D-relief_front+2, wall+2]);
     // screen cutout
     screen_frame() translate([W/2, 1.5, slen/2])
       cube([scr_vis[0], wall+6, scr_vis[1]], center=true);
@@ -213,7 +197,7 @@ module stack_cradle() {
   translate([wall, wall, 2.5]) cube([W - 2*wall, 30, 4]);
   // side guides: vertical ribs just outside the 56 mm stack width
   for (gx = [23.5, 83.5])
-    translate([gx, wall, 4]) cube([3, 20, 60]);
+    translate([gx, wall, 4]) cube([3, 30, 66]);
   // back flanges: the fixed plane the wedge bears against — kept SHORT
   // (bottom half only) so the channel is wide open for insertion.
   // Gap in the middle keeps the CSI ribbon path clear.
