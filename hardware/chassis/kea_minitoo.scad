@@ -19,7 +19,7 @@
 // All dimensions in mm. Run check_minitoo.py after any edit.
 // ============================================================
 
-part = "shell";   // "shell" | "shell_left" | "shell_right" | "bottom"
+part = "assembly";   // "shell" | "shell_left" | "shell_right" | "bottom"
                   // | "door" | "wedge" | "camera_pod" | "assembly"
 
 $fn = 64;

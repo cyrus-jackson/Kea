@@ -18,7 +18,7 @@
 // check_terminal.py after any edit.
 // ============================================================
 
-part = "shell";   // "shell" | "shell_left" | "shell_right" | "bottom"
+part = "assembly";   // "shell" | "shell_left" | "shell_right" | "bottom"
                   // | "door" | "wedge" | "cam_cradle" | "assembly"
 
 $fn = 64;

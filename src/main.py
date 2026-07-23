@@ -1,3 +1,10 @@
+import os
+# Route pygame/SDL audio through PulseAudio so Kea's voice reaches the
+# default sink (e.g. the Bluetooth speaker). Without this SDL opens ALSA
+# directly and you hear nothing even though `paplay` works. Override by
+# exporting SDL_AUDIODRIVER yourself before launch.
+os.environ.setdefault("SDL_AUDIODRIVER", "pulseaudio")
+
 import pygame
 import sys
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, FULLSCREEN, SCALED, ROTATION

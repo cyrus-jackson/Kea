@@ -8,7 +8,7 @@
 // measuring your actual Pi+display stack.
 // ============================================================
 
-part = "shell_right"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
+part = "shell"; // "shell" | "shell_left" | "shell_right" | "bottom" | "door"
                 // | "wedge" | "camstand" | "camplate" | "assembly"
                 // RECOMMENDED PRINT: shell_left + shell_right, each lying on
                 // its cut face -> every feature prints as a vertical wall,
