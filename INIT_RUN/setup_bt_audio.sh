@@ -3,8 +3,8 @@
 # Kea — make a Bluetooth speaker auto-connect on boot and become
 # the default audio output. Run ONCE on the Pi:
 #
-#     bash tools/setup_bt_audio.sh                 # uses the JBL Go 4
-#     bash tools/setup_bt_audio.sh AA:BB:CC:DD:EE:FF   # another speaker
+#     bash INIT_RUN/setup_bt_audio.sh                 # uses the JBL Go 4
+#     bash INIT_RUN/setup_bt_audio.sh AA:BB:CC:DD:EE:FF   # another speaker
 #
 # It: trusts + connects the speaker, tells PulseAudio to switch to a
 # speaker whenever it connects, and installs a small user service that
