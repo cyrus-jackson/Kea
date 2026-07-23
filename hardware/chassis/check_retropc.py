@@ -21,8 +21,11 @@ def p(n):
 W, Dc, Hc, wall = p("W"), p("Dc"), p("Hc"), p("wall")
 kb_d, turn_y, turn_r, turn_bolt = p("kb_d"), p("turn_y"), p("turn_r"), p("turn_bolt")
 btn_d, enc_d, tog_d, btn_dx = p("btn_d"), p("enc_d"), p("tog_d"), p("btn_dx")
-kb_btn_row, kb_te_row, tog_x = p("kb_btn_row"), p("kb_te_row"), p("tog_x")
+kb_btn_row, kb_te_row = p("kb_btn_row"), p("kb_te_row")
+tog1_x, tog2_x = p("tog1_x"), p("tog2_x")
 cut_x = p("cut_x")
+mcut_x = p("mcut_x")
+BTN_HEAD = 14.0     # GUUZI 12 mm metal button head diameter
 sv_L, sv_W, sv_screw = p("sv_L"), p("sv_W"), p("sv_screw")
 CRADLE_D = 37       # mon_cradle depth (must match scad); STACK+adapter+wedge
 GPIO_STACK = 33     # assumed Pi+display+GPIO-adapter thickness
@@ -36,7 +39,7 @@ r = math.radians(recl)
 sym = slen*math.sin(r)
 szm = mfoot + slen*math.cos(r)
 Hm = szm + mcap
-enc_x = W - 24
+enc_x = W - 16                       # matches `enc_x = W - 16` in scad
 checks, fails = [], []
 
 
@@ -57,9 +60,16 @@ chk("keyboard rows sit in the front (keyboard) zone",
     f"button row ends {kb_btn_row+btn_d/2:.1f} of kb zone {kb_d:.0f}")
 chk("keyboard clear of the turntable zone", kb_d + 2 < turn_y - turn_r,
     f"kb ends {kb_d:.0f}, turntable front {turn_y-turn_r:.0f}")
-chk("controls inside the case walls",
-    tog_x-tog_d/2 > wall and enc_x+enc_d/2 < W-wall and (W/2+btn_dx)+btn_d/2 < W-wall)
-chk("buttons don't overlap", btn_dx > btn_d+1.5)
+chk("controls (2 toggles, encoder, 5 buttons) inside the case walls",
+    tog1_x - tog_d/2 > wall and enc_x + enc_d/2 < W - wall
+    and (W/2 - 2*btn_dx) - BTN_HEAD/2 > wall
+    and (W/2 + 2*btn_dx) + BTN_HEAD/2 < W - wall,
+    f"L button edge {(W/2-2*btn_dx)-BTN_HEAD/2:.1f}, R {(W/2+2*btn_dx)+BTN_HEAD/2:.1f}")
+chk("button heads (14 mm) don't touch", btn_dx > BTN_HEAD + 1,
+    f"pitch {btn_dx:.0f} vs head {BTN_HEAD:.0f}")
+chk("encoder clear of the nearest button",
+    enc_x - enc_d/2 > (W/2 + 2*btn_dx) + BTN_HEAD/2 + 1,
+    f"enc L edge {enc_x-enc_d/2:.1f}, button R {(W/2+2*btn_dx)+BTN_HEAD/2:.1f}")
 
 # --- turntable / servo ---
 chk("turntable seat fits on the case top", turn_y + turn_r < Dc - wall and turn_y - turn_r > kb_d,
@@ -113,9 +123,21 @@ chk("speaker + mount ring fit the case front wall",
 chk("total height reasonable", Hc + 4 + Hm < 210, f"{Hc+4+Hm:.0f} mm tall overall")
 
 # --- case seam ---
-chk("case cut plane between toggle and first button",
-    tog_x+tog_d/2+0.7 < cut_x < (W/2-btn_dx)-btn_d/2-0.7,
-    f"cut {cut_x:.0f}, toggle ends {tog_x+tog_d/2:.1f}, button {(W/2-btn_dx)-btn_d/2:.1f}")
+# case seam must miss every keyboard hole: it sits between the left cluster
+# (tog2 / button-1) and button-2.
+b1_end = (W/2 - 2*btn_dx) + BTN_HEAD/2       # leftmost button right edge
+b2_start = (W/2 - btn_dx) - BTN_HEAD/2       # 2nd button left edge
+left_cluster = max(tog2_x + tog_d/2, b1_end)
+chk("case cut plane misses all keyboard holes",
+    left_cluster + 0.7 < cut_x < b2_start - 0.7,
+    f"cut {cut_x:.0f}, left cluster ends {left_cluster:.1f}, button-2 starts {b2_start:.1f}")
+
+# monitor split: seam clear of the screen bezel; halves fit the bed
+bezel_L = Wm/2 - (51/2 + 9)                  # bezel outer left edge (bw=9)
+chk("monitor seam clears the screen bezel", mcut_x + 0.5 < bezel_L,
+    f"seam {mcut_x:.0f}, bezel left edge {bezel_L:.1f}")
+chk("monitor halves fit the bed", Dm+2 <= BED and Hm+2 <= BED
+    and max(mcut_x, Wm-mcut_x) <= 250, f"tallest half {max(mcut_x,Wm-mcut_x):.0f}")
 
 for n, ok, d in checks:
     print(f"[{'PASS' if ok else 'FAIL'}] {n}" + (f"  ({d})" if d and not ok else ""))

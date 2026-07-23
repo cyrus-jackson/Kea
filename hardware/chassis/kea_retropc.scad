@@ -18,9 +18,12 @@
 // Servos want their OWN 5 V — never the Pi header.
 // ============================================================
 
-part = "assembly";  // "case" | "case_left" | "case_right" | "case_floor"
-                // | "turntable" | "monitor" | "monitor_door" | "wedge"
+part = "turntable";  // "case" | "case_left" | "case_right" | "case_floor"
+                // | "turntable" | "monitor" (whole) | "monitor_left"
+                // | "monitor_right" | "monitor_door" | "wedge"
                 // | "cam_cradle" | "assembly"
+                // Print the monitor as monitor_left + monitor_right (each flat
+                // on its cut face, no supports) and glue with filament pins.
 
 $fn = 64;
 
@@ -30,7 +33,8 @@ Dc   = 150;   // depth
 Hc   = 48;    // height (low desktop profile)
 wall = 3;
 r_c  = 6;     // case edge rounding
-cut_x= 30;    // case split-print plane (in a keyboard gap)
+cut_x= 43;    // case split-print plane — in the gap between tog2/button-1 and
+              // the 2nd button (case can also just be printed whole)
 
 // keyboard zone = front top of the case (depth 0..kb_d)
 kb_d = 60;
@@ -45,9 +49,10 @@ enc_d = 7.5;
 tog_d = 6.4;
 kb_btn_row = 38;
 kb_te_row = 20;   // depths on the keyboard
-tog_x = 24;
-enc_x = W - 24;
-btn_dx = 20;
+tog1_x = 18;      // two toggles, front row left
+tog2_x = 36;
+enc_x = W - 16;   // encoder, front row far right
+btn_dx = 22;      // spacing of the FIVE buttons (back row), centred on W/2
 
 // ---------- Swivel servo (SG92R micro servo, in the case, shaft up) ----------
 // Body 23 x 13 x 27 mm. It hangs UNDER the case top: flanges screw to the
@@ -70,7 +75,10 @@ mfoot= 6;     // monitor foot thickness (bolts to the turntable)
 // stack (the GPIO edge, vertical in portrait) needs a clear channel for the
 // horizontal pins + wires. That side's cradle guide is kept short and the
 // stack is NOT clamped to the wall there.
-gpio_side = -1;   // -1 = left, +1 = right
+gpio_side = 1;   // -1 = left, +1 = right
+mcut_x = 13;     // monitor split-print plane: left margin, clear of the screen
+                 // bezel AND the GPIO channel (which is on the right here), so
+                 // each half lies on its flat cut face and prints support-free
 sym = slen*sin(recl);
 szm = mfoot + slen*cos(recl);
 Hm  = szm + mcap;             // monitor height (above its foot)
@@ -90,8 +98,9 @@ spk_d     = 36;     // speaker outer diameter — set to yours (28/36/40 common)
 
 // ---------- Power inlet: runs to the Pi IN THE MONITOR (not the case) ----------
 mon_pwr_side  = -1; // -1 left wall, 1 right wall of the monitor
-mon_pwr_z     = 22; // height up the monitor side wall (calibrate to jack)
-mon_pwr_depth = 16; // from the screen face toward the back
+mon_pwr_z     = 80; // high up the side wall — the Pi's power edge sits near the
+                    // TOP of the slope, like the original chassis (calibrate)
+mon_pwr_depth = 30; // from the screen face toward the back
 
 // ============================================================
 // CASE
@@ -124,13 +133,18 @@ module case() {
     // in the back access for the servo + speaker + button leads.
     // power LED (status)
     translate([W-20, 1.5, Hc-10]) rotate([-90,0,0]) cylinder(d=3.2, h=wall+4, center=true);
+    // KEA wordmark, engraved into the top surface on the blank strip in
+    // front of the keyboard (reads from above, like a laptop brand)
+    translate([W/2, 8, Hc-1.3]) linear_extrude(1.5)
+      text("KEA", size=11, halign="center", valign="center",
+           font="DejaVu Sans:style=Bold");
   }
 }
 
 module keyboard_holes() {
-  translate([tog_x, kb_te_row, Hc-1]) cylinder(d=tog_d, h=wall+4);
+  for (tx=[tog1_x, tog2_x]) translate([tx, kb_te_row, Hc-1]) cylinder(d=tog_d, h=wall+4);
   translate([enc_x, kb_te_row, Hc-1]) cylinder(d=enc_d, h=wall+4);
-  for (bx=[W/2-btn_dx, W/2, W/2+btn_dx])
+  for (bx=[W/2-2*btn_dx, W/2-btn_dx, W/2, W/2+btn_dx, W/2+2*btn_dx])
     translate([bx, kb_btn_row, Hc-1]) cylinder(d=btn_d, h=wall+4);
 }
 // Circular dot-matrix grille sized to the speaker cone, centered on the front.
@@ -183,10 +197,16 @@ module case_dowels() {
   for (p=[[3,10],[3,Hc-10],[Dc-3,10],[Dc-3,Hc-10]])
     translate([cut_x-6, p[0], p[1]]) rotate([0,90,0]) cylinder(d=2.0,h=12);
 }
+// Bottom plate. Mount the boards to it FIRST (outside the case), then slot it
+// in. Cable-tie slot pairs strap down the battery (front), PCA9685 (left) and
+// LM2596 buck (right) — all clear of the hanging servo and button bodies.
 module case_floor() {
   difference() {
     translate([wall+0.75, wall+0.75, 0]) cube([W-2*wall-1.5, Dc-2*wall-1.5, wall]);
     translate([W/2, Dc-22, -1]) cylinder(d=14, h=wall+2);
+    for (a = [[75,55], [35,92], [115,92]])       // [x,y] board centres
+      for (s = [-1,1])
+        translate([a[0]+s*16, a[1]-7, -1]) cube([3, 14, wall+2]);
   }
 }
 
@@ -237,7 +257,14 @@ module monitor() {
     turret_mount();
     mon_power_slot();     // PSU cable enters here, straight to the Pi
     mon_intake_vents();   // fresh-air intake for the fan
+    mon_dowels();         // seam alignment for the split print
   }
+}
+
+// Alignment dowels on the monitor's cut plane (short 1.75 mm filament pins).
+module mon_dowels() {
+  for (p=[[9,12],[9,Hm-16],[Dm-9,12],[Dm-9,Hm-16]])
+    translate([mcut_x-6, p[0], p[1]]) rotate([0,90,0]) cylinder(d=2.0, h=12);
 }
 
 // PSU plugs into the Pi through a slot in the monitor's side wall.
@@ -345,6 +372,8 @@ if (part=="case_right") intersection() { case(); translate([cut_x,-1,-3]) cube([
 if (part=="case_floor") case_floor();
 if (part=="turntable")  turntable();
 if (part=="monitor")    monitor();
+if (part=="monitor_left")  intersection() { monitor(); translate([-1,-1,-1]) cube([mcut_x+1, Dm+2, Hm+2]); }
+if (part=="monitor_right") intersection() { monitor(); translate([mcut_x,-1,-1]) cube([Wm-mcut_x+1, Dm+2, Hm+2]); }
 if (part=="monitor_door") monitor_door();
 if (part=="wedge")      wedge();
 if (part=="cam_cradle") cam_cradle();
