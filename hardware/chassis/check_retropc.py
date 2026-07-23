@@ -28,6 +28,7 @@ Wm, Dm, recl, slen, mfoot, mcap = p("Wm"), p("Dm"), p("recl"), p("slen"), p("mfo
 turret_y = p("turret_y")
 fan_sz, fan_holes = p("fan_sz"), p("fan_holes")
 mon_pwr_z, mon_pwr_depth = p("mon_pwr_z"), p("mon_pwr_depth")
+spk_d = p("spk_d")
 
 r = math.radians(recl)
 sym = slen*math.sin(r)
@@ -92,6 +93,11 @@ chk("case has NO power slot (moved to the monitor)",
 chk("monitor power slot lands inside the side wall",
     6 < mon_pwr_depth < Dm - 6 and 6 < mfoot + mon_pwr_z < Hm - 6,
     f"slot depth {mon_pwr_depth:.0f}/{Dm:.0f}, z {mfoot+mon_pwr_z:.0f}/{Hm:.0f}")
+
+# --- speaker mount fits the case front ---
+chk("speaker + mount ring fit the case front wall",
+    spk_d + 5 < Hc - 2 and spk_d + 5 < W - 2*wall,
+    f"ring {spk_d+5:.0f} vs front {Hc:.0f}x{W:.0f}")
 
 # --- total height sane on a desk ---
 chk("total height reasonable", Hc + 4 + Hm < 210, f"{Hc+4+Hm:.0f} mm tall overall")

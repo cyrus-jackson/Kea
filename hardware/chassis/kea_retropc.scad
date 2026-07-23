@@ -75,6 +75,9 @@ fan_sz    = 30;     // fan body edge (30x30x7 typical) — set to your fan
 fan_holes = 24;     // screw-hole spacing (24 for 30 mm, 20 for 25 mm)
 fan_screw = 2.6;    // M2.5 self-tapping into the door bosses
 
+// ---------- Sound (round speaker press-fits behind the case grille) ----------
+spk_d     = 36;     // speaker outer diameter — set to yours (28/36/40 common)
+
 // ---------- Power inlet: runs to the Pi IN THE MONITOR (not the case) ----------
 mon_pwr_side  = -1; // -1 left wall, 1 right wall of the monitor
 mon_pwr_z     = 22; // height up the monitor side wall (calibrate to jack)
@@ -98,6 +101,7 @@ module case() {
       case_floor_ledge();
       case_feet();
       servo_boss();
+      speaker_mount();
     }
     keyboard_holes();
     case_speaker();
@@ -120,11 +124,21 @@ module keyboard_holes() {
   for (bx=[W/2-btn_dx, W/2, W/2+btn_dx])
     translate([bx, kb_btn_row, Hc-1]) cylinder(d=btn_d, h=wall+4);
 }
+// Circular dot-matrix grille sized to the speaker cone, centered on the front.
 module case_speaker() {
-  cols=13; rows=4; pitch=6; gw=(cols-1)*pitch; gh=(rows-1)*pitch;
-  for (i=[0:cols-1], j=[0:rows-1])
-    translate([W/2 + i*pitch-gw/2, 1.5, Hc/2-3 + j*pitch-gh/2])
-      rotate([-90,0,0]) cylinder(d=2.6, h=wall+6, center=true);
+  n=7; pitch=5; g=(n-1)*pitch;
+  for (i=[0:n-1], j=[0:n-1])
+    if (pow(i*pitch-g/2,2) + pow(j*pitch-g/2,2) <= pow(g/2+1,2))
+      translate([W/2 + i*pitch-g/2, 1.5, Hc/2 + j*pitch-g/2])
+        rotate([-90,0,0]) cylinder(d=2.8, h=wall+6, center=true);
+}
+// Ring on the inner front wall — the round speaker press-fits into it.
+module speaker_mount() {
+  translate([W/2, wall-0.1, Hc/2]) rotate([-90,0,0])
+    difference() {
+      cylinder(d=spk_d+5, h=6);
+      translate([0,0,-1]) cylinder(d=spk_d+0.6, h=8);
+    }
 }
 // circular seat the turntable rotates in + central shaft/cable hole
 module turntable_socket() {

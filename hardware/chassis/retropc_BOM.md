@@ -41,8 +41,9 @@ matching parameter at the top of `kea_retropc.scad` and re-run
 | Pi Camera (v1/v2) | 1 | 25 × 24 mm, 21×12.5 hole pattern | your own project |
 | 30 cm camera ribbon | 1 | — | the 15 cm one won't reach up the swivel |
 | **30 mm 5 V fan** (30×30×7) | 1 | body `fan_sz`=30, holes `fan_holes`=24 mm | Pi cooling; 25 mm also fine (set `fan_sz`=25, `fan_holes`=20) |
-| Small speaker 8 Ω ~2 W | 1 | fits the case front behind the grille | sound |
-| PAM8403 mini amp | 1 | tiny board | drives the speaker |
+| Speaker, 8 Ω 2–3 W, round | 1 | ~36 mm (match `spk_d`) | press-fits into the mount behind the case grille |
+| PAM8403 mini amp | 1 | class-D, runs on 5 V | Pi 3.5 mm out → amp IN → speaker; amp power from a Pi **5 V** + GND pin |
+| 3.5 mm audio cable → bare wires | 1 | 3-pole TRS is fine | taps the Pi's headphone jack to the amp input (tip=L, sleeve=GND) |
 
 ## Power (chosen: Pi on its adapter, servos on the battery)
 
