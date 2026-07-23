@@ -22,6 +22,7 @@ WorkingDirectory=/home/pi
 Environment=DISPLAY=:0
 Environment=KEA_ROTATION=90
 Environment=SDL_AUDIODRIVER=pulseaudio
+Environment=XDG_RUNTIME_DIR=/run/user/1000
 ExecStart=/bin/bash -c '/usr/bin/screen -ls main | grep -q "No Sockets found" && /usr/bin/screen -dmS main'
 Restart=on-failure
 
@@ -42,6 +43,14 @@ screen -S main -X stuff $'cd /home/pi/Kea && SDL_AUDIODRIVER=pulseaudio python s
 `SDL_AUDIODRIVER=pulseaudio` forces pygame's audio through PulseAudio so Kea's
 voice lands on the default sink — i.e. the Bluetooth speaker (see §3). It's also
 set on the service above; here on the run line it's belt-and-suspenders.
+
+**Silent over `screen`/SSH but fine on the Pi's own desktop?** The screen session
+(created by the *system* service) has no `XDG_RUNTIME_DIR`, so SDL can't find the
+running PulseAudio. `main.py` now sets `XDG_RUNTIME_DIR=/run/user/<uid>`
+automatically when that dir exists, and the service sets it explicitly — but if
+you launch by hand in an old screen, `export XDG_RUNTIME_DIR=/run/user/1000`
+first. (That dir persists across boots because you ran `loginctl enable-linger`
+in §3.)
 
 ## Manual Test Controls (Buttons)
 

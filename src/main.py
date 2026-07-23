@@ -4,6 +4,13 @@ import os
 # directly and you hear nothing even though `paplay` works. Override by
 # exporting SDL_AUDIODRIVER yourself before launch.
 os.environ.setdefault("SDL_AUDIODRIVER", "pulseaudio")
+# ...and point at the user's PulseAudio socket. A screen/SSH/systemd launch
+# often lacks XDG_RUNTIME_DIR, so SDL can't find the running server and stays
+# silent — while a desktop-session launch works. Set it if the dir exists.
+if hasattr(os, "getuid"):
+    _rundir = "/run/user/%d" % os.getuid()
+    if os.path.isdir(_rundir):
+        os.environ.setdefault("XDG_RUNTIME_DIR", _rundir)
 
 import pygame
 import sys
