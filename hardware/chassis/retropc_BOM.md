@@ -1,12 +1,19 @@
 # Kea Retro-PC — parts to order (`kea_retropc.scad`)
 
-> **Reviewed `hardware/parts/proposal/` (2026-07):** Fan (SLCA-FAN) ✅,
-> PCA9685 (157066) ✅. **Raspberry Pi 400 GPIO adapter ❌ — Pi-400-only, won't
-> fit a Pi 3B+; replace with a 2×20 tall stacking header.** **Power decision:**
-> Pi on its own 5 V micro-USB adapter; **servos run off 4×AA alkaline → LM2596S
-> buck (set to 5.0 V) → PCA9685 V+** (the buck caps the ~6.4 V fresh alkaline
-> under the PCA9685's 6 V limit). REG5V5A **not used**. Still to add: stacking
-> header, LM2596S buck, servos (SG90s in hand).
+> **Proposal folder reviewed (2026-07) — all fit ✅:** Fan (SLCA-FAN),
+> PCA9685 (157066), **GPIO Winkel-Adapter 157081** (the correct Pi-3B+ breakout
+> that replaces the wrong Pi-400 one — display + wires in parallel; verify the
+> stack stays ≤30 mm), 12 mm metal buttons (GUUZI, ×5; head 14 mm, 2 solder
+> pins), **SG92R** servos (order ×3), 4×AA holder, LM2596S buck.
+>
+> **Power:** Pi on its own 5 V micro-USB adapter; servos on **4×AA alkaline →
+> LM2596S (set ~4.8 V) → PCA9685 V+** — the buck caps the fresh-alkaline under
+> the PCA9685's 6 V limit (can't hold a clean 5 V from 6 V in, but ~4.8 V is
+> fine for servos). REG5V5A not used.
+>
+> **Still to order:** KY-040 encoder + toggle *(if not already owned)*, a
+> **608 bearing** for the swivel, Dupont jumpers + button hookup wire, Pi camera
+> + 30 cm ribbon. **Dropped** (using Bluetooth speaker): wired speaker + PAM8403.
 
 
 Everything below is what the chassis is designed around. The **Fit** column
