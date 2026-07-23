@@ -78,6 +78,9 @@ chk("monitor slope carries the display", slen >= 6.5+STACK_L+2)
 chk("screen cutout inside the slope", slen/2-37.5 > 2 and slen/2+37.5 < slen-2)
 gx0=(Wm-56)/2-3.5; gx1=(Wm+56)/2+0.5
 chk("cradle guides straddle the stack", gx0 >= wall and gx1+3 <= Wm-wall)
+gpio_channel = (Wm - STACK_W) / 2 - wall     # stack edge -> inner wall, GPIO side
+chk("GPIO side has a clear channel for the sideways header + wires",
+    gpio_channel >= 16, f"channel {gpio_channel:.0f} mm (need >=16 for pins+dupont)")
 thick = GPIO_STACK
 back_y = (6.5+STACK_L)*math.sin(r) + thick*math.cos(r)
 chk("seated stack (with GPIO adapter) clears the monitor back", back_y < Dm-wall,

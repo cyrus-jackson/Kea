@@ -18,7 +18,7 @@
 // Servos want their OWN 5 V — never the Pi header.
 // ============================================================
 
-part = "case";  // "case" | "case_left" | "case_right" | "case_floor"
+part = "assembly";  // "case" | "case_left" | "case_right" | "case_floor"
                 // | "turntable" | "monitor" | "monitor_door" | "wedge"
                 // | "cam_cradle" | "assembly"
 
@@ -66,6 +66,11 @@ recl = 8;     // slight fixed recline (pan is motorized, tilt is fixed)
 slen = 94;    // screen slope length (85.5 display + shelf)
 mcap = 8;
 mfoot= 6;     // monitor foot thickness (bolts to the turntable)
+// The GPIO Winkel-Adapter breaks the header out sideways, so ONE side of the
+// stack (the GPIO edge, vertical in portrait) needs a clear channel for the
+// horizontal pins + wires. That side's cradle guide is kept short and the
+// stack is NOT clamped to the wall there.
+gpio_side = -1;   // -1 = left, +1 = right
 sym = slen*sin(recl);
 szm = mfoot + slen*cos(recl);
 Hm  = szm + mcap;             // monitor height (above its foot)
@@ -269,9 +274,13 @@ module mon_screen_cut() {
 module mon_cradle() {
   gx0=(Wm-56)/2-3.5; gx1=(Wm+56)/2+0.5;
   cd=37;                                    // cradle depth — Pi+display+GPIO adapter
-  translate([wall,wall,2.5]) cube([Wm-2*wall,cd,4]);
-  translate([gx0,wall,4]) cube([3,cd,58]);
-  translate([gx1,wall,4]) cube([3,cd,58]);
+  translate([wall,wall,2.5]) cube([Wm-2*wall,cd,4]);   // shelf
+  // Side guides: full on the non-GPIO side; SHORT (base only) on the GPIO
+  // side so the sideways header + wires have an open channel to the wall.
+  gh_short = 14;
+  translate([gx0,wall,4]) cube([3, cd, gpio_side<0 ? gh_short : 58]);
+  translate([gx1,wall,4]) cube([3, cd, gpio_side>0 ? gh_short : 58]);
+  // back flanges (the wedge bears on these) — split for the ribbon path
   translate([gx0,wall+cd-3,8]) cube([21,3,42]);
   translate([gx1+3-21,wall+cd-3,8]) cube([21,3,42]);
 }
