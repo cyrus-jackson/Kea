@@ -58,6 +58,19 @@ off the Pi's GPIO header (voltage sag → resets). Rails stay separate; only the
 Single-supply wiring: **12 V adapter → REG5V5A → 5 V**, then split: **USB-A → Pi**
 (in the monitor) and **screw-terminal 5 V → PCA9685 V+** (servos). All grounds common.
 
+**About the 4×AA holder (added separately):** not usable as the main supply —
+6 V (alkaline) / 4.8 V (NiMH) is below the REG5V5A's 9 V minimum, and 4×AA can't
+sustain a Pi 3B+ (~2.5 A). It *can* power the **servos only** at the PCA9685 V+,
+but use **NiMH (4.8 V)** — fresh alkaline (~6.4 V) exceeds the PCA9685 V+ 6.0 V
+limit. For a cordless build use a **5 V USB power bank (2–3 A)** for the Pi, not
+AA cells.
+
+**Servos are plastic-gear (SG90):** great for the light pan/tilt camera. For the
+**monitor swivel** they're marginal (they turn the whole monitor), so add a
+**turntable/lazy-susan or 608 bearing** under the turntable to take the weight
+off the servo gears, and balance the monitor over the axis. Upgrade that one
+servo to metal gear (MG90S/MG996R) only if it still strains.
+
 ## Driving the servos (recommended: PCA9685)
 
 The display already occupies most of the 40-pin header, so free GPIOs are
