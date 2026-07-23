@@ -1,0 +1,290 @@
+// ============================================================
+// KEA — retro DESKTOP PC (horizontal case + swivel monitor)
+//
+// The classic 90s setup, shrunk:
+//   * a low horizontal CASE on the desk, with a FLAT KEYBOARD built
+//     into its front top (the buttons/knob/toggle as keys) and a
+//     speaker grille on the front. Houses the swivel servo, speaker,
+//     PSU and wiring.
+//   * a MONITOR sitting on a TURNTABLE on the case's back top. The
+//     monitor holds the Pi + ELEGOO screen (they bolt together, so
+//     they live here), behind a hooded, recessed CRT screen, with a
+//     pan/tilt camera on its roof.
+//   * a MOTORIZED SWIVEL: an MG90S in the case turns the turntable
+//     (and the monitor) left/right, limited to +/-90 deg so the
+//     internal cable just flexes (no slip ring needed).
+//
+// Print each `part`, export STL, run check_retropc.py after edits.
+// Servos want their OWN 5 V — never the Pi header.
+// ============================================================
+
+part = "case";  // "case" | "case_left" | "case_right" | "case_floor"
+                // | "turntable" | "monitor" | "monitor_door" | "wedge"
+                // | "cam_cradle" | "assembly"
+
+$fn = 64;
+
+// ---------- Case (the horizontal computer) ----------
+W    = 150;   // width
+Dc   = 150;   // depth
+Hc   = 48;    // height (low desktop profile)
+wall = 3;
+r_c  = 6;     // case edge rounding
+cut_x= 30;    // case split-print plane (in a keyboard gap)
+
+// keyboard zone = front top of the case (depth 0..kb_d)
+kb_d = 60;
+// turntable zone = back top, centered here:
+turn_y = 105;
+turn_r = 38;      // turntable radius
+turn_bolt = 26;   // bolt circle for the monitor foot
+
+// ---------- Controls on the flat keyboard ----------
+btn_d = 12.4;
+enc_d = 7.5;
+tog_d = 6.4;
+kb_btn_row = 38;
+kb_te_row = 20;   // depths on the keyboard
+tog_x = 24;
+enc_x = W - 24;
+btn_dx = 20;
+
+// ---------- Swivel servo (MG90S, in the case, shaft up) ----------
+sv_L = 23.2;
+sv_W = 12.8;
+sv_body_h = 22.8;
+
+// ---------- Monitor ----------
+Wm   = 100;   // monitor width
+Dm   = 66;    // monitor depth
+recl = 8;     // slight fixed recline (pan is motorized, tilt is fixed)
+slen = 94;    // screen slope length (85.5 display + shelf)
+mcap = 8;
+mfoot= 6;     // monitor foot thickness (bolts to the turntable)
+sym = slen*sin(recl);
+szm = mfoot + slen*cos(recl);
+Hm  = szm + mcap;             // monitor height (above its foot)
+scr_cut = [51,75];
+
+// ---------- Camera turret (Adafruit Mini Pan-Tilt) ----------
+turret_y = 46;      // on the monitor roof, toward the back
+turret_holes = 18;
+
+// ============================================================
+// CASE
+// ============================================================
+side_c = [[0,0],[Dc,0],[Dc,Hc],[0,Hc]];
+module rc_side(inset=0) offset(r=r_c) offset(delta=-r_c-inset) polygon(side_c);
+module rc_plan(inset=0) offset(r=r_c) offset(delta=-r_c-inset) square([W,Dc]);
+module case_body(inset=0) intersection() {
+  rotate([90,0,90]) linear_extrude(W) rc_side(inset);
+  linear_extrude(Hc+1) rc_plan(inset);
+}
+
+module case() {
+  difference() {
+    union() {
+      difference() { case_body(); case_body(inset=wall); }
+      case_floor_ledge();
+      case_feet();
+      servo_boss();
+    }
+    keyboard_holes();
+    case_speaker();
+    turntable_socket();
+    servo_pocket();
+    case_back_access();
+    case_bottom_open();
+    case_power_slot();
+    case_dowels();
+    // power LED
+    translate([W-20, 1.5, Hc-10]) rotate([-90,0,0]) cylinder(d=3.2, h=wall+4, center=true);
+  }
+}
+
+module keyboard_holes() {
+  translate([tog_x, kb_te_row, Hc-1]) cylinder(d=tog_d, h=wall+4);
+  translate([enc_x, kb_te_row, Hc-1]) cylinder(d=enc_d, h=wall+4);
+  for (bx=[W/2-btn_dx, W/2, W/2+btn_dx])
+    translate([bx, kb_btn_row, Hc-1]) cylinder(d=btn_d, h=wall+4);
+}
+module case_speaker() {
+  cols=13; rows=4; pitch=6; gw=(cols-1)*pitch; gh=(rows-1)*pitch;
+  for (i=[0:cols-1], j=[0:rows-1])
+    translate([W/2 + i*pitch-gw/2, 1.5, Hc/2-3 + j*pitch-gh/2])
+      rotate([-90,0,0]) cylinder(d=2.6, h=wall+6, center=true);
+}
+// circular seat the turntable rotates in + central shaft/cable hole
+module turntable_socket() {
+  translate([W/2, turn_y, Hc-1.4]) cylinder(r=turn_r+0.6, h=2.0);       // recess
+  translate([W/2, turn_y, Hc-wall-1]) cylinder(d=13, h=wall+2);         // shaft/cable hole
+}
+// boss under the turntable center holding the servo upright
+module servo_boss() {
+  translate([W/2-sv_L/2-2, turn_y-sv_W/2-2, wall])
+    difference() {
+      cube([sv_L+4, sv_W+4, Hc-wall-3]);
+      translate([2,2,-1]) cube([sv_L, sv_W, Hc]);
+    }
+}
+module servo_pocket() {
+  translate([W/2-sv_L/2, turn_y-sv_W/2, wall-1]) cube([sv_L, sv_W, Hc]);
+}
+module case_back_access() {                     // wiring access on the back
+  translate([20, Dc-wall-1, 8]) cube([W-40, wall+2, Hc-16]);
+}
+module case_bottom_open() { translate([wall,wall,-1]) cube([W-2*wall, Dc-2*wall, wall+2]); }
+module case_floor_ledge() {
+  lt=1.5; lp=1.8;
+  translate([wall,wall,wall+0.8]) cube([W-2*wall, lp, lt]);
+  translate([wall,Dc-wall-lp,wall+0.8]) cube([W-2*wall, lp, lt]);
+  translate([wall,wall,wall+0.8]) cube([lp, Dc-2*wall, lt]);
+  translate([W-wall-lp,wall,wall+0.8]) cube([lp, Dc-2*wall, lt]);
+}
+module case_feet() { for (x=[18,W-18], y=[18,Dc-18]) translate([x,y,-2.5]) cylinder(d=14,h=2.6); }
+module case_power_slot() {
+  translate([-2, Dc-40, Hc-20]) rotate([0,90,0])
+    hull() for (dz=[-4,4],dy=[-2.5,2.5]) translate([dz,dy,0]) cylinder(d=13,h=wall+4);
+}
+module case_dowels() {
+  for (p=[[3,10],[3,Hc-10],[Dc-3,10],[Dc-3,Hc-10]])
+    translate([cut_x-6, p[0], p[1]]) rotate([0,90,0]) cylinder(d=2.0,h=12);
+}
+module case_floor() {
+  difference() {
+    translate([wall+0.75, wall+0.75, 0]) cube([W-2*wall-1.5, Dc-2*wall-1.5, wall]);
+    translate([W/2, Dc-22, -1]) cylinder(d=14, h=wall+2);
+  }
+}
+
+// ============================================================
+// TURNTABLE — rides in the case seat, driven by the servo horn;
+// the monitor foot bolts to its top. Cable passes through the center.
+// ============================================================
+module turntable() {
+  difference() {
+    union() {
+      cylinder(r=turn_r, h=4);
+      cylinder(r=turn_r-3, h=6);                 // raised hub
+      translate([0,0,-2]) cylinder(d=11.5, h=2); // spigot into the case hole (bearing)
+    }
+    translate([0,0,-3]) cylinder(d=6.5, h=12);   // central cable hole
+    // servo-horn screw holes (small cross pattern)
+    for (a=[0:90:270]) rotate([0,0,a]) translate([7,0,2]) cylinder(d=2.0, h=8);
+    // monitor-foot bolt holes
+    for (a=[0:90:270]) rotate([0,0,a]) translate([turn_bolt/2,0,-1]) cylinder(d=2.6, h=10);
+  }
+}
+
+// ============================================================
+// MONITOR — Pi + ELEGOO live here. Foot bolts to the turntable.
+// ============================================================
+side_m = [[0,0],[Dm,0],[Dm,Hm],[sym,Hm],[sym,szm],[0,mfoot]];
+module rm_side(inset=0) offset(r=6) offset(delta=-6-inset) polygon(side_m);
+module rm_plan(inset=0) offset(r=8) offset(delta=-8-inset) square([Wm,Dm]);
+module mon_body(inset=0) intersection() {
+  rotate([90,0,90]) linear_extrude(Wm) rm_side(inset);
+  linear_extrude(Hm+1) rm_plan(inset);
+}
+module screen_frame() translate([0, 0, mfoot]) rotate([-recl,0,0]) children();
+
+module monitor() {
+  difference() {
+    union() {
+      difference() { mon_body(); mon_body(inset=wall); }
+      screen_frame() mon_bezel();
+      screen_frame() mon_cradle();
+      // foot bolt bosses
+      for (a=[0:90:270]) rotate([0,0,a]) translate([Wm/2,Dm/2,0]) {}
+    }
+    screen_frame() mon_screen_cut();
+    mon_back_door_cut();
+    mon_bottom_open();
+    mon_foot_bolts();
+    turret_mount();
+  }
+}
+module mon_bezel() {
+  bw=9; bz=3.5; ow=scr_cut[0]+2*bw; oh=scr_cut[1]+2*bw;
+  translate([Wm/2,0,slen/2]) rotate([-90,0,0]) linear_extrude(bz)
+    difference() {
+      offset(r=4) offset(delta=-4) square([ow,oh],center=true);
+      offset(r=2) offset(delta=-2) square([scr_cut[0]+5, scr_cut[1]+5],center=true);
+    }
+  bw2=9; hz=slen/2+scr_cut[1]/2+bw2;
+  translate([Wm/2,0,hz]) rotate([-90,0,0]) linear_extrude(12)
+    offset(r=3) offset(delta=-3) square([scr_cut[0]+2*bw2+6, 10], center=true);
+}
+module mon_screen_cut() {
+  hull() {
+    translate([Wm/2,-0.2,slen/2]) cube([scr_cut[0]+6,0.1,scr_cut[1]+6],center=true);
+    translate([Wm/2,4,slen/2]) cube([scr_cut[0],0.1,scr_cut[1]],center=true);
+  }
+  translate([Wm/2,4,slen/2]) cube([scr_cut[0], wall+10, scr_cut[1]], center=true);
+}
+module mon_cradle() {
+  gx0=(Wm-56)/2-3.5; gx1=(Wm+56)/2+0.5;
+  translate([wall,wall,2.5]) cube([Wm-2*wall,26,4]);
+  translate([gx0,wall,4]) cube([3,26,58]);
+  translate([gx1,wall,4]) cube([3,26,58]);
+  translate([gx0,wall+23,8]) cube([21,3,42]);
+  translate([gx1+3-21,wall+23,8]) cube([21,3,42]);
+}
+module mon_back_door_cut() {
+  translate([12, Dm-wall-1, mfoot+6]) cube([Wm-24, wall+2, Hm-mfoot-16]);
+}
+module monitor_door() {
+  ow=Wm-24; doh=Hm-mfoot-16; fh=doh+12; lh=doh-0.6;
+  difference() {
+    union() {
+      translate([-ow/2-6,-fh/2,0]) cube([ow+12, fh, 2.5]);
+      translate([-ow/2+0.3,-lh/2,-2.5]) cube([ow-0.6, lh, 2.6]);
+    }
+    for (i=[-3:3]) translate([i*10-1.5,-14,-3]) cube([3,28,9]);
+    translate([0,fh/2,-3]) cylinder(d=12,h=9);
+  }
+}
+module mon_bottom_open() { translate([wall,wall,-1]) cube([Wm-2*wall, Dm-2*wall, mfoot+1]); }
+module mon_foot_bolts() {
+  for (a=[0:90:270]) rotate([0,0,a]) translate([turn_bolt/2 + (Wm/2-turn_bolt/2)*0, 0, -1]) {}
+  // bolt holes matching the turntable bolt circle, centered under the monitor
+  translate([Wm/2, Dm/2, 0])
+    for (a=[0:90:270]) rotate([0,0,a]) translate([turn_bolt/2,0,-1]) cylinder(d=2.6, h=mfoot+2);
+}
+module turret_mount() {
+  translate([Wm/2-11, turret_y-8, Hm-wall-1]) cube([22,16,wall+2]);
+  for (s=[-1,1]) translate([Wm/2+s*turret_holes/2, turret_y+10, Hm-wall-1]) cylinder(d=2.6,h=wall+2);
+}
+module wedge() {
+  difference() {
+    union() { rotate([90,0,90]) linear_extrude(56) polygon([[0,0],[1.5,0],[9.5,58],[0,58]]);
+      translate([0,0,52]) cube([56,11,6]); }
+    translate([16,-1,8]) cube([24,13,40]);
+  }
+}
+module cam_cradle() {
+  difference() {
+    translate([-14,-13,0]) cube([28,26,2.5]);
+    for (x=[-1,1],y=[-1,1]) translate([x*21/2,y*12.5/2,-1]) cylinder(d=2.2,h=5);
+    translate([-9,-13.5,-1]) cube([18,8,5]);
+  }
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+if (part=="case") case();
+if (part=="case_left")  intersection() { case(); translate([-1,-1,-3]) cube([cut_x+1, Dc+2, Hc+6]); }
+if (part=="case_right") intersection() { case(); translate([cut_x,-1,-3]) cube([W-cut_x+1, Dc+2, Hc+6]); }
+if (part=="case_floor") case_floor();
+if (part=="turntable")  turntable();
+if (part=="monitor")    monitor();
+if (part=="monitor_door") monitor_door();
+if (part=="wedge")      wedge();
+if (part=="cam_cradle") cam_cradle();
+if (part=="assembly") {
+  color("Gainsboro") case();
+  color("gray") translate([0,0,0]) case_floor();
+  color("tan") translate([W/2, turn_y, Hc]) turntable();
+  color("Gainsboro") translate([W/2-Wm/2, turn_y-Dm/2, Hc+4]) monitor();
+}
