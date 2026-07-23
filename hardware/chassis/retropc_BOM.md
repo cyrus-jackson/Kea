@@ -38,17 +38,29 @@ matching parameter at the top of `kea_retropc.scad` and re-run
 ## Power (important — two rails)
 
 The Pi and the servos should **not** share a supply, and servos must never run
-off the Pi's GPIO header (voltage sag → resets).
+off the Pi's GPIO header (voltage sag → resets). Rails stay separate; only the
+**grounds are tied together**.
 
 | Part | Qty | Spec | Notes |
 |---|---|---|---|
 | Pi PSU | 1 | 5 V / 2.5–3 A micro-USB | plugs into the Pi **in the monitor** via the side-wall slot |
-| Servo 5 V supply | 1 | 5 V / ≥2 A (buck converter or 2nd USB) | powers MG90S + 2× SG90; ~1.5 A peak. Lives in the case |
-| Buck converter (e.g. MP1584) | 1 | to 5 V, 3 A | if you feed servos from a single 12 V/9 V input |
+| Servo 5 V supply | 1 | **5 V / 3 A** — a UBEC is ideal | powers MG90S + 2× SG90; ~1.5–2 A peak. Lives in the case. A 5 V/3 A USB charger or MP1584/LM2596 buck also works |
+| 1000 µF electrolytic cap | 1 | ≥10 V | across the servo 5 V rail, near the servos — soaks up movement spikes |
 
-Signal wiring: 3 servos need 3 free GPIOs — BCM 13 (pin 33) is a spare
-hardware-PWM pin; BCM 12/16/26 depending on what the display/buttons leave
-free. Share **ground** between the Pi and the servo supply.
+## Driving the servos (recommended: PCA9685)
+
+The display already occupies most of the 40-pin header, so free GPIOs are
+scarce and software PWM jitters. Best path:
+
+| Part | Qty | Spec | Notes |
+|---|---|---|---|
+| **PCA9685** 16-ch PWM driver | 1 | I²C | all 3 servos plug in; **only uses SDA/GPIO2 + SCL/GPIO3**; its **V+ terminal takes the separate 5 V**; clean hardware PWM |
+| 2×20 stacking header (extra-tall) | 1 | ≥11 mm | raises the display so you can reach the header pins (I²C etc.) above it |
+
+Wiring in one line: **servo power + ground → external 5 V (via the PCA9685 V+),
+servo signal → PCA9685, PCA9685 → Pi over I²C, and tie the servo-supply ground
+to the Pi ground.** Direct-GPIO is possible instead (BCM 12/13 are hardware-PWM
+pins) but you'd burn 3 scarce pins and fight jitter — the PCA9685 avoids both.
 
 ## Fasteners & bits
 
