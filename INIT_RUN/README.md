@@ -23,6 +23,7 @@ Environment=DISPLAY=:0
 Environment=KEA_ROTATION=90
 Environment=SDL_AUDIODRIVER=pulseaudio
 Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=KEA_START_VOLUME=20
 ExecStart=/bin/bash -c '/usr/bin/screen -ls main | grep -q "No Sockets found" && /usr/bin/screen -dmS main'
 Restart=on-failure
 

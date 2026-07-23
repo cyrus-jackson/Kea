@@ -12,6 +12,17 @@ if hasattr(os, "getuid"):
     if os.path.isdir(_rundir):
         os.environ.setdefault("XDG_RUNTIME_DIR", _rundir)
 
+# Set the output volume once at startup, e.g. KEA_START_VOLUME=20 (percent of
+# the current default sink — the Bluetooth speaker). Unset = leave it alone.
+_start_vol = os.getenv("KEA_START_VOLUME", "").strip()
+if _start_vol.isdigit():
+    try:
+        import subprocess
+        subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@",
+                        "%d%%" % int(_start_vol)], check=False, timeout=5)
+    except Exception:
+        pass       # no pactl / no server: not worth failing the app over
+
 import pygame
 import sys
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, FULLSCREEN, SCALED, ROTATION
