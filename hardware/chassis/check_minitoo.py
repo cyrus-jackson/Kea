@@ -119,6 +119,16 @@ chk("cut plane sits between toggle and the nearest button",
     tog_x + tog_d/2 + 0.7 < cut_x < blue_x - btn_d/2 - 0.7,
     f"cut {cut_x:.0f}, toggle ends {tog_x+tog_d/2:.1f}, button starts {blue_x-btn_d/2:.1f}")
 
+# ── retro detailing ──
+chk("monitor hood stays within the body width",
+    56 + 2*8 + 4 <= W - 2*wall, f"hood {56+2*8+4:.0f} wide vs inner {W-2*wall:.0f}")
+chk("vent louver banks flank the camera pod, inside the walls",
+    W/2 - 35 - 1.1 > wall and W/2 + 35 + 1.1 < W - wall
+    and 20 > 18 and sy + 5 < D - 6,
+    f"banks x {W/2-35-1.1:.1f}..{W/2+35+1.1:.1f}, roof {sy:.0f}..{D:.0f}")
+chk("feet inside the footprint", 16 - 6 > 0 and (W-16) + 6 < W
+    and 16 - 6 > 0 and (D-16) + 6 < D, "feet d12 at 16 from each corner")
+
 for name, ok, detail in checks:
     print(f"[{'PASS' if ok else 'FAIL'}] {name}" +
           (f"  ({detail})" if detail and not ok else ""))

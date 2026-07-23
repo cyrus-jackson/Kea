@@ -1,13 +1,15 @@
 // ============================================================
 // KEA — "MiniToo" vintage-TV / retro-PC chassis
 //
-// A rounded, chunky little computer in the spirit of the Divoom
-// MiniToo: soft filleted body, a screen recessed behind a raised
-// CRT-style bezel that stands upright, and — like a real retro
-// computer — a near-flat KEYBOARD DECK at the base, tilted up
-// toward you, carrying the buttons + knob + toggle as "keys".
-// A pixel-grid speaker grille sits on the low front face, and a
-// small retro camera pod perches on top.
+// A rounded, chunky little RETRO COMPUTER in the spirit of the Divoom
+// MiniToo, dressed with vintage-machine cues:
+//   * a monitor HOOD/BROW jutting over the screen
+//   * the screen sunk in a CHAMFERED CRT RECESS (tube-face look)
+//   * a near-flat KEYBOARD DECK at the base, tilted up toward you,
+//     carrying the buttons + knob + toggle as "keys"
+//   * VENT LOUVERS across the roof, a pixel-grid SPEAKER GRILLE and a
+//     recessed NAMEPLATE + power LED on the front, and little FEET
+//   * a small retro camera pod perched on top
 //
 // Same guts as the arcade chassis (Pi 3B+ + ELEGOO 3.5" portrait,
 // friction cradle + gravity wedge, panel-mount controls, screwless
@@ -116,43 +118,56 @@ module shell() {
         body();                 // outer
         body(inset = wall);     // hollow — wall on every face
       }
-      screen_frame() screen_bezel();     // raised CRT bezel
+      screen_frame() screen_bezel();     // raised CRT bezel + hood
       screen_frame() cradle();           // display cradle inside
       floor_ledge();
       floor_nubs();
+      feet();                            // little raised feet
     }
     // --- openings ---
-    screen_frame() screen_cut();
+    screen_frame() screen_cut();         // chamfered CRT recess
     deck_frame()   control_holes();
     speaker_grille();
+    front_badge();                       // recessed nameplate + power LED
+    vent_louvers();                      // retro cooling slots on the roof
     back_door_cut();
     bottom_open();
     power_slot();
     camera_sockets();                    // holes the pod's pegs press into
     camera_ribbon_slot();
     dowel_holes();
-    // debossed wordmark on the brow above the screen
-    screen_frame()
-      translate([W/2, -1.0, slen/2 + scr_cut[1]/2 + 6]) rotate([90,0,0])
-        linear_extrude(1.2)
-          text("KEA", size=7, font="DejaVu Sans:style=Bold",
-               halign="center", valign="center");
   }
 }
 
-// Raised rounded frame around the screen — the CRT bezel.
+// Raised rounded frame around the screen — the CRT bezel, plus a little
+// hood/brow jutting over the top like an old monitor.
 module screen_bezel() {
-  bw = 7; bz = 2.6;
+  bw = 8; bz = 3.0;
   ow = scr_cut[0] + 2*bw; oh = scr_cut[1] + 2*bw;
   translate([W/2, 0, slen/2]) rotate([-90, 0, 0])
     linear_extrude(bz)
       difference() {
         offset(r=6) offset(delta=-6) square([ow, oh], center=true);
-        offset(r=3) offset(delta=-3) square([scr_cut[0]+1.2, scr_cut[1]+1.2], center=true);
+        offset(r=3) offset(delta=-3) square([scr_cut[0]+5, scr_cut[1]+5], center=true);
       }
+  screen_hood();
 }
+module screen_hood() {
+  bw = 8;
+  hz = slen/2 + scr_cut[1]/2 + bw;          // just above the bezel top
+  translate([W/2, 0, hz]) rotate([-90, 0, 0])
+    linear_extrude(10)                       // juts ~10 mm toward the viewer
+      offset(r=4) offset(delta=-4)
+        square([scr_cut[0] + 2*bw + 4, 9], center=true);
+}
+// Chamfered CRT recess: the opening flares out toward the viewer, then a
+// straight through-hole — the flat panel sits back like a tube face.
 module screen_cut() {
-  translate([W/2, 1.5, slen/2]) cube([scr_cut[0], wall+8, scr_cut[1]], center=true);
+  hull() {
+    translate([W/2, -0.2, slen/2]) cube([scr_cut[0]+5, 0.1, scr_cut[1]+5], center=true);
+    translate([W/2, 3.0, slen/2])  cube([scr_cut[0], 0.1, scr_cut[1]], center=true);
+  }
+  translate([W/2, 3, slen/2]) cube([scr_cut[0], wall+8, scr_cut[1]], center=true);
 }
 
 // Buttons/knob/toggle as keys on the tilted deck.
@@ -163,13 +178,38 @@ module control_holes() {
     translate([bx, btn_row, 0]) cylinder(d=btn_d, h=24, center=true);
 }
 
-// Pixel-grid speaker grille on the low vertical front face.
+// Pixel-grid speaker grille on the low vertical front face (lower band).
 module speaker_grille() {
   cols = 9; rows = 3; pitch = 6;
   gw = (cols-1)*pitch; gh = (rows-1)*pitch;
   for (i = [0:cols-1], j = [0:rows-1])
-    translate([W/2 + i*pitch - gw/2, 1.5, front_h/2 - 2 + j*pitch - gh/2])
+    translate([W/2 + i*pitch - gw/2, 1.5, front_h/2 - 7 + j*pitch - gh/2])
       rotate([-90,0,0]) cylinder(d=2.6, h=wall+6, center=true);
+}
+
+// Recessed nameplate + power-LED on the upper part of the front face.
+module front_badge() {
+  translate([W/2, 1.2, 22]) rotate([90,0,0]) linear_extrude(1.2)          // plate recess
+    offset(r=2.5) offset(delta=-2.5) square([46, 12], center=true);
+  translate([W/2, 1.6, 22]) rotate([90,0,0]) mirror([1,0,0]) linear_extrude(1.6)
+    text("K E A", size=6, halign="center", valign="center",
+         font="DejaVu Sans:style=Bold");                                  // debossed name
+  translate([W-16, 1.5, 8]) rotate([-90,0,0]) cylinder(d=3.2, h=wall+4, center=true); // LED
+}
+
+// Retro cooling louvers on the flat roof — two banks of front-to-back
+// slots flanking the camera pod, like the vents on an old beige box.
+module vent_louvers() {
+  y0 = sy + 5; y1 = D - 6;
+  for (s = [-1, 1], k = [0:3])
+    translate([W/2 + s*(20 + k*5) - 1.1, y0, H-wall-1])
+      cube([2.2, y1 - y0, wall+2]);
+}
+
+// Four little feet, raising the body off the desk like a real box.
+module feet() {
+  for (x = [16, W-16], yy = [16, D-16])
+    translate([x, yy, -2.5]) cylinder(d=12, h=2.6);
 }
 
 // ============================================================
@@ -302,9 +342,9 @@ module camera_pod() {
 // ============================================================
 if (part == "shell")   shell();
 if (part == "shell_left")
-  intersection() { shell(); translate([-1,-1,-1]) cube([cut_x+1, D+2, H+2]); }
+  intersection() { shell(); translate([-1,-1,-3]) cube([cut_x+1, D+2, H+4]); }
 if (part == "shell_right")
-  intersection() { shell(); translate([cut_x,-1,-1]) cube([W-cut_x+1, D+2, H+2]); }
+  intersection() { shell(); translate([cut_x,-1,-3]) cube([W-cut_x+1, D+2, H+4]); }
 if (part == "bottom")     bottom_plate();
 if (part == "door")       door();
 if (part == "wedge")      wedge();
