@@ -3,9 +3,10 @@
 > **Reviewed `hardware/parts/proposal/` (2026-07):** Fan (SLCA-FAN) ✅,
 > PCA9685 (157066) ✅. **Raspberry Pi 400 GPIO adapter ❌ — Pi-400-only, won't
 > fit a Pi 3B+; replace with a 2×20 tall stacking header.** **Power decision:**
-> Pi on its own 5 V micro-USB adapter; **servos run off the 4×AA holder (NiMH)
-> straight to the PCA9685 V+** — so the REG5V5A and LM2596 step-down modules are
-> **not used**. Still to add: stacking header, servos (SG90s in hand).
+> Pi on its own 5 V micro-USB adapter; **servos run off 4×AA alkaline → LM2596S
+> buck (set to 5.0 V) → PCA9685 V+** (the buck caps the ~6.4 V fresh alkaline
+> under the PCA9685's 6 V limit). REG5V5A **not used**. Still to add: stacking
+> header, LM2596S buck, servos (SG90s in hand).
 
 
 Everything below is what the chassis is designed around. The **Fit** column
@@ -50,22 +51,23 @@ Two independent sources, joined only at **ground**.
 | Part | Qty | Spec | Notes |
 |---|---|---|---|
 | Pi PSU | 1 | 5 V / 2.5–3 A micro-USB | powers the **Pi only**, via the monitor side-wall slot |
-| 4×AA holder with switch | 1 | **4× NiMH ≈ 4.8 V** | **chosen** — powers the **servos only**, straight to PCA9685 **V+/GND**. NiMH, *not* fresh alkaline (~6.4 V > the PCA9685 6 V V+ limit) |
-| 470–1000 µF cap | 1 | ≥10 V | optional, across V+ (PCA9685 already has 100 µF onboard) |
+| 4×AA holder with switch | 1 | **4× alkaline (~6 V, free)** | powers the **servos only**, through the buck ↓ |
+| **LM2596S buck + voltmeter** | 1 | in 4–24 V, out set to **5.0 V**, ~2 A (3 A w/ heatsink) | **set to 5.0 V first**, then wire to PCA9685 **V+/GND**. It caps the 6.4 V fresh alkaline under the PCA9685 6 V limit |
+| 470–1000 µF cap | 1 | ≥10 V | optional, across V+ (PCA9685 has 100 µF onboard) |
 
-**Not needed / skipped:** the **REG5V5A** and **LM2596** step-down modules. They
-only drop a *higher* voltage to 5 V, which a 4.8 V servo pack doesn't need — and
-can't feed, being below their input minimums.
+**Not used:** the **REG5V5A** (it needs 9 V+ in; a 6 V pack can't feed it).
 
-Wiring: **Pi adapter → Pi.**   **4×AA (switch) → PCA9685 V+ / GND.**   PCA9685
-logic (VCC + SDA + SCL) comes from the Pi via the stacking header. **Tie the
-battery GND to the Pi GND** — shared ground is mandatory or the servo signals
-won't work.
+Wiring: **Pi adapter → Pi.**   **4×AA (switch) → LM2596S → PCA9685 V+ / GND.**
+Set the LM2596S output to **5.0–5.2 V with the trimmer/voltmeter *before*
+connecting the servos** (the trimmer can reach 24 V). PCA9685 logic (VCC + SDA +
+SCL) comes from the Pi via the stacking header. **Tie the battery/buck GND to the
+Pi GND** — shared ground is mandatory or the servo signals won't work.
 
-Runtime: three SG90s pull ~1.5–2 A while moving → only ~1–2 h of active motion on
-2000 mAh cells. `servo.py` should **stop the PWM when idle** (servo relaxes, draw
-≈ 0), and the monitor should be **balanced over the swivel** so that servo isn't
-holding against its weight.
+Notes: LM2596S is ~2 A continuous (heatsink for 3 A); **alkalines sag hard under
+1–2 A**, so runtime under active motion is modest and, once the pack drops below
+~6.5 V, the buck can't hold 5 V and the servos weaken — swap batteries then.
+`servo.py` should **stop the PWM when idle** (servo relaxes, draw ≈ 0), and the
+monitor should be **balanced over the swivel** so that servo isn't holding weight.
 
 **Servos are plastic-gear (SG90):** great for the light pan/tilt camera. For the
 **monitor swivel** they're marginal (they turn the whole monitor), so add a
@@ -80,7 +82,7 @@ scarce and software PWM jitters. Best path:
 
 | Part | Qty | Spec | Notes |
 |---|---|---|---|
-| **PCA9685** 16-ch PWM driver | 1 | 62.5×25.4 mm, I²C | **have it (157066).** All 3 servos plug in; **only uses SDA/GPIO2 + SCL/GPIO3**; **V+ terminal takes the 4×AA battery**; onboard 100 µF cap |
+| **PCA9685** 16-ch PWM driver | 1 | 62.5×25.4 mm, I²C | **have it (157066).** All 3 servos plug in; **only uses SDA/GPIO2 + SCL/GPIO3**; **V+ takes the 5 V from the LM2596S**; onboard 100 µF cap |
 | 2×20 stacking header (extra-tall) | 1 | ≥11 mm pins | **must add** — reach the header pins (I²C + button/encoder/toggle) under the display. NOT the Pi 400 adapter (that's Pi-400-only) |
 | MG90S servo (swivel) | 1 | metal gear | monitor swivel — **add** |
 | Adafruit Mini Pan-Tilt (2× SG90) | 1 | — | camera head — **add** |
