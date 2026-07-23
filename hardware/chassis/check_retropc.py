@@ -26,6 +26,8 @@ cut_x = p("cut_x")
 sv_L, sv_W = p("sv_L"), p("sv_W")
 Wm, Dm, recl, slen, mfoot, mcap = p("Wm"), p("Dm"), p("recl"), p("slen"), p("mfoot"), p("mcap")
 turret_y = p("turret_y")
+fan_sz, fan_holes = p("fan_sz"), p("fan_holes")
+mon_pwr_z, mon_pwr_depth = p("mon_pwr_z"), p("mon_pwr_depth")
 
 r = math.radians(recl)
 sym = slen*math.sin(r)
@@ -76,6 +78,20 @@ thick=25.0
 back_y = (6.5+STACK_L)*math.sin(r) + thick*math.cos(r)
 chk("seated stack clears the monitor back", back_y < Dm-wall, f"stack back {back_y:.1f} vs {Dm-wall:.0f}")
 chk("camera turret on the monitor roof", sym+3 < turret_y < Dm-6, f"roof {sym:.1f}..{Dm:.0f}, turret {turret_y:.0f}")
+
+# --- fan on the monitor back door ---
+door_w = Wm - 24
+door_h = Hm - mfoot - 16
+chk("fan aperture + bolt circle fit the back door",
+    fan_sz + 8 < door_w and fan_sz + 8 < door_h,
+    f"fan {fan_sz:.0f} (+bolts {fan_holes:.0f}) vs door {door_w:.0f}x{door_h:.0f}")
+
+# --- power inlet now on the monitor side wall (not the case) ---
+chk("case has NO power slot (moved to the monitor)",
+    "case_power_slot" not in src, "power now enters at the Pi in the monitor")
+chk("monitor power slot lands inside the side wall",
+    6 < mon_pwr_depth < Dm - 6 and 6 < mfoot + mon_pwr_z < Hm - 6,
+    f"slot depth {mon_pwr_depth:.0f}/{Dm:.0f}, z {mfoot+mon_pwr_z:.0f}/{Hm:.0f}")
 
 # --- total height sane on a desk ---
 chk("total height reasonable", Hc + 4 + Hm < 210, f"{Hc+4+Hm:.0f} mm tall overall")

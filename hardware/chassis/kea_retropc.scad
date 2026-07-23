@@ -70,6 +70,16 @@ scr_cut = [51,75];
 turret_y = 46;      // on the monitor roof, toward the back
 turret_holes = 18;
 
+// ---------- Pi cooling fan (in the monitor, on the back door) ----------
+fan_sz    = 30;     // fan body edge (30x30x7 typical) — set to your fan
+fan_holes = 24;     // screw-hole spacing (24 for 30 mm, 20 for 25 mm)
+fan_screw = 2.6;    // M2.5 self-tapping into the door bosses
+
+// ---------- Power inlet: runs to the Pi IN THE MONITOR (not the case) ----------
+mon_pwr_side  = -1; // -1 left wall, 1 right wall of the monitor
+mon_pwr_z     = 22; // height up the monitor side wall (calibrate to jack)
+mon_pwr_depth = 16; // from the screen face toward the back
+
 // ============================================================
 // CASE
 // ============================================================
@@ -95,9 +105,11 @@ module case() {
     servo_pocket();
     case_back_access();
     case_bottom_open();
-    case_power_slot();
     case_dowels();
-    // power LED
+    // NOTE: no power inlet on the case — the PSU cable runs to the Pi in
+    // the monitor (see mon_power_slot). The case only needs a small notch
+    // in the back access for the servo + speaker + button leads.
+    // power LED (status)
     translate([W-20, 1.5, Hc-10]) rotate([-90,0,0]) cylinder(d=3.2, h=wall+4, center=true);
   }
 }
@@ -142,10 +154,6 @@ module case_floor_ledge() {
   translate([W-wall-lp,wall,wall+0.8]) cube([lp, Dc-2*wall, lt]);
 }
 module case_feet() { for (x=[18,W-18], y=[18,Dc-18]) translate([x,y,-2.5]) cylinder(d=14,h=2.6); }
-module case_power_slot() {
-  translate([-2, Dc-40, Hc-20]) rotate([0,90,0])
-    hull() for (dz=[-4,4],dy=[-2.5,2.5]) translate([dz,dy,0]) cylinder(d=13,h=wall+4);
-}
 module case_dowels() {
   for (p=[[3,10],[3,Hc-10],[Dc-3,10],[Dc-3,Hc-10]])
     translate([cut_x-6, p[0], p[1]]) rotate([0,90,0]) cylinder(d=2.0,h=12);
@@ -202,7 +210,23 @@ module monitor() {
     mon_bottom_open();
     mon_foot_bolts();
     turret_mount();
+    mon_power_slot();     // PSU cable enters here, straight to the Pi
+    mon_intake_vents();   // fresh-air intake for the fan
   }
+}
+
+// PSU plugs into the Pi through a slot in the monitor's side wall.
+// The monitor swivels +/-90, so leave a service loop in the cable.
+module mon_power_slot() {
+  translate([mon_pwr_side>0 ? Wm-wall-2 : -2, mon_pwr_depth, mfoot + mon_pwr_z])
+    rotate([0,90,0])
+      hull() for (dz=[-4,4], dy=[-2.5,2.5]) translate([dz,dy,0]) cylinder(d=13, h=wall+4);
+}
+// Low side-wall intake louvers so the fan pulls fresh air across the Pi.
+module mon_intake_vents() {
+  for (s=[-1,1], k=[0:3])
+    translate([s>0 ? Wm-wall-1 : -1, 14 + k*7, mfoot+8])
+      cube([wall+2, 2.2, 22]);
 }
 module mon_bezel() {
   bw=9; bz=3.5; ow=scr_cut[0]+2*bw; oh=scr_cut[1]+2*bw;
@@ -239,8 +263,20 @@ module monitor_door() {
     union() {
       translate([-ow/2-6,-fh/2,0]) cube([ow+12, fh, 2.5]);
       translate([-ow/2+0.3,-lh/2,-2.5]) cube([ow-0.6, lh, 2.6]);
+      // fan screw bosses on the inside face (self-tap M2.5)
+      for (x=[-1,1], y=[-1,1])
+        translate([x*fan_holes/2, y*fan_holes/2 - fh*0.12, 2.5]) cylinder(d=6, h=4);
     }
-    for (i=[-3:3]) translate([i*10-1.5,-14,-3]) cube([3,28,9]);
+    // --- fan aperture with a spoked grille (fan blows onto the Pi) ---
+    translate([0, -fh*0.12, -3]) {
+      difference() {
+        cylinder(d=fan_sz-3, h=9);
+        for (a=[0:60:300]) rotate([0,0,a]) translate([-1.4,-fan_sz/2,-1]) cube([2.8, fan_sz, 11]);
+      }
+      for (x=[-1,1], y=[-1,1]) translate([x*fan_holes/2, y*fan_holes/2, -1]) cylinder(d=fan_screw, h=14);
+    }
+    // a couple of exhaust slots up top + finger scallop
+    for (i=[-2:2]) translate([i*11-1.5, fh*0.30, -3]) cube([3, 16, 9]);
     translate([0,fh/2,-3]) cylinder(d=12,h=9);
   }
 }
