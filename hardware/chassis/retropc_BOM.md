@@ -45,6 +45,14 @@ matching parameter at the top of `kea_retropc.scad` and re-run
 | PAM8403 mini amp | 1 | class-D, runs on 5 V | Pi 3.5 mm out → amp IN → speaker; amp power from a Pi **5 V** + GND pin |
 | 3.5 mm audio cable → bare wires | 1 | 3-pole TRS is fine | taps the Pi's headphone jack to the amp input (tip=L, sleeve=GND) |
 
+**Bluetooth option (no parts):** the Pi 3B+ has onboard Bluetooth — a BT speaker
+works with **zero extra parts** and sounds better than the analog jack. Costs:
+pairing + auto-reconnect setup, ~150 ms latency (fine for voice), and BT shares
+the 2.4 GHz radio with Wi-Fi so heavy feeds can stutter it; it's also a separate
+charged device, not inside the case. **Great for testing now;** the wired
+amp+speaker is the reliable, integrated choice for the final build. Kea can be
+set to prefer BT when connected and fall back to the 3.5 mm jack.
+
 ## Power (chosen: Pi on its adapter, servos on the battery)
 
 Two independent sources, joined only at **ground**.
