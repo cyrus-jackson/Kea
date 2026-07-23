@@ -21,6 +21,7 @@ User=pi
 WorkingDirectory=/home/pi
 Environment=DISPLAY=:0
 Environment=KEA_ROTATION=90
+Environment=SDL_AUDIODRIVER=pulseaudio
 ExecStart=/bin/bash -c '/usr/bin/screen -ls main | grep -q "No Sockets found" && /usr/bin/screen -dmS main'
 Restart=on-failure
 
@@ -35,8 +36,12 @@ Once the service creates the screen session, you have to run Kea inside of it.
 Pass the start command to the screen session:
 
 ```bash
-screen -S main -X stuff $'cd /home/pi/Kea && python src/main.py\n'
+screen -S main -X stuff $'cd /home/pi/Kea && SDL_AUDIODRIVER=pulseaudio python src/main.py\n'
 ```
+
+`SDL_AUDIODRIVER=pulseaudio` forces pygame's audio through PulseAudio so Kea's
+voice lands on the default sink — i.e. the Bluetooth speaker (see §3). It's also
+set on the service above; here on the run line it's belt-and-suspenders.
 
 ## Manual Test Controls (Buttons)
 
