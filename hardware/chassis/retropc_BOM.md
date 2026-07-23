@@ -11,9 +11,16 @@
 > the PCA9685's 6 V limit (can't hold a clean 5 V from 6 V in, but ~4.8 V is
 > fine for servos). REG5V5A not used.
 >
-> **Still to order:** KY-040 encoder + toggle *(if not already owned)*, a
-> **608 bearing** for the swivel, Dupont jumpers + button hookup wire, Pi camera
-> + 30 cm ribbon. **Dropped** (using Bluetooth speaker): wired speaker + PAM8403.
+> **Order = proposal folder** (Fan, PCA9685, GPIO 157081, buttons ×5, SG92R ×3,
+> 4×AA holder, LM2596S) **+ Pi camera + 30 cm ribbon.** Already owned: Pi 3B+,
+> ELEGOO display, **KY-040 encoder + toggle + jumpers**, Pi PSU, microSD,
+> filament, Bluetooth speaker, 4×AA alkalines.
+>
+> **608 swivel bearing: deferred** — running the plastic SG92R gears bare for
+> now; balance the monitor over the axis + a nylon washer/grease at the pivot
+> (below), and only add a bearing if the gears strain or strip.
+>
+> **Dropped** (using Bluetooth speaker): wired speaker + PAM8403.
 
 
 Everything below is what the chassis is designed around. The **Fit** column
