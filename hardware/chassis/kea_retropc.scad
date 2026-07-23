@@ -49,14 +49,19 @@ tog_x = 24;
 enc_x = W - 24;
 btn_dx = 20;
 
-// ---------- Swivel servo (MG90S, in the case, shaft up) ----------
+// ---------- Swivel servo (SG92R micro servo, in the case, shaft up) ----------
+// Body 23 x 13 x 27 mm. It hangs UNDER the case top: flanges screw to the
+// top's underside, output shaft + horn poke up through the top into the
+// turntable. Body dangles in the cavity, guided by a collar.
 sv_L = 23.2;
-sv_W = 12.8;
-sv_body_h = 22.8;
+sv_W = 13.5;      // SG92R is 13 mm wide (was 12.8 — too tight)
+sv_body_h = 22.8; // body height below the flanges
+sv_screw = 28;    // flange screw-hole spacing (M2)
 
 // ---------- Monitor ----------
 Wm   = 100;   // monitor width
-Dm   = 66;    // monitor depth
+Dm   = 72;    // monitor depth (was 66 — deeper for the Pi+display+GPIO-adapter
+              // stack; the cradle/wedge now take a thicker stack)
 recl = 8;     // slight fixed recline (pan is motorized, tilt is fixed)
 slen = 94;    // screen slope length (85.5 display + shelf)
 mcap = 8;
@@ -100,13 +105,12 @@ module case() {
       difference() { case_body(); case_body(inset=wall); }
       case_floor_ledge();
       case_feet();
-      servo_boss();
+      servo_collar();
       speaker_mount();
     }
     keyboard_holes();
     case_speaker();
     turntable_socket();
-    servo_pocket();
     case_back_access();
     case_bottom_open();
     case_dowels();
@@ -140,21 +144,23 @@ module speaker_mount() {
       translate([0,0,-1]) cylinder(d=spk_d+0.6, h=8);
     }
 }
-// circular seat the turntable rotates in + central shaft/cable hole
+// Case-top interface: a shallow seat the turntable disc rotates in, the
+// servo output+horn hole, and 2 flange screw holes (servo mounts from the
+// inside, flanges up against the top's underside).
 module turntable_socket() {
-  translate([W/2, turn_y, Hc-1.4]) cylinder(r=turn_r+0.6, h=2.0);       // recess
-  translate([W/2, turn_y, Hc-wall-1]) cylinder(d=13, h=wall+2);         // shaft/cable hole
+  translate([W/2, turn_y, Hc-2]) cylinder(r=turn_r+0.6, h=2.4);         // disc seat
+  translate([W/2, turn_y, Hc-wall-1]) cylinder(d=16, h=wall+2);         // output+horn+cable
+  for (s=[-1,1]) translate([W/2+s*sv_screw/2, turn_y, Hc-wall-1])
+    cylinder(d=2.4, h=wall+2);                                          // flange screws
 }
-// boss under the turntable center holding the servo upright
-module servo_boss() {
-  translate([W/2-sv_L/2-2, turn_y-sv_W/2-2, wall])
+// Collar hanging from the top's underside that guides the dangling servo
+// body (keeps it from wobbling on its two flange screws).
+module servo_collar() {
+  translate([W/2, turn_y, Hc-wall-10])
     difference() {
-      cube([sv_L+4, sv_W+4, Hc-wall-3]);
-      translate([2,2,-1]) cube([sv_L, sv_W, Hc]);
+      translate([-(sv_L/2+2), -(sv_W/2+2), 0]) cube([sv_L+4, sv_W+4, 10]);
+      translate([-(sv_L/2+0.3), -(sv_W/2+0.3), -1]) cube([sv_L+0.6, sv_W+0.6, 12]);
     }
-}
-module servo_pocket() {
-  translate([W/2-sv_L/2, turn_y-sv_W/2, wall-1]) cube([sv_L, sv_W, Hc]);
 }
 module case_back_access() {                     // wiring access on the back
   translate([20, Dc-wall-1, 8]) cube([W-40, wall+2, Hc-16]);
@@ -188,11 +194,11 @@ module turntable() {
     union() {
       cylinder(r=turn_r, h=4);
       cylinder(r=turn_r-3, h=6);                 // raised hub
-      translate([0,0,-2]) cylinder(d=11.5, h=2); // spigot into the case hole (bearing)
     }
-    translate([0,0,-3]) cylinder(d=6.5, h=12);   // central cable hole
-    // servo-horn screw holes (small cross pattern)
-    for (a=[0:90:270]) rotate([0,0,a]) translate([7,0,2]) cylinder(d=2.0, h=8);
+    translate([0,0,-1]) cylinder(d=18, h=3);     // pocket for the servo horn (underside)
+    translate([0,0,-3]) cylinder(d=6.5, h=14);   // central cable hole (through)
+    // servo-horn screw holes (screw the horn up into the disc)
+    for (a=[0:90:270]) rotate([0,0,a]) translate([7,0,1]) cylinder(d=2.0, h=8);
     // monitor-foot bolt holes
     for (a=[0:90:270]) rotate([0,0,a]) translate([turn_bolt/2,0,-1]) cylinder(d=2.6, h=10);
   }
@@ -262,11 +268,12 @@ module mon_screen_cut() {
 }
 module mon_cradle() {
   gx0=(Wm-56)/2-3.5; gx1=(Wm+56)/2+0.5;
-  translate([wall,wall,2.5]) cube([Wm-2*wall,26,4]);
-  translate([gx0,wall,4]) cube([3,26,58]);
-  translate([gx1,wall,4]) cube([3,26,58]);
-  translate([gx0,wall+23,8]) cube([21,3,42]);
-  translate([gx1+3-21,wall+23,8]) cube([21,3,42]);
+  cd=37;                                    // cradle depth — Pi+display+GPIO adapter
+  translate([wall,wall,2.5]) cube([Wm-2*wall,cd,4]);
+  translate([gx0,wall,4]) cube([3,cd,58]);
+  translate([gx1,wall,4]) cube([3,cd,58]);
+  translate([gx0,wall+cd-3,8]) cube([21,3,42]);
+  translate([gx1+3-21,wall+cd-3,8]) cube([21,3,42]);
 }
 module mon_back_door_cut() {
   translate([12, Dm-wall-1, mfoot+6]) cube([Wm-24, wall+2, Hm-mfoot-16]);
@@ -307,7 +314,7 @@ module turret_mount() {
 }
 module wedge() {
   difference() {
-    union() { rotate([90,0,90]) linear_extrude(56) polygon([[0,0],[1.5,0],[9.5,58],[0,58]]);
+    union() { rotate([90,0,90]) linear_extrude(56) polygon([[0,0],[1.5,0],[13,58],[0,58]]);
       translate([0,0,52]) cube([56,11,6]); }
     translate([16,-1,8]) cube([24,13,40]);
   }

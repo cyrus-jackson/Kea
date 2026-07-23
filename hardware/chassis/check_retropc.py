@@ -23,7 +23,9 @@ kb_d, turn_y, turn_r, turn_bolt = p("kb_d"), p("turn_y"), p("turn_r"), p("turn_b
 btn_d, enc_d, tog_d, btn_dx = p("btn_d"), p("enc_d"), p("tog_d"), p("btn_dx")
 kb_btn_row, kb_te_row, tog_x = p("kb_btn_row"), p("kb_te_row"), p("tog_x")
 cut_x = p("cut_x")
-sv_L, sv_W = p("sv_L"), p("sv_W")
+sv_L, sv_W, sv_screw = p("sv_L"), p("sv_W"), p("sv_screw")
+CRADLE_D = 37       # mon_cradle depth (must match scad); STACK+adapter+wedge
+GPIO_STACK = 33     # assumed Pi+display+GPIO-adapter thickness
 Wm, Dm, recl, slen, mfoot, mcap = p("Wm"), p("Dm"), p("recl"), p("slen"), p("mfoot"), p("mcap")
 turret_y = p("turret_y")
 fan_sz, fan_holes = p("fan_sz"), p("fan_holes")
@@ -62,9 +64,10 @@ chk("buttons don't overlap", btn_dx > btn_d+1.5)
 # --- turntable / servo ---
 chk("turntable seat fits on the case top", turn_y + turn_r < Dc - wall and turn_y - turn_r > kb_d,
     f"turntable spans {turn_y-turn_r:.0f}..{turn_y+turn_r:.0f} of depth {Dc:.0f}")
-chk("servo body fits under the turntable in the case",
-    sv_L + 4 < 2*turn_r and sv_W + 4 < 2*turn_r and Hc - wall - 3 >= 20,
-    f"servo {sv_L:.0f}x{sv_W:.0f}, case cavity {Hc-wall:.0f} tall")
+chk("SG92R hangs under the top: cavity deep enough + flange holes on the disc",
+    Hc - wall >= 25 and sv_screw + 3 < 2*turn_r
+    and sv_L + 4 < 2*(turn_r+0.6) and sv_W + 4 < 2*(turn_r+0.6),
+    f"cavity {Hc-wall:.0f} (need >=25), flange span {sv_screw:.0f} vs disc {2*turn_r:.0f}")
 chk("monitor foot bolt circle fits on the turntable", turn_bolt/2 + 3 < turn_r,
     f"bolt r={turn_bolt/2:.0f}, turntable r={turn_r:.0f}")
 chk("monitor foot bolt circle fits under the monitor", turn_bolt + 6 < min(Wm, Dm),
@@ -75,9 +78,13 @@ chk("monitor slope carries the display", slen >= 6.5+STACK_L+2)
 chk("screen cutout inside the slope", slen/2-37.5 > 2 and slen/2+37.5 < slen-2)
 gx0=(Wm-56)/2-3.5; gx1=(Wm+56)/2+0.5
 chk("cradle guides straddle the stack", gx0 >= wall and gx1+3 <= Wm-wall)
-thick=25.0
+thick = GPIO_STACK
 back_y = (6.5+STACK_L)*math.sin(r) + thick*math.cos(r)
-chk("seated stack clears the monitor back", back_y < Dm-wall, f"stack back {back_y:.1f} vs {Dm-wall:.0f}")
+chk("seated stack (with GPIO adapter) clears the monitor back", back_y < Dm-wall,
+    f"stack back {back_y:.1f} vs inner {Dm-wall:.0f}")
+chk("cradle deep enough for the GPIO-adapter stack + wedge",
+    CRADLE_D >= GPIO_STACK + 2 and CRADLE_D < Dm - wall,
+    f"cradle {CRADLE_D:.0f} vs stack {GPIO_STACK:.0f}+wedge, inner {Dm-wall:.0f}")
 chk("camera turret on the monitor roof", sym+3 < turret_y < Dm-6, f"roof {sym:.1f}..{Dm:.0f}, turret {turret_y:.0f}")
 
 # --- fan on the monitor back door ---
