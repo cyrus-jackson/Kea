@@ -18,7 +18,7 @@
 // Servos want their OWN 5 V — never the Pi header.
 // ============================================================
 
-part = "case";  // "case" | "case_left" | "case_right" | "case_floor"
+part = "monitor_right";  // "case" | "case_left" | "case_right" | "case_floor"
                 // | "turntable" | "monitor" (whole) | "monitor_left"
                 // | "monitor_right" | "monitor_door" | "wedge"
                 // | "cam_cradle" | "assembly"
@@ -76,9 +76,9 @@ mfoot= 6;     // monitor foot thickness (bolts to the turntable)
 // horizontal pins + wires. That side's cradle guide is kept short and the
 // stack is NOT clamped to the wall there.
 gpio_side = 1;   // -1 = left, +1 = right
-mcut_x = 13;     // monitor split-print plane: left margin, clear of the screen
-                 // bezel AND the GPIO channel (which is on the right here), so
-                 // each half lies on its flat cut face and prints support-free
+mcut_x = 87;     // monitor split-print plane: RIGHT margin, clear of the screen
+                 // bezel, so each half lies on its flat cut face and prints
+                 // support-free (glue the halves like the case)
 sym = slen*sin(recl);
 szm = mfoot + slen*cos(recl);
 Hm  = szm + mcap;             // monitor height (above its foot)
@@ -130,8 +130,8 @@ module case() {
     // power LED (status)
     translate([W-20, 1.5, Hc-10]) rotate([-90,0,0]) cylinder(d=3.2, h=wall+4, center=true);
     // KEA wordmark, debossed big and centered on the front face (where the
-    // speaker grille used to be)
-    translate([W/2, 1.6, Hc/2]) rotate([90,0,0]) mirror([1,0,0])
+    // speaker grille used to be). No mirror — reads correctly from the front.
+    translate([W/2, 1.6, Hc/2]) rotate([90,0,0])
       linear_extrude(1.6) text("KEA", size=20, halign="center", valign="center",
                                font="DejaVu Sans:style=Bold");
   }

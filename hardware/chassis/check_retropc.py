@@ -153,9 +153,11 @@ chk("case cut plane misses all keyboard holes",
     f"{sorted(round(c) for c,_ in kb_holes if abs(c-cut_x)<20)}")
 
 # monitor split: seam clear of the screen bezel; halves fit the bed
-bezel_L = Wm/2 - (51/2 + 9)                  # bezel outer left edge (bw=9)
-chk("monitor seam clears the screen bezel", mcut_x + 0.5 < bezel_L,
-    f"seam {mcut_x:.0f}, bezel left edge {bezel_L:.1f}")
+bezel_L = Wm/2 - (51/2 + 9)                  # bezel outer edges (bw=9)
+bezel_R = Wm/2 + (51/2 + 9)
+chk("monitor seam clears the screen bezel",
+    mcut_x < bezel_L - 0.5 or mcut_x > bezel_R + 0.5,
+    f"seam {mcut_x:.0f}, bezel {bezel_L:.1f}..{bezel_R:.1f}")
 chk("monitor halves fit the bed", Dm+2 <= BED and Hm+2 <= BED
     and max(mcut_x, Wm-mcut_x) <= 250, f"tallest half {max(mcut_x,Wm-mcut_x):.0f}")
 
