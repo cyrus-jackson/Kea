@@ -3,9 +3,9 @@
 //
 // The classic 90s setup, shrunk:
 //   * a low horizontal CASE on the desk, with a FLAT KEYBOARD built
-//     into its front top (the buttons/knob/toggle as keys) and a
-//     speaker grille on the front. Houses the swivel servo, speaker,
-//     PSU and wiring.
+//     into its front top (5 buttons + 2 toggles + encoder) and "KEA"
+//     on the front. Houses the swivel servo, the PCA9685, the LM2596
+//     buck and the 4xAA pack (sound is a Bluetooth speaker).
 //   * a MONITOR sitting on a TURNTABLE on the case's back top. The
 //     monitor holds the Pi + ELEGOO screen (they bolt together, so
 //     they live here), behind a hooded, recessed CRT screen, with a
@@ -18,7 +18,7 @@
 // Servos want their OWN 5 V — never the Pi header.
 // ============================================================
 
-part = "turntable";  // "case" | "case_left" | "case_right" | "case_floor"
+part = "case";  // "case" | "case_left" | "case_right" | "case_floor"
                 // | "turntable" | "monitor" (whole) | "monitor_left"
                 // | "monitor_right" | "monitor_door" | "wedge"
                 // | "cam_cradle" | "assembly"
@@ -33,8 +33,8 @@ Dc   = 150;   // depth
 Hc   = 48;    // height (low desktop profile)
 wall = 3;
 r_c  = 6;     // case edge rounding
-cut_x= 43;    // case split-print plane — in the gap between tog2/button-1 and
-              // the 2nd button (case can also just be printed whole)
+cut_x= 41;    // case split-print plane — in the clear gap left of tog2 and
+              // button-2 (case can also just be printed whole)
 
 // keyboard zone = front top of the case (depth 0..kb_d)
 kb_d = 60;
@@ -49,8 +49,8 @@ enc_d = 7.5;
 tog_d = 6.4;
 kb_btn_row = 38;
 kb_te_row = 20;   // depths on the keyboard
-tog1_x = 18;      // two toggles, front row left
-tog2_x = 36;
+tog1_x = 16;      // two toggles, front row left — spread apart
+tog2_x = 48;
 enc_x = W - 16;   // encoder, front row far right
 btn_dx = 22;      // spacing of the FIVE buttons (back row), centred on W/2
 
@@ -93,8 +93,6 @@ fan_sz    = 30;     // fan body edge (30x30x7 typical) — set to your fan
 fan_holes = 24;     // screw-hole spacing (24 for 30 mm, 20 for 25 mm)
 fan_screw = 2.6;    // M2.5 self-tapping into the door bosses
 
-// ---------- Sound (round speaker press-fits behind the case grille) ----------
-spk_d     = 36;     // speaker outer diameter — set to yours (28/36/40 common)
 
 // ---------- Power inlet: runs to the Pi IN THE MONITOR (not the case) ----------
 mon_pwr_side  = -1; // -1 left wall, 1 right wall of the monitor
@@ -120,10 +118,8 @@ module case() {
       case_floor_ledge();
       case_feet();
       servo_collar();
-      speaker_mount();
     }
     keyboard_holes();
-    case_speaker();
     turntable_socket();
     case_back_access();
     case_bottom_open();
@@ -133,11 +129,11 @@ module case() {
     // in the back access for the servo + speaker + button leads.
     // power LED (status)
     translate([W-20, 1.5, Hc-10]) rotate([-90,0,0]) cylinder(d=3.2, h=wall+4, center=true);
-    // KEA wordmark, engraved into the top surface on the blank strip in
-    // front of the keyboard (reads from above, like a laptop brand)
-    translate([W/2, 8, Hc-1.3]) linear_extrude(1.5)
-      text("KEA", size=11, halign="center", valign="center",
-           font="DejaVu Sans:style=Bold");
+    // KEA wordmark, debossed big and centered on the front face (where the
+    // speaker grille used to be)
+    translate([W/2, 1.6, Hc/2]) rotate([90,0,0]) mirror([1,0,0])
+      linear_extrude(1.6) text("KEA", size=20, halign="center", valign="center",
+                               font="DejaVu Sans:style=Bold");
   }
 }
 
@@ -147,22 +143,7 @@ module keyboard_holes() {
   for (bx=[W/2-2*btn_dx, W/2-btn_dx, W/2, W/2+btn_dx, W/2+2*btn_dx])
     translate([bx, kb_btn_row, Hc-1]) cylinder(d=btn_d, h=wall+4);
 }
-// Circular dot-matrix grille sized to the speaker cone, centered on the front.
-module case_speaker() {
-  n=7; pitch=5; g=(n-1)*pitch;
-  for (i=[0:n-1], j=[0:n-1])
-    if (pow(i*pitch-g/2,2) + pow(j*pitch-g/2,2) <= pow(g/2+1,2))
-      translate([W/2 + i*pitch-g/2, 1.5, Hc/2 + j*pitch-g/2])
-        rotate([-90,0,0]) cylinder(d=2.8, h=wall+6, center=true);
-}
-// Ring on the inner front wall — the round speaker press-fits into it.
-module speaker_mount() {
-  translate([W/2, wall-0.1, Hc/2]) rotate([-90,0,0])
-    difference() {
-      cylinder(d=spk_d+5, h=6);
-      translate([0,0,-1]) cylinder(d=spk_d+0.6, h=8);
-    }
-}
+// (Speaker grille + mount removed — Kea uses the Bluetooth speaker.)
 // Case-top interface: a shallow seat the turntable disc rotates in, the
 // servo output+horn hole, and 2 flange screw holes (servo mounts from the
 // inside, flanges up against the top's underside).
@@ -198,15 +179,18 @@ module case_dowels() {
     translate([cut_x-6, p[0], p[1]]) rotate([0,90,0]) cylinder(d=2.0,h=12);
 }
 // Bottom plate. Mount the boards to it FIRST (outside the case), then slot it
-// in. Cable-tie slot pairs strap down the battery (front), PCA9685 (left) and
-// LM2596 buck (right) — all clear of the hanging servo and button bodies.
+// in. Cable-tie pairs strap the three boards laid out left-to-right across the
+// back — they don't overlap and all sit below whatever hangs from the top:
+//   battery 62x56.5  @ x~6-68    (left)
+//   PCA9685 25x62.5  @ x~73-99   (centre)
+//   LM2596  36x66    @ x~104-140 (right)
 module case_floor() {
   difference() {
     translate([wall+0.75, wall+0.75, 0]) cube([W-2*wall-1.5, Dc-2*wall-1.5, wall]);
-    translate([W/2, Dc-22, -1]) cylinder(d=14, h=wall+2);
-    for (a = [[75,55], [35,92], [115,92]])       // [x,y] board centres
+    translate([W/2, Dc-22, -1]) cylinder(d=14, h=wall+2);   // finger hole
+    for (a = [[37,85,22], [86,85,9], [122,85,13]])          // [cx, cy, half-span]
       for (s = [-1,1])
-        translate([a[0]+s*16, a[1]-7, -1]) cube([3, 14, wall+2]);
+        translate([a[0]+s*a[2], a[1]-8, -1]) cube([3, 16, wall+2]);
   }
 }
 

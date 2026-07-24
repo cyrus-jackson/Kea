@@ -33,7 +33,6 @@ Wm, Dm, recl, slen, mfoot, mcap = p("Wm"), p("Dm"), p("recl"), p("slen"), p("mfo
 turret_y = p("turret_y")
 fan_sz, fan_holes = p("fan_sz"), p("fan_holes")
 mon_pwr_z, mon_pwr_depth = p("mon_pwr_z"), p("mon_pwr_depth")
-spk_d = p("spk_d")
 
 r = math.radians(recl)
 sym = slen*math.sin(r)
@@ -114,23 +113,44 @@ chk("monitor power slot lands inside the side wall",
     6 < mon_pwr_depth < Dm - 6 and 6 < mfoot + mon_pwr_z < Hm - 6,
     f"slot depth {mon_pwr_depth:.0f}/{Dm:.0f}, z {mfoot+mon_pwr_z:.0f}/{Hm:.0f}")
 
-# --- speaker mount fits the case front ---
-chk("speaker + mount ring fit the case front wall",
-    spk_d + 5 < Hc - 2 and spk_d + 5 < W - 2*wall,
-    f"ring {spk_d+5:.0f} vs front {Hc:.0f}x{W:.0f}")
+# --- ordered boards fit inside the case ---
+# [name, w(x), d(y), h(z), cx, cy] from the datasheets
+BOARDS = [
+    ("battery 4xAA", 62.0, 56.5, 16.0, 37, 85),
+    ("PCA9685",      25.4, 62.5, 20.0, 86, 85),   # ~20 mm tall with headers
+    ("LM2596 buck",  36.0, 66.0, 16.0, 122, 85),
+]
+floor_lo, floor_hi = wall + 0.75, W - wall - 0.75
+floor_hi_y = Dc - wall - 0.75
+LOWEST_HANG = 22.0     # nothing (buttons/servo) hangs below ~22 mm; boards <=20
+for nm, bw, bd, bh, cx, cy in BOARDS:
+    chk(f"{nm} fits the floor footprint",
+        cx - bw/2 >= floor_lo and cx + bw/2 <= floor_hi
+        and cy - bd/2 >= floor_lo and cy + bd/2 <= floor_hi_y,
+        f"x {cx-bw/2:.0f}-{cx+bw/2:.0f}, y {cy-bd/2:.0f}-{cy+bd/2:.0f}")
+    chk(f"{nm} clears the parts hanging from the top", bh < LOWEST_HANG,
+        f"board {bh:.0f} mm tall vs {LOWEST_HANG:.0f} mm")
+# no two boards overlap in x (they're laid out left-to-right)
+xs = sorted((cx - bw/2, cx + bw/2) for nm, bw, bd, bh, cx, cy in BOARDS)
+chk("the three boards don't overlap each other",
+    all(xs[i][1] <= xs[i+1][0] for i in range(len(xs)-1)),
+    f"x spans {[ (round(a),round(b)) for a,b in xs ]}")
+# boards clear the finger hole in the bottom plate
+chk("boards clear the bottom-plate finger hole",
+    all(cy + bd/2 < Dc - 30 for nm, bw, bd, bh, cx, cy in BOARDS),
+    f"finger hole at y={Dc-22:.0f}")
 
 # --- total height sane on a desk ---
 chk("total height reasonable", Hc + 4 + Hm < 210, f"{Hc+4+Hm:.0f} mm tall overall")
 
 # --- case seam ---
-# case seam must miss every keyboard hole: it sits between the left cluster
-# (tog2 / button-1) and button-2.
-b1_end = (W/2 - 2*btn_dx) + BTN_HEAD/2       # leftmost button right edge
-b2_start = (W/2 - btn_dx) - BTN_HEAD/2       # 2nd button left edge
-left_cluster = max(tog2_x + tog_d/2, b1_end)
+# case seam must miss EVERY keyboard hole (toggles, encoder, all 5 buttons)
+kb_holes = [(tog1_x, tog_d/2), (tog2_x, tog_d/2), (enc_x, enc_d/2)]
+kb_holes += [(W/2 + i*btn_dx, BTN_HEAD/2) for i in (-2, -1, 0, 1, 2)]
 chk("case cut plane misses all keyboard holes",
-    left_cluster + 0.7 < cut_x < b2_start - 0.7,
-    f"cut {cut_x:.0f}, left cluster ends {left_cluster:.1f}, button-2 starts {b2_start:.1f}")
+    all(cut_x < c - r - 0.7 or cut_x > c + r + 0.7 for c, r in kb_holes),
+    f"cut {cut_x:.0f}; nearest holes "
+    f"{sorted(round(c) for c,_ in kb_holes if abs(c-cut_x)<20)}")
 
 # monitor split: seam clear of the screen bezel; halves fit the bed
 bezel_L = Wm/2 - (51/2 + 9)                  # bezel outer left edge (bw=9)
