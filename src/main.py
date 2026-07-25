@@ -186,6 +186,7 @@ def main():
 
     screen = pygame.display.set_mode((physical_width, physical_height), flags)
     logical_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+    _dim_layer = None          # reused black veil for software brightness
     
     pygame.display.set_caption("Smart Display")
 
@@ -374,7 +375,18 @@ def main():
         # Toggle indicator: the lever's meaning changes per screen, so say
         # what it's doing here. Drawn centrally to stay consistent.
         _draw_toggle_chip(logical_surface, manager)
-        
+
+        # Brightness. If the panel exposes a real backlight, settings already
+        # wrote it and this is a no-op; otherwise (most SPI TFTs, whose LED
+        # line is tied to 3V3) we dim by veiling the frame in black.
+        veil = settings.dim_alpha()
+        if veil:
+            if _dim_layer is None or _dim_layer.get_size() != logical_surface.get_size():
+                _dim_layer = pygame.Surface(logical_surface.get_size())
+                _dim_layer.fill((0, 0, 0))
+            _dim_layer.set_alpha(veil)
+            logical_surface.blit(_dim_layer, (0, 0))
+
         # Rotate and blit to screen
         if ROTATION != 0:
             rotated_surface = pygame.transform.rotate(logical_surface, ROTATION)

@@ -129,11 +129,18 @@ def has_backlight():
 
 
 def apply_brightness(percent=None):
-    """Push the brightness to the panel. No panel: silently do nothing."""
+    """Push the brightness to the panel. No panel: silently do nothing
+    (main.py then dims in software — see dim_alpha)."""
+    pct = get("brightness") if percent is None else percent
+    if _pwm is not None:                      # GPIO-PWM backlight
+        try:
+            _pwm.ChangeDutyCycle(max(1, min(100, pct)))
+            return True
+        except Exception:
+            pass
     p = _find_backlight()
     if not p:
         return False
-    pct = get("brightness") if percent is None else percent
     try:
         raw = max(1, int(_backlight_max * max(1, min(100, pct)) / 100.0))
         with open(p, "w") as f:
@@ -143,7 +150,60 @@ def apply_brightness(percent=None):
         return False
 
 
+# ── software dimming (for panels with no backlight device) ──────────────────
+# Most SPI TFTs — the ELEGOO 3.5" included — tie their LED line straight to
+# 3V3, so /sys/class/backlight is empty and brightness can't be set in
+# hardware. We then dim by veiling the frame in black. It doesn't save power,
+# but it does what you actually want at night: a less glaring screen.
+# 100 % = no veil; the floor keeps the screen readable at the lowest setting.
+MAX_VEIL = 165          # alpha at 10 % brightness
+
+
+def dim_alpha():
+    """0-255 black-veil alpha for the current brightness. 0 = don't draw."""
+    if has_backlight() or pwm_active():
+        return 0            # real hardware dimming is doing the work
+    pct = get("brightness")
+    if pct >= 100:
+        return 0
+    _d, lo, hi, _s = SPEC["brightness"]
+    t = (pct - lo) / float(hi - lo)          # 0 at min, 1 at max
+    return int(MAX_VEIL * (1.0 - t))
+
+
+# ── optional: PWM the backlight on a GPIO (if your panel's LED pin is free) ──
+# Set KEA_BACKLIGHT_PIN=<BCM> if you wire the display's LED pin to a GPIO
+# (through a transistor for anything but a tiny panel). Then brightness is
+# real, and the software veil switches itself off.
+try:
+    BACKLIGHT_PIN = int(os.getenv("KEA_BACKLIGHT_PIN", "-1"))
+except ValueError:
+    BACKLIGHT_PIN = -1
+
+_pwm = None
+
+
+def pwm_active():
+    return _pwm is not None
+
+
+def _pwm_init():
+    global _pwm
+    if BACKLIGHT_PIN < 0 or _pwm is not None:
+        return
+    try:
+        import RPi.GPIO as GPIO
+        GPIO.setwarnings(False)
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(BACKLIGHT_PIN, GPIO.OUT)
+        _pwm = GPIO.PWM(BACKLIGHT_PIN, 1000)     # 1 kHz: no visible flicker
+        _pwm.start(get("brightness"))
+    except Exception:
+        _pwm = None
+
+
 def init():
     """Call once at startup so the saved brightness takes effect."""
     _load()
+    _pwm_init()
     apply_brightness()

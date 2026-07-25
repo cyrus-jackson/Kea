@@ -244,19 +244,22 @@ class ConsoleState(State):
         y = h - s(44)
         pygame.draw.line(surf, STEEL_LO, (s(12), y), (w - s(12), y))
 
-        # status lamp: green when the real backlight is under our control
-        live = settings.has_backlight()
-        lamp = GREEN_LAMP if live else STEEL
+        # status lamp: which dimming path is actually in use
+        if settings.has_backlight():
+            live, mode = True, "BACKLIGHT: PANEL"
+        elif settings.pwm_active():
+            live, mode = True, "BACKLIGHT: PWM"
+        else:
+            live, mode = False, "BACKLIGHT: SOFT DIM"
+        lamp = GREEN_LAMP if live else AMBER
         cx, cy = s(22), y + s(17)
-        if live:
-            halo = pygame.Surface((s(22), s(22)), pygame.SRCALPHA)
-            pygame.draw.circle(halo, (*GREEN_LAMP, 60), (s(11), s(11)), s(11))
-            surf.blit(halo, (cx - s(11), cy - s(11)))
+        halo = pygame.Surface((s(22), s(22)), pygame.SRCALPHA)
+        pygame.draw.circle(halo, (*lamp, 60), (s(11), s(11)), s(11))
+        surf.blit(halo, (cx - s(11), cy - s(11)))
         pygame.draw.circle(surf, lamp, (cx, cy), s(5))
         pygame.draw.circle(surf, SHADOW, (cx, cy), s(5), 1)
-        surf.blit(self.font_tiny.render(
-            "BACKLIGHT LIVE" if live else "BACKLIGHT N/A", True, ENGRAVE_LO),
-            (cx + s(11), cy - s(6)))
+        surf.blit(self.font_tiny.render(mode, True, ENGRAVE_LO),
+                  (cx + s(11), cy - s(6)))
 
         hint = "TURN: ADJUST   PRESS: NEXT DIAL" + ("   [FINE]" if self.fine else "")
         hs = self.font_tiny.render(hint, True, ENGRAVE_LO)
