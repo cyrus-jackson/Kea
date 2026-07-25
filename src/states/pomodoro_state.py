@@ -21,6 +21,7 @@ import random
 
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE
 from states.base_state import State
+from states import pomodoro_dials
 from hardware_input import BUTTON_POMODORO_EVENT, BUTTON_NOTIFICATION_EVENT
 
 WORK_TIME = 20 * 60
@@ -85,6 +86,8 @@ class PomodoroState(State):
 
         self.grains = []                   # falling motes: [x_off, y, speed]
         self._bg = self._build_bg()
+        # which instrument is on the bench — re-rolled on every visit
+        self.dial = pomodoro_dials.pick()
 
     # ══════════════════════════════════════════════════════════════════════
     def _build_bg(self):
@@ -110,7 +113,9 @@ class PomodoroState(State):
     # Session control (behaviour preserved)
     # ══════════════════════════════════════════════════════════════════════
     def enter(self):
-        pass
+        # a different instrument each time you arrive (never the same twice
+        # running, so it always reads as a change)
+        self.dial = pomodoro_dials.pick(exclude=self.dial.name if self.dial else None)
 
     # ── the deck toggle is this screen's run lever ──────────────────────
     def on_toggle(self, on):
@@ -301,12 +306,18 @@ class PomodoroState(State):
         pygame.draw.rect(surface, BRASS_DARK, plate, 1, border_radius=s(4))
         surface.blit(lab, lab.get_rect(midtop=(SCREEN_WIDTH // 2, s(26))))
 
-        # ── the hourglass, flipping between sessions ────────────────────
-        glass = self._render_glass(frac, sand)
+        # ── the instrument, whichever one is on the bench today ─────────
+        glass = self.dial.render((self.g_w, self.g_h), frac, sand,
+                                 self.t, self.running, self.grains)
         if self.transition_timer > 0:
             p = 1.0 - (self.transition_timer / TRANSITION_TIME)
-            angle = 180.0 * (p * p * (3 - 2 * p))       # smoothstep flip
-            glass = pygame.transform.rotozoom(glass, angle, 1.0)
+            e = p * p * (3 - 2 * p)                     # smoothstep
+            if self.dial.flips:                         # an hourglass turns over
+                glass = pygame.transform.rotozoom(glass, 180.0 * e, 1.0)
+            else:                                       # the rest swap out
+                z = 1.0 - 0.35 * math.sin(math.pi * e)
+                glass = pygame.transform.rotozoom(glass, 0, max(0.2, z))
+                glass.set_alpha(int(255 * (0.45 + 0.55 * abs(1 - 2 * e))))
         rect = glass.get_rect(center=self.g_center)
         surface.blit(glass, rect)
 
@@ -338,6 +349,10 @@ class PomodoroState(State):
         cyc = self.font_small.render(
             f"{done}/{CYCLE} TO LONG REST", True, TEXT_DIM)
         surface.blit(cyc, ((SCREEN_WIDTH - cyc.get_width()) // 2, dot_y + s(12)))
+
+        # which instrument is mounted, engraved small in the corner
+        nm = self.font_small.render(self.dial.name, True, BRASS_DARK)
+        surface.blit(nm, (s(10), SCREEN_HEIGHT - s(22)))
 
         # ── transition banner ───────────────────────────────────────────
         if self.transition_timer > 0 and self.transition_mode:
