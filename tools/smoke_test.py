@@ -46,11 +46,12 @@ from states.nexus_state import NexusState, PHASES, WORLDS  # noqa: E402
 from states.logbook_state import LogbookState                # noqa: E402
 from states.pomodoro_state import PomodoroState            # noqa: E402
 from states.notification_state import NotificationState    # noqa: E402
+from states.console_state import ConsoleState              # noqa: E402
 
 STATES = [AmbientState, ClimateState, TelegraphState, GreetingsState,
           ConservatoryState, OrbitalState, BiolabState, AbyssalState,
           AerodromeState, OrreryState, StarportState, DocketState, LogbookState,
-          NexusState, PomodoroState, NotificationState]
+          NexusState, PomodoroState, NotificationState, ConsoleState]
 
 failures = []
 

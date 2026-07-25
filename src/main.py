@@ -42,8 +42,10 @@ from states.docket_state import DocketState
 from states.orrery_state import OrreryState
 from states.starport_state import StarportState
 from states.logbook_state import LogbookState
+from states.console_state import ConsoleState
 from backend import voice
 from backend import lifebook
+from backend import settings
 from hardware_input import (
     HardwareButtons,
     BUTTON_AMBIENT_EVENT,
@@ -210,6 +212,8 @@ def main():
     manager.add_state('orrery', OrreryState(manager))
     manager.add_state('starport', StarportState(manager))
     manager.add_state('logbook', LogbookState(manager))
+    manager.add_state('console', ConsoleState(manager))
+    settings.init()             # restore the saved brightness
     lifebook.bump('boots')
 
     # Kea's voice: synthesised in the background, greets us when ready
@@ -254,14 +258,16 @@ def main():
             # --- Rotary encoder: browse on Nexus, tune elsewhere ---
             elif event.type == ENCODER_TURN_EVENT:
                 cur = manager.current_state
-                if manager.current_state_name == 'nexus' and \
+                # Nexus browses its rail; the Console drives its dials;
+                # everywhere else the knob tunes through the worlds.
+                if manager.current_state_name in ('nexus', 'console') and \
                         hasattr(cur, 'move_cursor'):
                     cur.move_cursor(event.direction)
                 else:
                     _tune(manager, event.direction)
             elif event.type == ENCODER_PRESS_EVENT:
                 cur = manager.current_state
-                if manager.current_state_name == 'nexus' and \
+                if manager.current_state_name in ('nexus', 'console') and \
                         hasattr(cur, 'activate') and cur.activate():
                     pass
                 else:

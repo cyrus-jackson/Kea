@@ -88,9 +88,19 @@ WORLDS = [
     ("greetings",    "PROTOCL", "9", (255, 160, 60)),
     ("pomodoro",     "FOCUS",   "2", (228, 174, 86)),
     ("logbook",      "LOGBOOK", "L", (172, 136, 68)),
+    ("console",      "CONSOLE", "C", (240, 176, 64)),
 ]
 
-AUTO_DWELL = 15.0     # seconds on the hub before auto-pilot dispatches
+AUTO_DWELL = 15.0     # fallback; the live value is the CONSOLE's "dwell" dial
+
+
+def _dwell():
+    """Seconds before auto-pilot dispatches — tunable on the Console."""
+    try:
+        from backend import settings
+        return float(settings.get("dwell"))
+    except Exception:
+        return AUTO_DWELL
 
 
 def phase_for(hour):
@@ -370,7 +380,7 @@ class NexusState(State):
 
         if self.auto_pilot:
             self.dwell += dt
-            if self.dwell >= AUTO_DWELL:
+            if self.dwell >= _dwell():
                 self.dwell = 0.0
                 target = self._recommended(datetime.datetime.now())[0]
                 if self.manager.current_state_name != target:
@@ -482,7 +492,7 @@ class NexusState(State):
 
         # auto-pilot status + dispatch countdown
         if self.auto_pilot:
-            remain = max(0, int(AUTO_DWELL - self.dwell) + 1)
+            remain = max(0, int(_dwell() - self.dwell) + 1)
             ap = self.font_board.render(f"AUTO {remain:02d}s", True, PHOSPHOR)
         else:
             ap = self.font_board.render("AUTO OFF · [A]", True, TEXT_DIM)
