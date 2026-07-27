@@ -75,7 +75,9 @@ sv_screw = 28;    // flange screw-hole spacing (M2)
 // sideways header, but the power side only needs enough room for the plug
 // to reach the Pi's jack through the wall. So the cassette is pushed up
 // against the power-side wall and the monitor is that much narrower.
-gapP = 7;     // power-side gap: stack edge -> inner wall (plug clearance)
+gapP = 0;     // power side: FLUSH — the stack sits straight against the inner
+              // wall face, which becomes its guide (so no cradle rib there).
+              // The Pi's jack nests into the oversized wall slot.
 gapG = 17;    // GPIO-side gap: header pins + dupont shells
 Wm   = wall + gapP + 56 + gapG + wall;   // = 86 (was 100)
 Dm   = 72;    // monitor depth (was 66 — deeper for the Pi+display+GPIO-adapter
@@ -105,8 +107,8 @@ scr_cut = [51,75];
 // drop the bolts in. Undo them to open.
 // Seam sits in the GPIO-side margin, just outside the bezel (which now spans
 // stack_cx +/- 34.5, i.e. 3.5..72.5) and inside the body edge.
-mcut_x   = 74;
-ear_len  = 12;      // right ear must stay inside Wm: 74+12 = 86 = Wm
+mcut_x   = 67;      // GPIO margin, just outside the bezel (ends 65.5)
+ear_len  = 11;      // right ear must stay inside Wm: 67+11 = 78 < 79
 ear_w    = 10;      // ear width
 ear_p    = 7;       // how far it stands off the surface
 join_d   = 3.4;     // clearance hole — M3 bolt straight through both ears
@@ -278,7 +280,13 @@ module monitor() {
   difference() {
     union() {
       difference() { mon_body(); mon_body(inset=wall); }
-      screen_frame() mon_bezel();
+      // Bezel + hood, trimmed to the body width. With the cassette flush to
+      // the power wall the frame would otherwise hang off that edge; this
+      // just squares it off there (asymmetric bezel, thin on the power side).
+      intersection() {
+        screen_frame() mon_bezel();
+        translate([0.8, -60, -20]) cube([Wm - 1.6, Dm + 120, Hm + 60]);
+      }
       screen_frame() mon_cradle();
       // foot bolt bosses
       for (a=[0:90:270]) rotate([0,0,a]) translate([Wm/2,Dm/2,0]) {}
@@ -328,15 +336,18 @@ module mon_screen_cut() {
 module mon_cradle() {
   gx0=stack_cx-28-3.5; gx1=stack_cx+28+0.5;
   cd=37;                                    // cradle depth — Pi+display+GPIO adapter
-  translate([wall,wall,2.5]) cube([Wm-2*wall,cd,4]);   // shelf
-  // Side guides: full on the non-GPIO side; SHORT (base only) on the GPIO
-  // side so the sideways header + wires have an open channel to the wall.
   gh_short = 14;
-  translate([gx0,wall,4]) cube([3, cd, gpio_side<0 ? gh_short : 58]);
-  translate([gx1,wall,4]) cube([3, cd, gpio_side>0 ? gh_short : 58]);
+  translate([wall,wall,2.5]) cube([Wm-2*wall,cd,4]);   // shelf
+  // Side guides. Where the stack is flush to the wall there is no room for a
+  // rib and none is needed — the wall face locates it. The GPIO side's guide
+  // stays short so the sideways header has an open channel.
+  if (gx0 >= wall + 0.5)
+    translate([gx0,wall,4]) cube([3, cd, gpio_side<0 ? gh_short : 58]);
+  if (gx1 + 3 <= Wm - wall - 0.5)
+    translate([gx1,wall,4]) cube([3, cd, gpio_side>0 ? gh_short : 58]);
   // back flanges (the wedge bears on these) — split for the ribbon path
-  translate([gx0,wall+cd-3,8]) cube([21,3,42]);
-  translate([gx1+3-21,wall+cd-3,8]) cube([21,3,42]);
+  translate([max(gx0, wall), wall+cd-3, 8]) cube([21,3,42]);
+  translate([min(gx1+3-21, Wm-wall-21), wall+cd-3, 8]) cube([21,3,42]);
 }
 // Door stops 6 mm short of the seam, so the cut plane doesn't slice through
 // the opening edge and leave a knife-edge on the left half.

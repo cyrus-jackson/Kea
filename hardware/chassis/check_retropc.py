@@ -87,7 +87,10 @@ chk("monitor foot bolt circle fits under the monitor", turn_bolt + 6 < min(Wm, D
 chk("monitor slope carries the display", slen >= 6.5+STACK_L+2)
 chk("screen cutout inside the slope", slen/2-37.5 > 2 and slen/2+37.5 < slen-2)
 gx0=stack_cx-28-3.5; gx1=stack_cx+28+0.5
-chk("cradle guides straddle the stack", gx0 >= wall and gx1+3 <= Wm-wall)
+chk("cradle locates the stack on both sides (rib or wall)",
+    (gx0 >= wall + 0.5 or gapP == 0) and (gx1 + 3 <= Wm - wall - 0.5 or gapG == 0),
+    f"power side {'wall' if gapP == 0 else f'rib at {gx0:.1f}'}, "
+    f"GPIO rib at {gx1:.1f}")
 gpio_channel = gapG                          # stack edge -> inner wall, GPIO side
 chk("GPIO side has a clear channel for the sideways header + wires",
     gpio_channel >= 16, f"channel {gpio_channel:.0f} mm (need >=16 for pins+dupont)")
@@ -122,15 +125,26 @@ chk("monitor power slot lands inside the side wall",
 # and the wide channel must be on the GPIO side
 mon_pwr_side = p("mon_pwr_side")
 gpio_side = p("gpio_side")
-chk("power-side gap fits the plug but wastes no space",
-    5 <= gapP <= 10, f"power gap {gapP:.0f} mm")
+chk("power side is flush to the wall (no wasted space)",
+    gapP == 0, f"power gap {gapP:.0f} mm")
+chk("no cradle rib where the stack is flush (it would be inside the wall)",
+    "if (gx0 >= wall + 0.5)" in src, "guide must be suppressed when flush")
+chk("screen aperture still lands inside the body once flush",
+    stack_cx - 51/2 > wall - 0.5 and stack_cx + 51/2 < Wm - wall + 0.5,
+    f"aperture {stack_cx-25.5:.1f}..{stack_cx+25.5:.1f} of width {Wm:.0f}")
+chk("display active area sits under the aperture",
+    stack_cx - 48.96/2 > stack_cx - 51/2 and stack_cx + 48.96/2 < stack_cx + 51/2,
+    "active area inside the cutout")
+chk("bezel is trimmed rather than overhanging",
+    "intersection() {\n        screen_frame() mon_bezel();" in src,
+    "bezel must be clipped to the body width")
 chk("the wide channel is on the GPIO side, the narrow one on the power side",
     gapG > gapP + 5 and mon_pwr_side != gpio_side,
     f"power gap {gapP:.0f} (side {mon_pwr_side:+.0f}), "
     f"GPIO gap {gapG:.0f} (side {gpio_side:+.0f})")
-chk("bezel sits inside the body once shifted",
-    stack_cx - (51/2 + 9) > 1 and stack_cx + (51/2 + 9) < Wm - 1,
-    f"bezel {stack_cx-34.5:.1f}..{stack_cx+34.5:.1f} of width {Wm:.0f}")
+chk("bezel's GPIO-side edge stays inside the body",
+    stack_cx + (51/2 + 9) < Wm - 1,
+    f"bezel right edge {stack_cx+34.5:.1f} of width {Wm:.0f}")
 chk("narrower than the centred layout (space saved)", Wm < 100,
     f"{Wm:.0f} mm wide")
 
