@@ -122,7 +122,6 @@ pins) but you'd burn 3 scarce pins and fight jitter — the PCA9685 avoids both.
 | M2.5 × 10 self-tapping screws | 4 | fan → door bosses |
 | M2 × 5 screws | 4 | Pi camera → `cam_cradle` |
 | M2.5 × 6 screws | 4 | monitor foot → turntable (bolt circle `turn_bolt`=26 mm) |
-| **M3 × 12 self-tapping screws** | 4 | **seam locks** — 2 per split (case, monitor). Screw the halves together instead of gluing; undo to reopen |
 | Servo horn screws | — | come with the MG90S; horn → turntable |
 | 1.75 mm filament | ~30 cm | seam dowels (cut into ~11 mm pins) |
 | Stick-on rubber feet | 4 | under the case |

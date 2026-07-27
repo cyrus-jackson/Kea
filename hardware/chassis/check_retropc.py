@@ -23,8 +23,6 @@ kb_d, turn_y, turn_r, turn_bolt = p("kb_d"), p("turn_y"), p("turn_r"), p("turn_b
 btn_d, enc_d, tog_d, btn_dx = p("btn_d"), p("enc_d"), p("tog_d"), p("btn_dx")
 kb_btn_row, kb_te_row = p("kb_btn_row"), p("kb_te_row")
 tog1_x, tog2_x = p("tog1_x"), p("tog2_x")
-cut_x = p("cut_x")
-mcut_x = p("mcut_x")
 BTN_HEAD = 14.0     # GUUZI 12 mm metal button head diameter
 sv_L, sv_W, sv_screw = p("sv_L"), p("sv_W"), p("sv_screw")
 CRADLE_D = 37       # mon_cradle depth (must match scad); STACK+adapter+wedge
@@ -50,7 +48,6 @@ print(f"case {W:.0f}x{Dc:.0f}x{Hc:.0f}   monitor {Wm:.0f}x{Dm:.0f}x{Hm:.1f}\n")
 
 # --- bed ---
 chk("case fits bed", W <= BED and Dc <= BED and Hc <= BED)
-chk("case halves fit bed", Dc+2 <= BED and Hc+6 <= BED)
 chk("monitor fits bed", Wm <= BED and Dm <= BED and Hm <= BED, f"{Wm:.0f}x{Dm:.0f}x{Hm:.0f}")
 
 # --- keyboard on the case front top ---
@@ -140,54 +137,17 @@ chk("boards clear the bottom-plate finger hole",
     all(cy + bd/2 < Dc - 30 for nm, bw, bd, bh, cx, cy in BOARDS),
     f"finger hole at y={Dc-22:.0f}")
 
-# --- seam locks: brackets must fit inside each half, not clash with walls ---
-lock_reach, lock_back, lock_drop = p("lock_reach"), p("lock_back"), p("lock_drop")
-lock_tab_t = p("lock_tab_t")
-mon_reach, mon_off, mon_bd = p("mon_reach"), p("mon_off"), p("mon_bd")
-
-
-def lock_fits(nm, cx, off, bd, reach, outer_w, ceil_z, cavity_lo):
-    """tab + boss must stay between the seam and the far inner wall, and the
-    bracket must hang inside the cavity (not through the ceiling/floor)."""
-    inner_r = outer_w - wall
-    chk(f"{nm}: tab reaches across but clears the far wall",
-        cx + reach < inner_r, f"tab to x={cx+reach:.1f}, inner wall {inner_r:.1f}")
-    chk(f"{nm}: boss clears the far wall",
-        cx + off + bd/2 <= inner_r, f"boss to x={cx+off+bd/2:.1f}, wall {inner_r:.1f}")
-    chk(f"{nm}: tab roots inside its own half", cx - lock_back > wall,
-        f"tab starts x={cx-lock_back:.1f}")
-    chk(f"{nm}: bracket hangs inside the cavity",
-        ceil_z - lock_drop > cavity_lo, f"bracket bottom z={ceil_z-lock_drop:.1f}")
-    chk(f"{nm}: screw head clears the tab", lock_tab_t >= 3)
-
-
-lock_fits("case lock", cut_x, 6, 9, lock_reach, W, Hc - wall, wall)
-lock_fits("monitor lock", mcut_x, mon_off, mon_bd, mon_reach, Wm, Hm - wall, mfoot)
-for _y in (42, 118):
-    chk(f"case lock at y={_y} inside the case", wall + 6 < _y < Dc - wall - 6)
-for _y in (18, 46):
-    chk(f"monitor lock at y={_y} inside the monitor", wall + 5 < _y < Dm - wall - 5)
-
 # --- total height sane on a desk ---
 chk("total height reasonable", Hc + 4 + Hm < 210, f"{Hc+4+Hm:.0f} mm tall overall")
 
-# --- case seam ---
-# case seam must miss EVERY keyboard hole (toggles, encoder, all 5 buttons)
-kb_holes = [(tog1_x, tog_d/2), (tog2_x, tog_d/2), (enc_x, enc_d/2)]
-kb_holes += [(W/2 + i*btn_dx, BTN_HEAD/2) for i in (-2, -1, 0, 1, 2)]
-chk("case cut plane misses all keyboard holes",
-    all(cut_x < c - r - 0.7 or cut_x > c + r + 0.7 for c, r in kb_holes),
-    f"cut {cut_x:.0f}; nearest holes "
-    f"{sorted(round(c) for c,_ in kb_holes if abs(c-cut_x)<20)}")
-
-# monitor split: seam clear of the screen bezel; halves fit the bed
-bezel_L = Wm/2 - (51/2 + 9)                  # bezel outer edges (bw=9)
-bezel_R = Wm/2 + (51/2 + 9)
-chk("monitor seam clears the screen bezel",
-    mcut_x < bezel_L - 0.5 or mcut_x > bezel_R + 0.5,
-    f"seam {mcut_x:.0f}, bezel {bezel_L:.1f}..{bezel_R:.1f}")
-chk("monitor halves fit the bed", Dm+2 <= BED and Hm+2 <= BED
-    and max(mcut_x, Wm-mcut_x) <= 250, f"tallest half {max(mcut_x,Wm-mcut_x):.0f}")
+# --- nothing is split any more: no seams, locks or dowels to go stale ---
+chk("no split/seam features left in the model",
+    not any(k in src for k in ("cut_x", "mcut_x", "lock_tab", "lock_boss",
+                               "case_dowels", "mon_dowels")),
+    "leftover seam geometry")
+chk("every part still fits the bed whole",
+    max(W, Dc, Hc) <= BED and max(Wm, Dm, Hm) <= BED,
+    f"case {W:.0f}x{Dc:.0f}x{Hc:.0f}, monitor {Wm:.0f}x{Dm:.0f}x{Hm:.0f}")
 
 for n, ok, d in checks:
     print(f"[{'PASS' if ok else 'FAIL'}] {n}" + (f"  ({d})" if d and not ok else ""))

@@ -18,12 +18,17 @@
 // Servos want their OWN 5 V — never the Pi header.
 // ============================================================
 
-part = "monitor_left";  // "case" | "case_left" | "case_right" | "case_floor"
-                // | "turntable" | "monitor" (whole) | "monitor_left"
-                // | "monitor_right" | "monitor_door" | "wedge"
-                // | "cam_cradle" | "assembly"
-                // Print the monitor as monitor_left + monitor_right (each flat
-                // on its cut face, no supports) and glue with filament pins.
+part = "case";  // "case" | "case_floor" | "turntable" | "monitor"
+                // | "monitor_door" | "wedge" | "cam_cradle" | "assembly"
+                //
+                // NOTHING IS SPLIT — every part fits the bed whole, so there
+                // are no seams to glue, clip or screw. Print orientations:
+                //   case     UPSIDE DOWN (top face on the bed). The keyboard
+                //            face and turntable seat come out crisp and the
+                //            open bottom needs no support.
+                //   monitor  ON ITS BACK (back-door opening facing up), foot
+                //            toward you. The screen face lies flat on the bed.
+                //   others   flat, as they sit.
 
 $fn = 64;
 
@@ -33,8 +38,6 @@ Dc   = 150;   // depth
 Hc   = 48;    // height (low desktop profile)
 wall = 3;
 r_c  = 6;     // case edge rounding
-cut_x= 41;    // case split-print plane — in the clear gap left of tog2 and
-              // button-2 (case can also just be printed whole)
 
 // keyboard zone = front top of the case (depth 0..kb_d)
 kb_d = 60;
@@ -76,58 +79,10 @@ mfoot= 6;     // monitor foot thickness (bolts to the turntable)
 // horizontal pins + wires. That side's cradle guide is kept short and the
 // stack is NOT clamped to the wall there.
 gpio_side = 1;   // -1 = left, +1 = right
-mcut_x = 87;     // monitor split-print plane: RIGHT margin, clear of the screen
-                 // bezel, so each half lies on its flat cut face and prints
-                 // support-free (glue the halves like the case)
 sym = slen*sin(recl);
 szm = mfoot + slen*cos(recl);
 Hm  = szm + mcap;             // monitor height (above its foot)
 scr_cut = [51,75];
-
-// ---------- Seam locks (no glue) ----------
-// The walls are only `wall` thick, so there's no room for a dovetail or a
-// snap in the cut face itself. Instead each lock is a bracket pair hanging
-// from the inside of the ceiling: the LEFT half carries a tab that reaches
-// across the seam, the RIGHT half a boss with a pilot hole. One M3 self-
-// tapping screw from below pulls them together. Undo the screws (bottom
-// plate off, reach in) and the halves come apart — reusable, no glue.
-lock_head   = 3.4;   // clearance hole in the tab (M3 shank)
-lock_pilot  = 2.5;   // pilot in the boss for an M3 self-tapper
-lock_tab_t  = 4;     // tab thickness
-lock_reach  = 12;    // how far the tab crosses the seam
-lock_back   = 8;     // how far it roots back into its own half
-lock_drop   = 18;    // bracket height below the ceiling
-case_lock_y = [42, 118];   // seam positions along the case depth
-mon_lock_y  = [18, 46];    // seam positions along the monitor depth
-
-// reach/bd are smaller on the monitor, whose right half is only ~13 mm wide.
-// off = screw centre, measured right of the seam.
-module lock_tab(cx, y, ceil_z, reach=lock_reach, off=6, wide=12) {
-  z0 = ceil_z - lock_drop;
-  difference() {
-    union() {
-      translate([cx - lock_back, y - wide/2, z0])
-        cube([lock_back + reach, wide, lock_tab_t]);
-      translate([cx - lock_back, y - wide/2, z0])     // web up to the ceiling
-        cube([lock_tab_t, wide, lock_drop]);
-    }
-    translate([cx + off, y, z0 - 1]) cylinder(d = lock_head, h = lock_tab_t + 2);
-  }
-}
-// Boss on the RIGHT half: a post down from the ceiling, drilled for the screw.
-module lock_boss(cx, y, ceil_z, off=6, bd=9) {
-  z0 = ceil_z - lock_drop + lock_tab_t;
-  difference() {
-    translate([cx + off, y, z0]) cylinder(d = bd, h = ceil_z - z0);
-    translate([cx + off, y, z0 - 1]) cylinder(d = lock_pilot, h = ceil_z - z0 + 2);
-  }
-}
-// Clearance the RIGHT half must give up so the tab can slide in.
-module lock_pocket(cx, y, ceil_z, reach=lock_reach, wide=12) {
-  z0 = ceil_z - lock_drop;
-  translate([cx - 0.5, y - wide/2 - 0.4, z0 - 0.4])
-    cube([reach + 1, wide + 0.8, lock_tab_t + 0.8]);
-}
 
 // ---------- Camera turret (Adafruit Mini Pan-Tilt) ----------
 turret_y = 46;      // on the monitor roof, toward the back
@@ -168,7 +123,6 @@ module case() {
     turntable_socket();
     case_back_access();
     case_bottom_open();
-    case_dowels();
     // NOTE: no power inlet on the case — the PSU cable runs to the Pi in
     // the monitor (see mon_power_slot). The case only needs a small notch
     // in the back access for the servo + speaker + button leads.
@@ -219,10 +173,6 @@ module case_floor_ledge() {
   translate([W-wall-lp,wall,wall+0.8]) cube([lp, Dc-2*wall, lt]);
 }
 module case_feet() { for (x=[18,W-18], y=[18,Dc-18]) translate([x,y,-2.5]) cylinder(d=14,h=2.6); }
-module case_dowels() {
-  for (p=[[3,10],[3,Hc-10],[Dc-3,10],[Dc-3,Hc-10]])
-    translate([cut_x-6, p[0], p[1]]) rotate([0,90,0]) cylinder(d=2.0,h=12);
-}
 // Bottom plate. Mount the boards to it FIRST (outside the case), then slot it
 // in. Cable-tie pairs strap the three boards laid out left-to-right across the
 // back — they don't overlap and all sit below whatever hangs from the top:
@@ -286,15 +236,9 @@ module monitor() {
     turret_mount();
     mon_power_slot();     // PSU cable enters here, straight to the Pi
     mon_intake_vents();   // fresh-air intake for the fan
-    mon_dowels();         // seam alignment for the split print
   }
 }
 
-// Alignment dowels on the monitor's cut plane (short 1.75 mm filament pins).
-module mon_dowels() {
-  for (p=[[9,12],[9,Hm-16],[Dm-9,12],[Dm-9,Hm-16]])
-    translate([mcut_x-6, p[0], p[1]]) rotate([0,90,0]) cylinder(d=2.0, h=12);
-}
 
 // PSU plugs into the Pi through a slot in the monitor's side wall.
 // The monitor swivels +/-90, so leave a service loop in the cable.
@@ -396,37 +340,9 @@ module cam_cradle() {
 // RENDER
 // ============================================================
 if (part=="case") case();
-// Split halves carry the seam-lock brackets: tabs on the left, bosses (and
-// the pocket the tab needs) on the right. Screw them together to lock.
-if (part=="case_left") {
-  intersection() { case(); translate([-1,-1,-3]) cube([cut_x+1, Dc+2, Hc+6]); }
-  for (y = case_lock_y) lock_tab(cut_x, y, Hc - wall);
-}
-if (part=="case_right") {
-  difference() {
-    intersection() { case(); translate([cut_x,-1,-3]) cube([W-cut_x+1, Dc+2, Hc+6]); }
-    for (y = case_lock_y) lock_pocket(cut_x, y, Hc - wall);
-  }
-  for (y = case_lock_y) lock_boss(cut_x, y, Hc - wall);
-}
 if (part=="case_floor") case_floor();
 if (part=="turntable")  turntable();
 if (part=="monitor")    monitor();
-// The monitor's off-cut half is narrow, so its locks are the compact size.
-mon_reach = 7;
-mon_off = 3.5;
-mon_bd = 6.5;
-if (part=="monitor_left") {
-  intersection() { monitor(); translate([-1,-1,-1]) cube([mcut_x+1, Dm+2, Hm+2]); }
-  for (y = mon_lock_y) lock_tab(mcut_x, y, Hm - wall, mon_reach, mon_off, 10);
-}
-if (part=="monitor_right") {
-  difference() {
-    intersection() { monitor(); translate([mcut_x,-1,-1]) cube([Wm-mcut_x+1, Dm+2, Hm+2]); }
-    for (y = mon_lock_y) lock_pocket(mcut_x, y, Hm - wall, mon_reach, 10);
-  }
-  for (y = mon_lock_y) lock_boss(mcut_x, y, Hm - wall, mon_off, mon_bd);
-}
 if (part=="monitor_door") monitor_door();
 if (part=="wedge")      wedge();
 if (part=="cam_cradle") cam_cradle();
