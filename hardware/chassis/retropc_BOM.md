@@ -123,7 +123,6 @@ pins) but you'd burn 3 scarce pins and fight jitter — the PCA9685 avoids both.
 | M2 × 5 screws | 4 | Pi camera → `cam_cradle` |
 | M2.5 × 6 screws | 4 | monitor foot → turntable (bolt circle `turn_bolt`=26 mm) |
 | Servo horn screws | — | come with the MG90S; horn → turntable |
-| 1.75 mm filament | ~30 cm | seam dowels (cut into ~11 mm pins) |
 | Stick-on rubber feet | 4 | under the case |
 | Heatsinks for the Pi | 1 set | optional, pairs with the fan |
 | Screw terminal block / wire nuts | a few | joining the grounds |
