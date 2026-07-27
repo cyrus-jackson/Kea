@@ -140,7 +140,34 @@ chk("boards clear the bottom-plate finger hole",
 # --- total height sane on a desk ---
 chk("total height reasonable", Hc + 4 + Hm < 210, f"{Hc+4+Hm:.0f} mm tall overall")
 
-# --- nothing is split any more: no seams, locks or dowels to go stale ---
+# --- the removable monitor lid: how the Pi actually gets in ---
+lid_z = p("lid_z")
+lid_rim, latch_drop, latch_win = p("lid_rim"), p("latch_drop"), p("latch_win")
+aperture_top = mfoot + 84.5 * math.cos(r)
+door_top = Hm - 16
+chk("lid seam clears the screen aperture", lid_z > aperture_top + 2,
+    f"seam z={lid_z:.0f}, aperture top {aperture_top:.1f}")
+chk("lid seam clears the back door opening", lid_z > door_top + 1,
+    f"seam z={lid_z:.0f}, door top {door_top:.1f}")
+chk("lid is thick enough to be stiff", Hm - lid_z >= 10,
+    f"lid {Hm-lid_z:.1f} mm tall")
+# with the lid off, the stack is lowered straight down: the opening at the
+# seam must clear the 56 mm width and the ~33 mm stack thickness
+open_w = Wm - 2 * wall
+slope_y_at_seam = (lid_z - mfoot) / math.cos(r) * math.sin(r)
+open_d = (Dm - wall) - slope_y_at_seam
+chk("top opening clears the stack width", open_w >= STACK_W + 4,
+    f"opening {open_w:.0f} mm vs stack {STACK_W:.0f}")
+chk("top opening clears the stack thickness", open_d >= GPIO_STACK + 4,
+    f"opening {open_d:.1f} mm deep vs stack {GPIO_STACK:.0f}")
+chk("latch window sits on the arm, above its tip",
+    latch_drop > 13 + 1 and 13 + latch_win < latch_drop,
+    f"drop {latch_drop:.0f}, window at 13..{13+latch_win:.0f}")
+chk("register rim shorter than the lid", lid_rim < Hm - lid_z,
+    f"rim {lid_rim:.0f} vs lid {Hm-lid_z:.1f}")
+chk("lid + body both still fit the bed", Hm - lid_z <= BED and lid_z <= BED)
+
+# --- nothing else is split: no stale seams, locks or dowels ---
 chk("no split/seam features left in the model",
     not any(k in src for k in ("cut_x", "mcut_x", "lock_tab", "lock_boss",
                                "case_dowels", "mon_dowels")),
