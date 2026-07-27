@@ -94,15 +94,21 @@ scr_cut = [51,75];
 // crosses only blank bezel. A register rim keeps the lid located; two
 // external cantilever latches on the side walls hold it down — press them
 // outward with a thumb to release, no tools, no screws.
-lid_z      = 93;    // horizontal split height (aperture top ~89.7, door top ~91)
-lid_rim    = 6;     // how far the register rim stands into the lid
-lid_gap    = 0.3;   // rim-to-lid clearance
-latch_w    = 12;    // latch arm width
-latch_drop = 22;    // how far the arm hangs below the seam (window at 13..18,
-                    // so the tip continues past it and gives a thumb pad)
-latch_p    = 2.6;   // how far the arm stands proud of the wall
-latch_win  = 5;     // window height in the arm
-catch_p    = 1.8;   // how far the catch bump sticks out
+lid_z     = 93;     // horizontal split height (aperture top ~89.7, door top ~91)
+lid_rim   = 6;      // how far the register rim stands into the lid
+lid_gap   = 0.3;    // rim-to-lid clearance
+// Latching: hooks hang DOWN INSIDE the lid and snap out through small windows
+// in the body's side walls. Nothing protrudes, nothing hangs in mid-air, and
+// the windows sit near the BACK so they stay clear of the power slot (which
+// spans y 21..39 on the left wall). Press a nub in through its window with a
+// fingernail to release the lid.
+latch_y   = Dm - 14;  // window centre, measured back from the screen face
+latch_dz  = 14;       // window top, below the seam
+latch_win = 5;        // window height
+latch_ww  = 11;       // window width
+hook_t    = 2.5;      // hook arm thickness
+hook_len  = 18;       // how far the hook hangs into the body
+hook_w    = 9;        // hook arm width
 
 // Rim on the BODY: a thin shell standing above the seam that the lid slips
 // over, so it can't slide about.
@@ -115,33 +121,31 @@ module lid_register() {
     translate([-1, -1, lid_z]) cube([Wm + 2, Dm + 2, lid_rim]);
   }
 }
-// Catch bumps on the BODY's outer side walls, with a lead-in ramp on top.
-module lid_catches() {
-  for (sx = [-1, 1]) {
-    x = (sx < 0) ? wall : Wm - wall;      // sit on the outer wall face
-    translate([sx < 0 ? -0.4 : Wm - catch_p + 0.4, Dm/2 - 4, lid_z - 13])
-      cube([catch_p, 8, latch_win]);
-    // ramp so the latch rides on during closing
-    translate([sx < 0 ? -0.4 : Wm - catch_p + 0.4, Dm/2 - 4, lid_z - 13 + latch_win])
-      rotate([0, sx < 0 ? -90 : 90, 0])
-        linear_extrude(catch_p)
-          polygon([[0, 0], [0, sx < 0 ? catch_p : -catch_p], [5, 0]]);
-  }
+// Windows cut clean through both side walls of the BODY.
+module lid_latch_windows() {
+  for (sx = [0, 1])
+    translate([sx ? Wm - wall - 1 : -1, latch_y - latch_ww/2, lid_z - latch_dz])
+      cube([wall + 2, latch_ww, latch_win]);
 }
-// Cantilever latch arms on the LID, each with a window that snaps the catch.
-module lid_latches() {
-  for (sx = [-1, 1])
-    difference() {
-      translate([sx < 0 ? -latch_p : Wm - 0.6, Dm/2 - latch_w/2, lid_z - latch_drop])
-        cube([latch_p + 0.6, latch_w, latch_drop + 4]);
-      // the window the catch clicks into
-      translate([sx < 0 ? -latch_p - 1 : Wm - 1.6, Dm/2 - 4.4, lid_z - 13 - 0.3])
-        cube([latch_p + 3, 8.8, latch_win + 0.6]);
-      // thumb bevel at the tip, so it's obvious where to push
-      translate([sx < 0 ? -latch_p - 1 : Wm - 1.6, Dm/2 - latch_w/2 - 1,
-                 lid_z - latch_drop - 1])
-        rotate([0, sx < 0 ? 20 : -20, 0]) cube([latch_p + 3, latch_w + 2, 3]);
+// Hooks on the LID: an arm down the inside of each wall with a nub that
+// snaps out into the window. The nub's underside is ramped so the lid
+// pushes itself in as it closes; its top face is flat, so it won't lift.
+module lid_hooks() {
+  for (sx = [-1, 1]) {
+    ax = (sx < 0) ? wall : Wm - wall - hook_t;      // arm against the inner face
+    translate([ax, latch_y - hook_w/2, lid_z - hook_len])
+      cube([hook_t, hook_w, hook_len]);
+    // nub: small at the bottom, full protrusion at the top (= the ramp)
+    nz = lid_z - latch_dz + 0.3;
+    p = wall - 0.4;
+    hull() {
+      translate([sx < 0 ? ax - 0.6 : ax + hook_t, latch_y - hook_w/2, nz])
+        cube([0.6, hook_w, 0.6]);
+      translate([sx < 0 ? ax - p : ax + hook_t, latch_y - hook_w/2,
+                 nz + latch_win - 1.0])
+        cube([p, hook_w, 0.6]);
     }
+  }
 }
 
 // ---------- Camera turret (Adafruit Mini Pan-Tilt) ----------
@@ -176,7 +180,6 @@ module case() {
     union() {
       difference() { case_body(); case_body(inset=wall); }
       case_floor_ledge();
-      case_feet();
       servo_collar();
     }
     keyboard_holes();
@@ -232,7 +235,13 @@ module case_floor_ledge() {
   translate([wall,wall,wall+0.8]) cube([lp, Dc-2*wall, lt]);
   translate([W-wall-lp,wall,wall+0.8]) cube([lp, Dc-2*wall, lt]);
 }
-module case_feet() { for (x=[18,W-18], y=[18,Dc-18]) translate([x,y,-2.5]) cylinder(d=14,h=2.6); }
+// Feet live on the BOTTOM PLATE, not the shell: the shell's underside is an
+// open cavity there, so pads placed on it would print in mid-air. The plate
+// is the surface that actually meets the desk.
+module case_feet() {
+  for (x=[20, W-20], y=[20, Dc-20])
+    translate([x, y, -2.6]) cylinder(d=14, h=2.6);
+}
 // Bottom plate. Mount the boards to it FIRST (outside the case), then slot it
 // in. Cable-tie pairs strap the three boards laid out left-to-right across the
 // back — they don't overlap and all sit below whatever hangs from the top:
@@ -241,7 +250,10 @@ module case_feet() { for (x=[18,W-18], y=[18,Dc-18]) translate([x,y,-2.5]) cylin
 //   LM2596  36x66    @ x~104-140 (right)
 module case_floor() {
   difference() {
-    translate([wall+0.75, wall+0.75, 0]) cube([W-2*wall-1.5, Dc-2*wall-1.5, wall]);
+    union() {
+      translate([wall+0.75, wall+0.75, 0]) cube([W-2*wall-1.5, Dc-2*wall-1.5, wall]);
+      case_feet();                    // rubber-pad bosses, on the real underside
+    }
     translate([W/2, Dc-22, -1]) cylinder(d=14, h=wall+2);   // finger hole
     for (a = [[37,85,22], [86,85,9], [122,85,13]])          // [cx, cy, half-span]
       for (s = [-1,1])
@@ -405,14 +417,18 @@ if (part=="turntable")  turntable();
 // The monitor prints in two pieces so the Pi can be lowered in from above:
 // the body (open top) and the lid that latches onto it.
 if (part=="monitor") {
-  intersection() { monitor(); translate([-1,-1,-1]) cube([Wm+2, Dm+2, lid_z+1]); }
-  lid_register();
-  lid_catches();
+  difference() {
+    union() {
+      intersection() { monitor(); translate([-1,-1,-1]) cube([Wm+2, Dm+2, lid_z+1]); }
+      lid_register();
+    }
+    lid_latch_windows();               // the holes the lid's hooks snap into
+  }
 }
 if (part=="monitor_lid") {
   translate([0, 0, -lid_z]) {          // sit the lid flat for printing
     intersection() { monitor(); translate([-1,-1,lid_z]) cube([Wm+2, Dm+2, Hm-lid_z+2]); }
-    lid_latches();
+    lid_hooks();
   }
 }
 if (part=="monitor_whole") monitor();   // reference / preview only
@@ -424,5 +440,5 @@ if (part=="assembly") {
   color("gray") translate([0,0,0]) case_floor();
   color("tan") translate([W/2, turn_y, Hc]) turntable();
   color("Gainsboro") translate([W/2-Wm/2, turn_y-Dm/2, Hc+4]) monitor();
-  color("Silver")    translate([W/2-Wm/2, turn_y-Dm/2, Hc+4]) lid_latches();
+  color("Silver")    translate([W/2-Wm/2, turn_y-Dm/2, Hc+4]) lid_hooks();
 }

@@ -133,6 +133,18 @@ chk("the three boards don't overlap each other",
     all(xs[i][1] <= xs[i+1][0] for i in range(len(xs)-1)),
     f"x spans {[ (round(a),round(b)) for a,b in xs ]}")
 # boards clear the finger hole in the bottom plate
+# feet must sit on the bottom PLATE (solid), not over the shell's open cavity
+FOOT_XY = [(20, 20), (W-20, 20), (20, Dc-20), (W-20, Dc-20)]
+plate_x0, plate_x1 = wall + 0.75, W - wall - 0.75
+plate_y0, plate_y1 = wall + 0.75, Dc - wall - 0.75
+chk("feet land on the bottom plate, not in mid-air",
+    all(plate_x0 + 7 <= fx <= plate_x1 - 7 and plate_y0 + 7 <= fy <= plate_y1 - 7
+        for fx, fy in FOOT_XY),
+    f"feet {FOOT_XY} vs plate x{plate_x0:.0f}-{plate_x1:.0f} y{plate_y0:.0f}-{plate_y1:.0f}")
+chk("feet clear the plate's finger hole",
+    all(math.hypot(fx - W/2, fy - (Dc-22)) > 7 + 7 for fx, fy in FOOT_XY))
+chk("feet are on the plate, not the shell", "case_feet();\n      servo_collar" not in src)
+
 chk("boards clear the bottom-plate finger hole",
     all(cy + bd/2 < Dc - 30 for nm, bw, bd, bh, cx, cy in BOARDS),
     f"finger hole at y={Dc-22:.0f}")
@@ -142,7 +154,7 @@ chk("total height reasonable", Hc + 4 + Hm < 210, f"{Hc+4+Hm:.0f} mm tall overal
 
 # --- the removable monitor lid: how the Pi actually gets in ---
 lid_z = p("lid_z")
-lid_rim, latch_drop, latch_win = p("lid_rim"), p("latch_drop"), p("latch_win")
+lid_rim, latch_win = p("lid_rim"), p("latch_win")
 aperture_top = mfoot + 84.5 * math.cos(r)
 door_top = Hm - 16
 chk("lid seam clears the screen aperture", lid_z > aperture_top + 2,
@@ -160,9 +172,30 @@ chk("top opening clears the stack width", open_w >= STACK_W + 4,
     f"opening {open_w:.0f} mm vs stack {STACK_W:.0f}")
 chk("top opening clears the stack thickness", open_d >= GPIO_STACK + 4,
     f"opening {open_d:.1f} mm deep vs stack {GPIO_STACK:.0f}")
-chk("latch window sits on the arm, above its tip",
-    latch_drop > 13 + 1 and 13 + latch_win < latch_drop,
-    f"drop {latch_drop:.0f}, window at 13..{13+latch_win:.0f}")
+# latch windows are holes in the side walls, kept clear of the power slot
+latch_y = Dm - 14                     # matches `latch_y = Dm - 14` in scad
+latch_dz, latch_ww = p("latch_dz"), p("latch_ww")
+hook_len, hook_t = p("hook_len"), p("hook_t")
+pw_y0, pw_y1 = mon_pwr_depth - 9, mon_pwr_depth + 9        # power slot in y
+pw_z0, pw_z1 = mfoot + mon_pwr_z - 10.5, mfoot + mon_pwr_z + 10.5
+lw_y0, lw_y1 = latch_y - latch_ww/2, latch_y + latch_ww/2
+lw_z0, lw_z1 = lid_z - latch_dz, lid_z - latch_dz + latch_win
+chk("latch windows clear the power slot",
+    lw_y1 < pw_y0 - 3 or lw_y0 > pw_y1 + 3 or lw_z1 < pw_z0 - 3 or lw_z0 > pw_z1 + 3,
+    f"window y {lw_y0:.0f}-{lw_y1:.0f} z {lw_z0:.0f}-{lw_z1:.0f} vs "
+    f"power y {pw_y0:.0f}-{pw_y1:.0f} z {pw_z0:.0f}-{pw_z1:.0f}")
+chk("latch windows sit inside the side walls",
+    lw_y0 > wall + 2 and lw_y1 < Dm - wall - 2,
+    f"window y {lw_y0:.0f}-{lw_y1:.0f} of depth {Dm:.0f}")
+chk("hook reaches below its window and stays inside the body",
+    hook_len > latch_dz + 2 and hook_len < lid_z - mfoot,
+    f"hook {hook_len:.0f} vs window at {latch_dz:.0f}")
+chk("hooks don't foul the display stack",
+    (Wm - STACK_W)/2 - wall - hook_t > 2,
+    f"gap left beside the stack {(Wm-STACK_W)/2-wall-hook_t:.1f} mm")
+chk("nothing protrudes outside the monitor (flush latches)",
+    "lid_latches" not in src and "catch_p" not in src,
+    "external latch arms removed")
 chk("register rim shorter than the lid", lid_rim < Hm - lid_z,
     f"rim {lid_rim:.0f} vs lid {Hm-lid_z:.1f}")
 chk("lid + body both still fit the bed", Hm - lid_z <= BED and lid_z <= BED)
