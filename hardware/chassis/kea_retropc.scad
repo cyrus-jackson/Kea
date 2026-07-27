@@ -18,19 +18,21 @@
 // Servos want their OWN 5 V — never the Pi header.
 // ============================================================
 
-part = "monitor";  // "case" | "case_floor" | "turntable" | "monitor"
-                // | "monitor_lid" | "monitor_door" | "wedge" | "cam_cradle"
-                // | "assembly"
+part = "monitor_left";  // "case" | "case_floor" | "turntable"
+                // | "monitor_left" | "monitor_right" | "monitor" (preview)
+                // | "monitor_door" | "wedge" | "cam_cradle" | "assembly"
                 //
-                // The only split is the monitor's LID — and it isn't glued,
-                // it LATCHES on, so the Pi drops straight in from the top.
+                // The monitor splits VERTICALLY into two halves and is BOLTED
+                // together through ears at the seam — no latches, no glue.
+                // Put the Pi into one half, close the other over it, drop in
+                // 3 M3 bolts. Undo them to open.
                 // Print orientations:
-                //   case        UPSIDE DOWN (top face on the bed) — crisp
-                //               keyboard face, open bottom needs no support.
-                //   monitor     ON ITS BACK — the screen face lies flat.
-                //   monitor_lid the model already drops it to z=0: print it
-                //               as it comes, latch arms pointing up.
-                //   others      flat, as they sit.
+                //   case          UPSIDE DOWN (top face on the bed) — crisp
+                //                 keyboard face, open bottom needs no support.
+                //   monitor_left/ each lying on its flat CUT FACE, so every
+                //   monitor_right feature prints as a vertical wall: no
+                //                 supports anywhere.
+                //   others        flat, as they sit.
 
 $fn = 64;
 
@@ -86,66 +88,36 @@ szm = mfoot + slen*cos(recl);
 Hm  = szm + mcap;             // monitor height (above its foot)
 scr_cut = [51,75];
 
-// ---------- Removable monitor LID (how the Pi gets in) ----------
-// The back door alone was hopeless: its opening ended up shorter than the
-// 85.5 mm stack, so the Pi could never pass through it. Instead the monitor's
-// top lifts off and the whole stack is lowered straight down into the cradle.
-// The seam sits above the screen aperture and above the back door, so it
-// crosses only blank bezel. A register rim keeps the lid located; two
-// external cantilever latches on the side walls hold it down — press them
-// outward with a thumb to release, no tools, no screws.
-lid_z     = 93;     // horizontal split height (aperture top ~89.7, door top ~91)
-lid_rim   = 6;      // how far the register rim stands into the lid
-lid_gap   = 0.3;    // rim-to-lid clearance
-// Latching: hooks hang DOWN INSIDE the lid and snap out through small windows
-// in the body's side walls. Nothing protrudes, nothing hangs in mid-air, and
-// the windows sit near the BACK so they stay clear of the power slot (which
-// spans y 21..39 on the left wall). Press a nub in through its window with a
-// fingernail to release the lid.
-latch_y   = Dm - 14;  // window centre, measured back from the screen face
-latch_dz  = 14;       // window top, below the seam
-latch_win = 5;        // window height
-latch_ww  = 11;       // window width
-hook_t    = 2.5;      // hook arm thickness
-hook_len  = 18;       // how far the hook hangs into the body
-hook_w    = 9;        // hook arm width
+// ---------- Monitor split: two halves you bolt together ----------
+// Back to the vertical half-split (much easier to print than a lid), and
+// joined with plain BOLT HOLES rather than latches or glue: each half grows
+// a small ear at the seam, the ears sit side by side, and one bolt passes
+// straight through both. Put the Pi in one half, close the other over it,
+// drop the bolts in. Undo them to open.
+mcut_x   = 87;      // seam: right margin, clear of the screen bezel (15.5-84.5)
+ear_len  = 12;      // how far each ear runs back from the seam (right ear must
+                    // stay inside Wm: 87+12 = 99 < 100)
+ear_w    = 10;      // ear width
+ear_p    = 7;       // how far it stands off the surface
+join_d   = 3.4;     // clearance hole — M3 bolt straight through both ears
+// Two on the roof, one high on the back wall — all clear of the back door,
+// the camera turret and the screen.
+roof_ears = [24, 58];    // y positions on the roof
+back_ear_z = 100;        // z on the back wall, above the door (door tops ~91)
 
-// Rim on the BODY: a thin shell standing above the seam that the lid slips
-// over, so it can't slide about.
-module lid_register() {
-  intersection() {
-    difference() {
-      mon_body(inset = wall + lid_gap);
-      mon_body(inset = wall + lid_gap + 1.6);
-    }
-    translate([-1, -1, lid_z]) cube([Wm + 2, Dm + 2, lid_rim]);
-  }
+module join_ears(side) {          // side = -1 left half, +1 right half
+  x0 = (side < 0) ? mcut_x - ear_len : mcut_x;
+  for (y = roof_ears)             // sitting on the roof
+    translate([x0, y - ear_w/2, Hm - 1]) cube([ear_len, ear_w, ear_p + 1]);
+  translate([x0, Dm - 1, back_ear_z - ear_w/2])   // on the back wall
+    cube([ear_len, ear_p + 1, ear_w]);
 }
-// Windows cut clean through both side walls of the BODY.
-module lid_latch_windows() {
-  for (sx = [0, 1])
-    translate([sx ? Wm - wall - 1 : -1, latch_y - latch_ww/2, lid_z - latch_dz])
-      cube([wall + 2, latch_ww, latch_win]);
-}
-// Hooks on the LID: an arm down the inside of each wall with a nub that
-// snaps out into the window. The nub's underside is ramped so the lid
-// pushes itself in as it closes; its top face is flat, so it won't lift.
-module lid_hooks() {
-  for (sx = [-1, 1]) {
-    ax = (sx < 0) ? wall : Wm - wall - hook_t;      // arm against the inner face
-    translate([ax, latch_y - hook_w/2, lid_z - hook_len])
-      cube([hook_t, hook_w, hook_len]);
-    // nub: small at the bottom, full protrusion at the top (= the ramp)
-    nz = lid_z - latch_dz + 0.3;
-    p = wall - 0.4;
-    hull() {
-      translate([sx < 0 ? ax - 0.6 : ax + hook_t, latch_y - hook_w/2, nz])
-        cube([0.6, hook_w, 0.6]);
-      translate([sx < 0 ? ax - p : ax + hook_t, latch_y - hook_w/2,
-                 nz + latch_win - 1.0])
-        cube([p, hook_w, 0.6]);
-    }
-  }
+module join_holes() {             // one bolt through both ears, along x
+  for (y = roof_ears)
+    translate([mcut_x - ear_len - 2, y, Hm + ear_p/2])
+      rotate([0, 90, 0]) cylinder(d = join_d, h = 2*ear_len + 4);
+  translate([mcut_x - ear_len - 2, Dm + ear_p/2, back_ear_z])
+    rotate([0, 90, 0]) cylinder(d = join_d, h = 2*ear_len + 4);
 }
 
 // ---------- Camera turret (Adafruit Mini Pan-Tilt) ----------
@@ -414,24 +386,25 @@ module cam_cradle() {
 if (part=="case") case();
 if (part=="case_floor") case_floor();
 if (part=="turntable")  turntable();
-// The monitor prints in two pieces so the Pi can be lowered in from above:
-// the body (open top) and the lid that latches onto it.
-if (part=="monitor") {
+// The monitor prints as two halves, each lying on its flat cut face (no
+// supports). Bolt them together through the ears.
+if (part=="monitor") monitor();      // whole, for preview
+if (part=="monitor_left")
   difference() {
     union() {
-      intersection() { monitor(); translate([-1,-1,-1]) cube([Wm+2, Dm+2, lid_z+1]); }
-      lid_register();
+      intersection() { monitor(); translate([-1,-1,-1]) cube([mcut_x+1, Dm+2, Hm+2]); }
+      join_ears(-1);
     }
-    lid_latch_windows();               // the holes the lid's hooks snap into
+    join_holes();
   }
-}
-if (part=="monitor_lid") {
-  translate([0, 0, -lid_z]) {          // sit the lid flat for printing
-    intersection() { monitor(); translate([-1,-1,lid_z]) cube([Wm+2, Dm+2, Hm-lid_z+2]); }
-    lid_hooks();
+if (part=="monitor_right")
+  difference() {
+    union() {
+      intersection() { monitor(); translate([mcut_x,-1,-1]) cube([Wm-mcut_x+1, Dm+2, Hm+2]); }
+      join_ears(1);
+    }
+    join_holes();
   }
-}
-if (part=="monitor_whole") monitor();   // reference / preview only
 if (part=="monitor_door") monitor_door();
 if (part=="wedge")      wedge();
 if (part=="cam_cradle") cam_cradle();
@@ -440,5 +413,4 @@ if (part=="assembly") {
   color("gray") translate([0,0,0]) case_floor();
   color("tan") translate([W/2, turn_y, Hc]) turntable();
   color("Gainsboro") translate([W/2-Wm/2, turn_y-Dm/2, Hc+4]) monitor();
-  color("Silver")    translate([W/2-Wm/2, turn_y-Dm/2, Hc+4]) lid_hooks();
 }

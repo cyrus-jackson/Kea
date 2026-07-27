@@ -149,62 +149,40 @@ chk("boards clear the bottom-plate finger hole",
     all(cy + bd/2 < Dc - 30 for nm, bw, bd, bh, cx, cy in BOARDS),
     f"finger hole at y={Dc-22:.0f}")
 
+# --- monitor split into two bolted halves ---
+mcut_x = p("mcut_x")
+ear_len, ear_w, ear_p, join_d = p("ear_len"), p("ear_w"), p("ear_p"), p("join_d")
+back_ear_z = p("back_ear_z")
+bezel_l, bezel_r = Wm/2 - (51/2 + 9), Wm/2 + (51/2 + 9)
+chk("monitor seam clears the screen bezel",
+    mcut_x < bezel_l - 0.5 or mcut_x > bezel_r + 0.5,
+    f"seam {mcut_x:.0f}, bezel {bezel_l:.1f}..{bezel_r:.1f}")
+chk("both halves fit the bed lying on the cut face",
+    Dm + 2 <= BED and Hm + 2 <= BED and max(mcut_x, Wm - mcut_x) <= 250,
+    f"halves {mcut_x:.0f} and {Wm-mcut_x:.0f} thick")
+chk("ears stay within the monitor width",
+    mcut_x - ear_len > wall and mcut_x + ear_len <= Wm,
+    f"ears span x {mcut_x-ear_len:.0f}..{mcut_x+ear_len:.0f} of {Wm:.0f}")
+chk("bolt holes take an M3", join_d >= 3.2, f"hole {join_d} mm")
+for _y in (24, 58):
+    chk(f"roof ear at y={_y} sits on the roof, clear of the turret",
+        sym + 4 < _y < Dm - 4 and abs(_y - turret_y) > 10,
+        f"roof {sym:.1f}..{Dm:.0f}, turret y={turret_y:.0f}")
+chk("back ear sits above the back door",
+    back_ear_z - ear_w/2 > (Hm - 16) + 1 and back_ear_z + ear_w/2 < Hm,
+    f"ear z {back_ear_z-ear_w/2:.0f}..{back_ear_z+ear_w/2:.0f}, door top {Hm-16:.1f}")
+chk("back ear clear of the seam-side bezel", mcut_x > bezel_r,
+    "ear column is in the right margin")
+
 # --- total height sane on a desk ---
 chk("total height reasonable", Hc + 4 + Hm < 210, f"{Hc+4+Hm:.0f} mm tall overall")
 
-# --- the removable monitor lid: how the Pi actually gets in ---
-lid_z = p("lid_z")
-lid_rim, latch_win = p("lid_rim"), p("latch_win")
-aperture_top = mfoot + 84.5 * math.cos(r)
-door_top = Hm - 16
-chk("lid seam clears the screen aperture", lid_z > aperture_top + 2,
-    f"seam z={lid_z:.0f}, aperture top {aperture_top:.1f}")
-chk("lid seam clears the back door opening", lid_z > door_top + 1,
-    f"seam z={lid_z:.0f}, door top {door_top:.1f}")
-chk("lid is thick enough to be stiff", Hm - lid_z >= 10,
-    f"lid {Hm-lid_z:.1f} mm tall")
-# with the lid off, the stack is lowered straight down: the opening at the
-# seam must clear the 56 mm width and the ~33 mm stack thickness
-open_w = Wm - 2 * wall
-slope_y_at_seam = (lid_z - mfoot) / math.cos(r) * math.sin(r)
-open_d = (Dm - wall) - slope_y_at_seam
-chk("top opening clears the stack width", open_w >= STACK_W + 4,
-    f"opening {open_w:.0f} mm vs stack {STACK_W:.0f}")
-chk("top opening clears the stack thickness", open_d >= GPIO_STACK + 4,
-    f"opening {open_d:.1f} mm deep vs stack {GPIO_STACK:.0f}")
-# latch windows are holes in the side walls, kept clear of the power slot
-latch_y = Dm - 14                     # matches `latch_y = Dm - 14` in scad
-latch_dz, latch_ww = p("latch_dz"), p("latch_ww")
-hook_len, hook_t = p("hook_len"), p("hook_t")
-pw_y0, pw_y1 = mon_pwr_depth - 9, mon_pwr_depth + 9        # power slot in y
-pw_z0, pw_z1 = mfoot + mon_pwr_z - 10.5, mfoot + mon_pwr_z + 10.5
-lw_y0, lw_y1 = latch_y - latch_ww/2, latch_y + latch_ww/2
-lw_z0, lw_z1 = lid_z - latch_dz, lid_z - latch_dz + latch_win
-chk("latch windows clear the power slot",
-    lw_y1 < pw_y0 - 3 or lw_y0 > pw_y1 + 3 or lw_z1 < pw_z0 - 3 or lw_z0 > pw_z1 + 3,
-    f"window y {lw_y0:.0f}-{lw_y1:.0f} z {lw_z0:.0f}-{lw_z1:.0f} vs "
-    f"power y {pw_y0:.0f}-{pw_y1:.0f} z {pw_z0:.0f}-{pw_z1:.0f}")
-chk("latch windows sit inside the side walls",
-    lw_y0 > wall + 2 and lw_y1 < Dm - wall - 2,
-    f"window y {lw_y0:.0f}-{lw_y1:.0f} of depth {Dm:.0f}")
-chk("hook reaches below its window and stays inside the body",
-    hook_len > latch_dz + 2 and hook_len < lid_z - mfoot,
-    f"hook {hook_len:.0f} vs window at {latch_dz:.0f}")
-chk("hooks don't foul the display stack",
-    (Wm - STACK_W)/2 - wall - hook_t > 2,
-    f"gap left beside the stack {(Wm-STACK_W)/2-wall-hook_t:.1f} mm")
-chk("nothing protrudes outside the monitor (flush latches)",
-    "lid_latches" not in src and "catch_p" not in src,
-    "external latch arms removed")
-chk("register rim shorter than the lid", lid_rim < Hm - lid_z,
-    f"rim {lid_rim:.0f} vs lid {Hm-lid_z:.1f}")
-chk("lid + body both still fit the bed", Hm - lid_z <= BED and lid_z <= BED)
-
 # --- nothing else is split: no stale seams, locks or dowels ---
-chk("no split/seam features left in the model",
-    not any(k in src for k in ("cut_x", "mcut_x", "lock_tab", "lock_boss",
-                               "case_dowels", "mon_dowels")),
-    "leftover seam geometry")
+chk("case is still one piece (no case seam)",
+    not re.search(r"^cut_x\s*=", src, re.M) and "case_dowels" not in src,
+    "leftover case seam")
+chk("no latch/lid leftovers", not any(k in src for k in
+    ("lid_z", "lid_hooks", "lid_latches", "lock_tab", "lock_boss")))
 chk("every part still fits the bed whole",
     max(W, Dc, Hc) <= BED and max(Wm, Dm, Hm) <= BED,
     f"case {W:.0f}x{Dc:.0f}x{Hc:.0f}, monitor {Wm:.0f}x{Dm:.0f}x{Hm:.0f}")
