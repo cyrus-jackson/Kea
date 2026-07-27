@@ -140,6 +140,34 @@ chk("boards clear the bottom-plate finger hole",
     all(cy + bd/2 < Dc - 30 for nm, bw, bd, bh, cx, cy in BOARDS),
     f"finger hole at y={Dc-22:.0f}")
 
+# --- seam locks: brackets must fit inside each half, not clash with walls ---
+lock_reach, lock_back, lock_drop = p("lock_reach"), p("lock_back"), p("lock_drop")
+lock_tab_t = p("lock_tab_t")
+mon_reach, mon_off, mon_bd = p("mon_reach"), p("mon_off"), p("mon_bd")
+
+
+def lock_fits(nm, cx, off, bd, reach, outer_w, ceil_z, cavity_lo):
+    """tab + boss must stay between the seam and the far inner wall, and the
+    bracket must hang inside the cavity (not through the ceiling/floor)."""
+    inner_r = outer_w - wall
+    chk(f"{nm}: tab reaches across but clears the far wall",
+        cx + reach < inner_r, f"tab to x={cx+reach:.1f}, inner wall {inner_r:.1f}")
+    chk(f"{nm}: boss clears the far wall",
+        cx + off + bd/2 <= inner_r, f"boss to x={cx+off+bd/2:.1f}, wall {inner_r:.1f}")
+    chk(f"{nm}: tab roots inside its own half", cx - lock_back > wall,
+        f"tab starts x={cx-lock_back:.1f}")
+    chk(f"{nm}: bracket hangs inside the cavity",
+        ceil_z - lock_drop > cavity_lo, f"bracket bottom z={ceil_z-lock_drop:.1f}")
+    chk(f"{nm}: screw head clears the tab", lock_tab_t >= 3)
+
+
+lock_fits("case lock", cut_x, 6, 9, lock_reach, W, Hc - wall, wall)
+lock_fits("monitor lock", mcut_x, mon_off, mon_bd, mon_reach, Wm, Hm - wall, mfoot)
+for _y in (42, 118):
+    chk(f"case lock at y={_y} inside the case", wall + 6 < _y < Dc - wall - 6)
+for _y in (18, 46):
+    chk(f"monitor lock at y={_y} inside the monitor", wall + 5 < _y < Dm - wall - 5)
+
 # --- total height sane on a desk ---
 chk("total height reasonable", Hc + 4 + Hm < 210, f"{Hc+4+Hm:.0f} mm tall overall")
 

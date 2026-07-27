@@ -18,7 +18,7 @@
 // Servos want their OWN 5 V — never the Pi header.
 // ============================================================
 
-part = "monitor_right";  // "case" | "case_left" | "case_right" | "case_floor"
+part = "monitor_left";  // "case" | "case_left" | "case_right" | "case_floor"
                 // | "turntable" | "monitor" (whole) | "monitor_left"
                 // | "monitor_right" | "monitor_door" | "wedge"
                 // | "cam_cradle" | "assembly"
@@ -83,6 +83,51 @@ sym = slen*sin(recl);
 szm = mfoot + slen*cos(recl);
 Hm  = szm + mcap;             // monitor height (above its foot)
 scr_cut = [51,75];
+
+// ---------- Seam locks (no glue) ----------
+// The walls are only `wall` thick, so there's no room for a dovetail or a
+// snap in the cut face itself. Instead each lock is a bracket pair hanging
+// from the inside of the ceiling: the LEFT half carries a tab that reaches
+// across the seam, the RIGHT half a boss with a pilot hole. One M3 self-
+// tapping screw from below pulls them together. Undo the screws (bottom
+// plate off, reach in) and the halves come apart — reusable, no glue.
+lock_head   = 3.4;   // clearance hole in the tab (M3 shank)
+lock_pilot  = 2.5;   // pilot in the boss for an M3 self-tapper
+lock_tab_t  = 4;     // tab thickness
+lock_reach  = 12;    // how far the tab crosses the seam
+lock_back   = 8;     // how far it roots back into its own half
+lock_drop   = 18;    // bracket height below the ceiling
+case_lock_y = [42, 118];   // seam positions along the case depth
+mon_lock_y  = [18, 46];    // seam positions along the monitor depth
+
+// reach/bd are smaller on the monitor, whose right half is only ~13 mm wide.
+// off = screw centre, measured right of the seam.
+module lock_tab(cx, y, ceil_z, reach=lock_reach, off=6, wide=12) {
+  z0 = ceil_z - lock_drop;
+  difference() {
+    union() {
+      translate([cx - lock_back, y - wide/2, z0])
+        cube([lock_back + reach, wide, lock_tab_t]);
+      translate([cx - lock_back, y - wide/2, z0])     // web up to the ceiling
+        cube([lock_tab_t, wide, lock_drop]);
+    }
+    translate([cx + off, y, z0 - 1]) cylinder(d = lock_head, h = lock_tab_t + 2);
+  }
+}
+// Boss on the RIGHT half: a post down from the ceiling, drilled for the screw.
+module lock_boss(cx, y, ceil_z, off=6, bd=9) {
+  z0 = ceil_z - lock_drop + lock_tab_t;
+  difference() {
+    translate([cx + off, y, z0]) cylinder(d = bd, h = ceil_z - z0);
+    translate([cx + off, y, z0 - 1]) cylinder(d = lock_pilot, h = ceil_z - z0 + 2);
+  }
+}
+// Clearance the RIGHT half must give up so the tab can slide in.
+module lock_pocket(cx, y, ceil_z, reach=lock_reach, wide=12) {
+  z0 = ceil_z - lock_drop;
+  translate([cx - 0.5, y - wide/2 - 0.4, z0 - 0.4])
+    cube([reach + 1, wide + 0.8, lock_tab_t + 0.8]);
+}
 
 // ---------- Camera turret (Adafruit Mini Pan-Tilt) ----------
 turret_y = 46;      // on the monitor roof, toward the back
@@ -351,13 +396,37 @@ module cam_cradle() {
 // RENDER
 // ============================================================
 if (part=="case") case();
-if (part=="case_left")  intersection() { case(); translate([-1,-1,-3]) cube([cut_x+1, Dc+2, Hc+6]); }
-if (part=="case_right") intersection() { case(); translate([cut_x,-1,-3]) cube([W-cut_x+1, Dc+2, Hc+6]); }
+// Split halves carry the seam-lock brackets: tabs on the left, bosses (and
+// the pocket the tab needs) on the right. Screw them together to lock.
+if (part=="case_left") {
+  intersection() { case(); translate([-1,-1,-3]) cube([cut_x+1, Dc+2, Hc+6]); }
+  for (y = case_lock_y) lock_tab(cut_x, y, Hc - wall);
+}
+if (part=="case_right") {
+  difference() {
+    intersection() { case(); translate([cut_x,-1,-3]) cube([W-cut_x+1, Dc+2, Hc+6]); }
+    for (y = case_lock_y) lock_pocket(cut_x, y, Hc - wall);
+  }
+  for (y = case_lock_y) lock_boss(cut_x, y, Hc - wall);
+}
 if (part=="case_floor") case_floor();
 if (part=="turntable")  turntable();
 if (part=="monitor")    monitor();
-if (part=="monitor_left")  intersection() { monitor(); translate([-1,-1,-1]) cube([mcut_x+1, Dm+2, Hm+2]); }
-if (part=="monitor_right") intersection() { monitor(); translate([mcut_x,-1,-1]) cube([Wm-mcut_x+1, Dm+2, Hm+2]); }
+// The monitor's off-cut half is narrow, so its locks are the compact size.
+mon_reach = 7;
+mon_off = 3.5;
+mon_bd = 6.5;
+if (part=="monitor_left") {
+  intersection() { monitor(); translate([-1,-1,-1]) cube([mcut_x+1, Dm+2, Hm+2]); }
+  for (y = mon_lock_y) lock_tab(mcut_x, y, Hm - wall, mon_reach, mon_off, 10);
+}
+if (part=="monitor_right") {
+  difference() {
+    intersection() { monitor(); translate([mcut_x,-1,-1]) cube([Wm-mcut_x+1, Dm+2, Hm+2]); }
+    for (y = mon_lock_y) lock_pocket(mcut_x, y, Hm - wall, mon_reach, 10);
+  }
+  for (y = mon_lock_y) lock_boss(mcut_x, y, Hm - wall, mon_off, mon_bd);
+}
 if (part=="monitor_door") monitor_door();
 if (part=="wedge")      wedge();
 if (part=="cam_cradle") cam_cradle();
