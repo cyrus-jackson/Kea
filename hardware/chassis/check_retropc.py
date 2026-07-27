@@ -27,7 +27,11 @@ BTN_HEAD = 14.0     # GUUZI 12 mm metal button head diameter
 sv_L, sv_W, sv_screw = p("sv_L"), p("sv_W"), p("sv_screw")
 CRADLE_D = 37       # mon_cradle depth (must match scad); STACK+adapter+wedge
 GPIO_STACK = 33     # assumed Pi+display+GPIO-adapter thickness
-Wm, Dm, recl, slen, mfoot, mcap = p("Wm"), p("Dm"), p("recl"), p("slen"), p("mfoot"), p("mcap")
+gapP, gapG = p("gapP"), p("gapG")
+Dm, recl, slen, mfoot, mcap = p("Dm"), p("recl"), p("slen"), p("mfoot"), p("mcap")
+wall_ = p("wall")
+Wm = wall_ + gapP + 56 + gapG + wall_          # matches the scad expression
+stack_cx = wall_ + gapP + 28
 turret_y = p("turret_y")
 fan_sz, fan_holes = p("fan_sz"), p("fan_holes")
 mon_pwr_z, mon_pwr_depth = p("mon_pwr_z"), p("mon_pwr_depth")
@@ -82,9 +86,9 @@ chk("monitor foot bolt circle fits under the monitor", turn_bolt + 6 < min(Wm, D
 # --- monitor houses the display ---
 chk("monitor slope carries the display", slen >= 6.5+STACK_L+2)
 chk("screen cutout inside the slope", slen/2-37.5 > 2 and slen/2+37.5 < slen-2)
-gx0=(Wm-56)/2-3.5; gx1=(Wm+56)/2+0.5
+gx0=stack_cx-28-3.5; gx1=stack_cx+28+0.5
 chk("cradle guides straddle the stack", gx0 >= wall and gx1+3 <= Wm-wall)
-gpio_channel = (Wm - STACK_W) / 2 - wall     # stack edge -> inner wall, GPIO side
+gpio_channel = gapG                          # stack edge -> inner wall, GPIO side
 chk("GPIO side has a clear channel for the sideways header + wires",
     gpio_channel >= 16, f"channel {gpio_channel:.0f} mm (need >=16 for pins+dupont)")
 thick = GPIO_STACK
@@ -97,11 +101,16 @@ chk("cradle deep enough for the GPIO-adapter stack + wedge",
 chk("camera turret on the monitor roof", sym+3 < turret_y < Dm-6, f"roof {sym:.1f}..{Dm:.0f}, turret {turret_y:.0f}")
 
 # --- fan on the monitor back door ---
-door_w = Wm - 24
+mcut_x_ = p("mcut_x")
+door_x0 = 12
+door_w = mcut_x_ - 6 - door_x0
 door_h = Hm - mfoot - 16
 chk("fan aperture + bolt circle fit the back door",
     fan_sz + 8 < door_w and fan_sz + 8 < door_h,
     f"fan {fan_sz:.0f} (+bolts {fan_holes:.0f}) vs door {door_w:.0f}x{door_h:.0f}")
+chk("back door stops short of the seam (no knife-edge)",
+    door_x0 + door_w <= mcut_x_ - 4 and door_x0 > wall + 4,
+    f"door x {door_x0}..{door_x0+door_w:.0f}, seam {mcut_x_:.0f}")
 
 # --- power inlet now on the monitor side wall (not the case) ---
 chk("case has NO power slot (moved to the monitor)",
@@ -109,6 +118,21 @@ chk("case has NO power slot (moved to the monitor)",
 chk("monitor power slot lands inside the side wall",
     6 < mon_pwr_depth < Dm - 6 and 6 < mfoot + mon_pwr_z < Hm - 6,
     f"slot depth {mon_pwr_depth:.0f}/{Dm:.0f}, z {mfoot+mon_pwr_z:.0f}/{Hm:.0f}")
+# the cassette is pushed to the power wall: that gap must still take the plug,
+# and the wide channel must be on the GPIO side
+mon_pwr_side = p("mon_pwr_side")
+gpio_side = p("gpio_side")
+chk("power-side gap fits the plug but wastes no space",
+    5 <= gapP <= 10, f"power gap {gapP:.0f} mm")
+chk("the wide channel is on the GPIO side, the narrow one on the power side",
+    gapG > gapP + 5 and mon_pwr_side != gpio_side,
+    f"power gap {gapP:.0f} (side {mon_pwr_side:+.0f}), "
+    f"GPIO gap {gapG:.0f} (side {gpio_side:+.0f})")
+chk("bezel sits inside the body once shifted",
+    stack_cx - (51/2 + 9) > 1 and stack_cx + (51/2 + 9) < Wm - 1,
+    f"bezel {stack_cx-34.5:.1f}..{stack_cx+34.5:.1f} of width {Wm:.0f}")
+chk("narrower than the centred layout (space saved)", Wm < 100,
+    f"{Wm:.0f} mm wide")
 
 # --- ordered boards fit inside the case ---
 # [name, w(x), d(y), h(z), cx, cy] from the datasheets
@@ -153,7 +177,7 @@ chk("boards clear the bottom-plate finger hole",
 mcut_x = p("mcut_x")
 ear_len, ear_w, ear_p, join_d = p("ear_len"), p("ear_w"), p("ear_p"), p("join_d")
 back_ear_z = p("back_ear_z")
-bezel_l, bezel_r = Wm/2 - (51/2 + 9), Wm/2 + (51/2 + 9)
+bezel_l, bezel_r = stack_cx - (51/2 + 9), stack_cx + (51/2 + 9)
 chk("monitor seam clears the screen bezel",
     mcut_x < bezel_l - 0.5 or mcut_x > bezel_r + 0.5,
     f"seam {mcut_x:.0f}, bezel {bezel_l:.1f}..{bezel_r:.1f}")

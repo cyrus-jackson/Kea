@@ -71,9 +71,18 @@ sv_body_h = 22.8; // body height below the flanges
 sv_screw = 28;    // flange screw-hole spacing (M2)
 
 // ---------- Monitor ----------
-Wm   = 100;   // monitor width
+// The stack is NOT centred: the GPIO side needs a wide channel for the
+// sideways header, but the power side only needs enough room for the plug
+// to reach the Pi's jack through the wall. So the cassette is pushed up
+// against the power-side wall and the monitor is that much narrower.
+gapP = 7;     // power-side gap: stack edge -> inner wall (plug clearance)
+gapG = 17;    // GPIO-side gap: header pins + dupont shells
+Wm   = wall + gapP + 56 + gapG + wall;   // = 86 (was 100)
 Dm   = 72;    // monitor depth (was 66 — deeper for the Pi+display+GPIO-adapter
               // stack; the cradle/wedge now take a thicker stack)
+// Everything that must line up with the display — cradle, screen aperture,
+// bezel, hood — hangs off this, not off Wm/2.
+stack_cx = wall + gapP + 28;
 recl = 8;     // slight fixed recline (pan is motorized, tilt is fixed)
 slen = 94;    // screen slope length (85.5 display + shelf)
 mcap = 8;
@@ -94,9 +103,10 @@ scr_cut = [51,75];
 // a small ear at the seam, the ears sit side by side, and one bolt passes
 // straight through both. Put the Pi in one half, close the other over it,
 // drop the bolts in. Undo them to open.
-mcut_x   = 87;      // seam: right margin, clear of the screen bezel (15.5-84.5)
-ear_len  = 12;      // how far each ear runs back from the seam (right ear must
-                    // stay inside Wm: 87+12 = 99 < 100)
+// Seam sits in the GPIO-side margin, just outside the bezel (which now spans
+// stack_cx +/- 34.5, i.e. 3.5..72.5) and inside the body edge.
+mcut_x   = 74;
+ear_len  = 12;      // right ear must stay inside Wm: 74+12 = 86 = Wm
 ear_w    = 10;      // ear width
 ear_p    = 7;       // how far it stands off the surface
 join_d   = 3.4;     // clearance hole — M3 bolt straight through both ears
@@ -299,24 +309,24 @@ module mon_intake_vents() {
 }
 module mon_bezel() {
   bw=9; bz=3.5; ow=scr_cut[0]+2*bw; oh=scr_cut[1]+2*bw;
-  translate([Wm/2,0,slen/2]) rotate([-90,0,0]) linear_extrude(bz)
+  translate([stack_cx,0,slen/2]) rotate([-90,0,0]) linear_extrude(bz)
     difference() {
       offset(r=4) offset(delta=-4) square([ow,oh],center=true);
       offset(r=2) offset(delta=-2) square([scr_cut[0]+5, scr_cut[1]+5],center=true);
     }
   bw2=9; hz=slen/2+scr_cut[1]/2+bw2;
-  translate([Wm/2,0,hz]) rotate([-90,0,0]) linear_extrude(12)
+  translate([stack_cx,0,hz]) rotate([-90,0,0]) linear_extrude(12)
     offset(r=3) offset(delta=-3) square([scr_cut[0]+2*bw2+6, 10], center=true);
 }
 module mon_screen_cut() {
   hull() {
-    translate([Wm/2,-0.2,slen/2]) cube([scr_cut[0]+6,0.1,scr_cut[1]+6],center=true);
-    translate([Wm/2,4,slen/2]) cube([scr_cut[0],0.1,scr_cut[1]],center=true);
+    translate([stack_cx,-0.2,slen/2]) cube([scr_cut[0]+6,0.1,scr_cut[1]+6],center=true);
+    translate([stack_cx,4,slen/2]) cube([scr_cut[0],0.1,scr_cut[1]],center=true);
   }
-  translate([Wm/2,4,slen/2]) cube([scr_cut[0], wall+10, scr_cut[1]], center=true);
+  translate([stack_cx,4,slen/2]) cube([scr_cut[0], wall+10, scr_cut[1]], center=true);
 }
 module mon_cradle() {
-  gx0=(Wm-56)/2-3.5; gx1=(Wm+56)/2+0.5;
+  gx0=stack_cx-28-3.5; gx1=stack_cx+28+0.5;
   cd=37;                                    // cradle depth — Pi+display+GPIO adapter
   translate([wall,wall,2.5]) cube([Wm-2*wall,cd,4]);   // shelf
   // Side guides: full on the non-GPIO side; SHORT (base only) on the GPIO
@@ -328,11 +338,15 @@ module mon_cradle() {
   translate([gx0,wall+cd-3,8]) cube([21,3,42]);
   translate([gx1+3-21,wall+cd-3,8]) cube([21,3,42]);
 }
+// Door stops 6 mm short of the seam, so the cut plane doesn't slice through
+// the opening edge and leave a knife-edge on the left half.
+door_x0 = 12;
+door_w  = mcut_x - 6 - door_x0;
 module mon_back_door_cut() {
-  translate([12, Dm-wall-1, mfoot+6]) cube([Wm-24, wall+2, Hm-mfoot-16]);
+  translate([door_x0, Dm-wall-1, mfoot+6]) cube([door_w, wall+2, Hm-mfoot-16]);
 }
 module monitor_door() {
-  ow=Wm-24; doh=Hm-mfoot-16; fh=doh+12; lh=doh-0.6;
+  ow=door_w; doh=Hm-mfoot-16; fh=doh+12; lh=doh-0.6;
   difference() {
     union() {
       translate([-ow/2-6,-fh/2,0]) cube([ow+12, fh, 2.5]);
@@ -362,8 +376,8 @@ module mon_foot_bolts() {
     for (a=[0:90:270]) rotate([0,0,a]) translate([turn_bolt/2,0,-1]) cylinder(d=2.6, h=mfoot+2);
 }
 module turret_mount() {
-  translate([Wm/2-11, turret_y-8, Hm-wall-1]) cube([22,16,wall+2]);
-  for (s=[-1,1]) translate([Wm/2+s*turret_holes/2, turret_y+10, Hm-wall-1]) cylinder(d=2.6,h=wall+2);
+  translate([stack_cx-11, turret_y-8, Hm-wall-1]) cube([22,16,wall+2]);
+  for (s=[-1,1]) translate([stack_cx+s*turret_holes/2, turret_y+10, Hm-wall-1]) cylinder(d=2.6,h=wall+2);
 }
 module wedge() {
   difference() {
