@@ -103,6 +103,34 @@ chk("cradle deep enough for the GPIO-adapter stack + wedge",
     f"cradle {CRADLE_D:.0f} vs stack {GPIO_STACK:.0f}+wedge, inner {Dm-wall:.0f}")
 chk("camera turret on the monitor roof", sym+3 < turret_y < Dm-6, f"roof {sym:.1f}..{Dm:.0f}, turret {turret_y:.0f}")
 
+# --- turret roof slot: tight, but still passes the ribbon ---
+ts = [float(v) for v in re.search(r"turret_slot\s*=\s*\[([\d.]+),\s*([\d.]+)\]", src).groups()]
+chk("turret slot passes a 16 mm camera ribbon", ts[0] >= 16.5,
+    f"slot {ts[0]:.0f} mm wide")
+chk("turret slot is tight, not a gaping hole", ts[0]*ts[1] <= 130,
+    f"slot {ts[0]:.0f}x{ts[1]:.0f} = {ts[0]*ts[1]:.0f} mm2 (was 22x16 = 352)")
+chk("turret slot clears its own screw holes",
+    10 - ts[1]/2 > 1.3 + 1, f"slot half-depth {ts[1]/2:.1f}, screws at y+10")
+
+# --- cam_cradle: every hole needs material around it ---
+cc_w, cc_h = [float(v) for v in re.search(r"cc_plate\s*=\s*\[([\d.]+),\s*([\d.]+)\]", src).groups()]
+cn_w, cn_d = [float(v) for v in re.search(r"cc_notch\s*=\s*\[([\d.]+),\s*([\d.]+)\]", src).groups()]
+CAM_HX, CAM_HY, CAM_R = 21/2, 12.5/2, 1.1
+chk("cam_cradle: camera holes have material to the plate edge",
+    cc_w/2 - (CAM_HX + CAM_R) >= 2.5 and cc_h/2 - (CAM_HY + CAM_R) >= 2.5,
+    f"margins x {cc_w/2-CAM_HX-CAM_R:.1f}, y {cc_h/2-CAM_HY-CAM_R:.1f} mm")
+notch_top = -cc_h/2 + cn_d
+chk("cam_cradle: ribbon notch no longer cuts the lower screw holes",
+    notch_top < -CAM_HY - CAM_R - 1.5,
+    f"notch top {notch_top:.1f} vs hole bottom {-CAM_HY-CAM_R:.1f}")
+chk("cam_cradle: kit bolt holes clear both the notch and the camera holes",
+    11 - 1.2 > notch_top + 1
+    and math.hypot(12 - CAM_HX, 11 - CAM_HY) > CAM_R + 1.2 + 1,
+    f"kit holes at (+/-12, 11)")
+chk("cam_cradle: kit bolt holes inside the plate",
+    12 + 1.2 < cc_w/2 - 1 and 11 + 1.2 < cc_h/2 - 1,
+    f"plate {cc_w:.0f}x{cc_h:.0f}")
+
 # --- fan on the monitor back door ---
 mcut_x_ = p("mcut_x")
 door_x0 = 12

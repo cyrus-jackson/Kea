@@ -18,7 +18,7 @@
 // Servos want their OWN 5 V — never the Pi header.
 // ============================================================
 
-part = "monitor_left";  // "case" | "case_floor" | "turntable"
+part = "cam_cradle";  // "case" | "case_floor" | "turntable"
                 // | "monitor_left" | "monitor_right" | "monitor" (preview)
                 // | "monitor_door" | "wedge" | "cam_cradle" | "assembly"
                 //
@@ -386,9 +386,15 @@ module mon_foot_bolts() {
   translate([Wm/2, Dm/2, 0])
     for (a=[0:90:270]) rotate([0,0,a]) translate([turn_bolt/2,0,-1]) cylinder(d=2.6, h=mfoot+2);
 }
+// Roof opening for the turret. Only a camera ribbon (~16 x 0.3) and the
+// servo leads pass through, so it's a tight slot rather than the big
+// 22 x 16 hole it used to be — much less of the roof is left open.
+turret_slot = [17, 6];
 module turret_mount() {
-  translate([stack_cx-11, turret_y-8, Hm-wall-1]) cube([22,16,wall+2]);
-  for (s=[-1,1]) translate([stack_cx+s*turret_holes/2, turret_y+10, Hm-wall-1]) cylinder(d=2.6,h=wall+2);
+  translate([stack_cx - turret_slot[0]/2, turret_y - turret_slot[1]/2, Hm-wall-1])
+    cube([turret_slot[0], turret_slot[1], wall+2]);
+  for (s=[-1,1]) translate([stack_cx+s*turret_holes/2, turret_y+10, Hm-wall-1])
+    cylinder(d=2.6, h=wall+2);
 }
 module wedge() {
   difference() {
@@ -397,11 +403,22 @@ module wedge() {
     translate([16,-1,8]) cube([24,13,40]);
   }
 }
+// Plate the Pi camera screws to, which in turn bolts to the pan-tilt kit.
+// Grown to 32 x 30 and the ribbon notch pulled back, because at 28 x 26 the
+// notch cut straight through the two lower screw holes and the kit holes.
+cc_plate = [32, 30];
+cc_notch = [16, 5];     // ribbon relief at the bottom edge
 module cam_cradle() {
   difference() {
-    translate([-14,-13,0]) cube([28,26,2.5]);
-    for (x=[-1,1],y=[-1,1]) translate([x*21/2,y*12.5/2,-1]) cylinder(d=2.2,h=5);
-    translate([-9,-13.5,-1]) cube([18,8,5]);
+    translate([-cc_plate[0]/2, -cc_plate[1]/2, 0]) cube([cc_plate[0], cc_plate[1], 2.5]);
+    // camera screw holes (fixed 21 x 12.5 pattern)
+    for (x=[-1,1], y=[-1,1])
+      translate([x*cam_holes[0]/2, y*cam_holes[1]/2, -1]) cylinder(d=2.2, h=5);
+    // ribbon notch — stops short of the lower screw holes
+    translate([-cc_notch[0]/2, -cc_plate[1]/2 - 0.5, -1])
+      cube([cc_notch[0], cc_notch[1] + 0.5, 5]);
+    // bolts up to the pan-tilt kit's top plate, in the clear top corners
+    for (x=[-1,1]) translate([x*12, 11, -1]) cylinder(d=2.4, h=5);
   }
 }
 
