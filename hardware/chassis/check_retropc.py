@@ -131,17 +131,58 @@ chk("cam_cradle: kit bolt holes inside the plate",
     12 + 1.2 < cc_w/2 - 1 and 11 + 1.2 < cc_h/2 - 1,
     f"plate {cc_w:.0f}x{cc_h:.0f}")
 
-# --- fan on the monitor back door ---
+# --- the back door: does it seat, grip, and clear everything? ---
 mcut_x_ = p("mcut_x")
-door_x0 = 12
+door_x0, door_z0, door_h = p("door_x0"), p("door_z0"), p("door_h")
 door_w = mcut_x_ - 6 - door_x0
-door_h = Hm - mfoot - 16
+lip_t, rib = p("door_lip_t"), p("door_rib")
+fan_cy = p("fan_cy")
+lw, lh = door_w - 0.6, door_h - 0.6
 chk("fan aperture + bolt circle fit the back door",
     fan_sz + 8 < door_w and fan_sz + 8 < door_h,
     f"fan {fan_sz:.0f} (+bolts {fan_holes:.0f}) vs door {door_w:.0f}x{door_h:.0f}")
 chk("back door stops short of the seam (no knife-edge)",
     door_x0 + door_w <= mcut_x_ - 4 and door_x0 > wall + 4,
     f"door x {door_x0}..{door_x0+door_w:.0f}, seam {mcut_x_:.0f}")
+# seating: the faceplate must overlap the opening all round so it stops flush
+chk("door faceplate seats on the wall around the opening",
+    door_w + 12 > door_w + 8 and door_h + 12 > door_h + 8,
+    "6 mm flange all round")
+# lip fits the opening, and the ribs give a real interference fit
+chk("door lip enters the opening (0.3 mm/side clearance)",
+    abs((door_w - lw) - 0.6) < 1e-6 and abs((door_h - lh) - 0.6) < 1e-6,
+    f"lip {lw:.1f}x{lh:.1f} vs opening {door_w:.0f}x{door_h:.0f}")
+chk("crush ribs give interference on BOTH axes (door won't rattle)",
+    (lw + 2*rib) - door_w > 0.2 and (lh + 2*rib) - door_h > 0.2,
+    f"with ribs {lw+2*rib:.1f}x{lh+2*rib:.1f} vs {door_w:.0f}x{door_h:.0f}")
+chk("interference is press-fit, not unassemblable",
+    (lw + 2*rib) - door_w <= 0.8 and (lh + 2*rib) - door_h <= 0.8,
+    f"{(lw+2*rib)-door_w:.1f} mm total")
+chk("lip is shallower than the wall (door sits flush, doesn't bottom out)",
+    lip_t < wall, f"lip {lip_t} vs wall {wall}")
+# the door must clear the seam-bolt ear above it
+ear_lo = 100 - 10/2
+chk("door opening clears the back seam-bolt ear",
+    door_z0 + door_h < ear_lo - 2,
+    f"door top z={door_z0+door_h:.0f}, ear starts z={ear_lo:.0f}")
+chk("door opening sits inside the back wall",
+    door_z0 > mfoot + 4 and door_z0 + door_h < Hm - 6,
+    f"door z {door_z0:.0f}..{door_z0+door_h:.0f} of height {Hm:.1f}")
+# nothing cut into anything else on the door face
+fan_r = (fan_sz - 3) / 2
+vent_xs = [i*9 - 1.5 for i in range(-2, 3)]
+chk("vents clear the fan aperture and its bolts",
+    all(12 > fan_cy + fan_r + 1 for _ in vent_xs)
+    and 12 > fan_cy + fan_holes/2 + 1.3 + 1,
+    f"vents start y=12, fan reaches {fan_cy+fan_r:.1f}, bolts {fan_cy+fan_holes/2:.1f}")
+chk("vents stay on the faceplate", all(abs(x) + 3 < (door_w+12)/2 for x in vent_xs),
+    f"vents x {min(vent_xs):.0f}..{max(vent_xs)+3:.0f} of +/-{(door_w+12)/2:.1f}")
+chk("finger scallop clears the vents",
+    (door_h + 12)/2 - 6 > 12 + 18 + 1,
+    f"scallop from y={(door_h+12)/2-6:.1f}, vents end y=30")
+chk("fan bolts land on the lip, not off the edge",
+    fan_holes/2 + 3 < lw/2 and abs(fan_cy) + fan_holes/2 + 3 < lh/2,
+    f"bolts at (+/-{fan_holes/2:.0f}, {fan_cy:.0f}+/-{fan_holes/2:.0f}) in lip {lw:.0f}x{lh:.0f}")
 
 # --- power inlet now on the monitor side wall (not the case) ---
 chk("case has NO power slot (moved to the monitor)",

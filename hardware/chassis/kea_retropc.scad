@@ -18,7 +18,7 @@
 // Servos want their OWN 5 V — never the Pi header.
 // ============================================================
 
-part = "cam_cradle";  // "case" | "case_floor" | "turntable"
+part = "monitor_door";  // "case" | "case_floor" | "turntable"
                 // | "monitor_left" | "monitor_right" | "monitor" (preview)
                 // | "monitor_door" | "wedge" | "cam_cradle" | "assembly"
                 //
@@ -350,33 +350,56 @@ module mon_cradle() {
   translate([min(gx1+3-21, Wm-wall-21), wall+cd-3, 8]) cube([21,3,42]);
 }
 // Door stops 6 mm short of the seam, so the cut plane doesn't slice through
-// the opening edge and leave a knife-edge on the left half.
+// the opening edge and leave a knife-edge on the left half. Its top also
+// stops below the back seam-bolt ear (z 95..105) — the ear needs solid wall
+// under it, and at the old height it overhung the opening.
 door_x0 = 12;
 door_w  = mcut_x - 6 - door_x0;
+door_z0 = 16;
+door_h  = 66;
 module mon_back_door_cut() {
-  translate([door_x0, Dm-wall-1, mfoot+6]) cube([door_w, wall+2, Hm-mfoot-16]);
+  translate([door_x0, Dm-wall-1, door_z0]) cube([door_w, wall+2, door_h]);
 }
+// Press-fit door. The lip drops into the opening with 0.3 mm clearance a
+// side, and crush ribs on ALL FOUR edges stand 0.5 mm proud so it goes in
+// with 0.2 mm interference per side and grips — the old version only had
+// ribs top and bottom, so it could rattle sideways.
+door_lip_t = 2.6;      // lip thickness (opening is `wall` = 3 deep)
+door_rib   = 0.5;      // crush height
+fan_cy     = -12;      // fan centre in the door's own frame
 module monitor_door() {
-  ow=door_w; doh=Hm-mfoot-16; fh=doh+12; lh=doh-0.6;
+  ow = door_w; doh = door_h;
+  fh = doh + 12;                       // faceplate: 6 mm flange all round
+  lw = ow - 0.6; lh = doh - 0.6;       // lip, 0.3 mm clearance per side
   difference() {
     union() {
-      translate([-ow/2-6,-fh/2,0]) cube([ow+12, fh, 2.5]);
-      translate([-ow/2+0.3,-lh/2,-2.5]) cube([ow-0.6, lh, 2.6]);
+      translate([-ow/2-6, -fh/2, 0]) cube([ow+12, fh, 2.5]);          // faceplate
+      translate([-lw/2, -lh/2, -door_lip_t]) cube([lw, lh, door_lip_t]);
+      // crush ribs — two per edge, all four edges
+      for (x = [-lw/2+8, lw/2-20]) {
+        translate([x, -lh/2-door_rib, -door_lip_t]) cube([12, door_rib, door_lip_t]);
+        translate([x,  lh/2,          -door_lip_t]) cube([12, door_rib, door_lip_t]);
+      }
+      for (y = [-lh/2+8, lh/2-20]) {
+        translate([-lw/2-door_rib, y, -door_lip_t]) cube([door_rib, 12, door_lip_t]);
+        translate([ lw/2,          y, -door_lip_t]) cube([door_rib, 12, door_lip_t]);
+      }
       // fan screw bosses on the inside face (self-tap M2.5)
       for (x=[-1,1], y=[-1,1])
-        translate([x*fan_holes/2, y*fan_holes/2 - fh*0.12, 2.5]) cylinder(d=6, h=4);
+        translate([x*fan_holes/2, fan_cy + y*fan_holes/2, 2.5]) cylinder(d=6, h=4);
     }
-    // --- fan aperture with a spoked grille (fan blows onto the Pi) ---
-    translate([0, -fh*0.12, -3]) {
+    // fan aperture with a spoked grille (fan blows onto the Pi)
+    translate([0, fan_cy, -3]) {
       difference() {
         cylinder(d=fan_sz-3, h=9);
         for (a=[0:60:300]) rotate([0,0,a]) translate([-1.4,-fan_sz/2,-1]) cube([2.8, fan_sz, 11]);
       }
-      for (x=[-1,1], y=[-1,1]) translate([x*fan_holes/2, y*fan_holes/2, -1]) cylinder(d=fan_screw, h=14);
+      for (x=[-1,1], y=[-1,1])
+        translate([x*fan_holes/2, y*fan_holes/2, -1]) cylinder(d=fan_screw, h=14);
     }
-    // a couple of exhaust slots up top + finger scallop
-    for (i=[-2:2]) translate([i*11-1.5, fh*0.30, -3]) cube([3, 16, 9]);
-    translate([0,fh/2,-3]) cylinder(d=12,h=9);
+    // exhaust slots above the fan, then a finger scallop clear of them
+    for (i=[-2:2]) translate([i*9-1.5, 12, -3]) cube([3, 18, 9]);
+    translate([0, fh/2, -3]) cylinder(d=12, h=9);
   }
 }
 module mon_bottom_open() { translate([wall,wall,-1]) cube([Wm-2*wall, Dm-2*wall, mfoot+1]); }
