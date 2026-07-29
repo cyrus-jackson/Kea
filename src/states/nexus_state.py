@@ -30,6 +30,7 @@ from backend.reminders import ReminderService
 from backend import lifebook
 from system_protocol import SystemProtocol
 from ui.glow_text import GlowText
+from ui import pixel_art
 
 SCALE = SCREEN_HEIGHT / 480.0
 
@@ -481,6 +482,19 @@ class NexusState(State):
                 for cxp, cyp in ((sel.left, sel.top), (sel.right, sel.top),
                                  (sel.left, sel.bottom), (sel.right, sel.bottom)):
                     pygame.draw.circle(surface, world[3], (cxp, cyp), s(2))
+
+        # Kea itself, sitting on the hub: alert when something is overdue,
+        # dozing on auto-pilot, otherwise idling with the odd blink.
+        try:
+            overdue = bool(self.reminders.overdue())
+        except Exception:
+            overdue = False
+        face = (pixel_art.SPRITES["kea_alert"] if overdue
+                else pixel_art.SPRITES["kea_sleep"] if self.auto_pilot
+                else pixel_art.KEA_IDLE.at(self.time_alive))
+        fp = max(2, int(2 * SCALE))
+        fw, fh = face.size(fp)
+        pixel_art.draw(surface, face, SCREEN_WIDTH - fw - s(12), s(380) - fh, fp)
 
         # ── NOW / NEXT transit board ─────────────────────────────────────
         by = s(398)

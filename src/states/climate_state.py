@@ -4,6 +4,7 @@ import math
 from states.base_state import State
 from backend.weather_api import fetch_stuttgart_weather
 from ui.glow_text import GlowText
+from ui import pixel_art
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from current_affairs import CurrentAffairs
 
@@ -276,6 +277,15 @@ class ClimateState(State):
                 for p in self.particles:
                     pygame.draw.line(surface, p[4], (int(p[0]), int(p[1])),
                                      (int(p[0] + 4), int(p[1] + p[3])), 1)
+
+            # pixel-art sky icon beside the temperature, picked from the
+            # live conditions (rain / snow / storm / cloud / sun / moon)
+            icon = pixel_art.weather_sprite(
+                data.get("description") or data.get("status")
+                or ("night" if not data.get("is_day") else "clear"))
+            ipx = max(2, int(3 * SCALE))
+            iw, ih = icon.size(ipx)
+            pixel_art.draw(surface, icon, s(14), int(SCREEN_HEIGHT * 0.17), ipx)
 
             if self.temp_text:
                 tw = self.temp_text.get_surface()

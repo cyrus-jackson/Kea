@@ -287,7 +287,53 @@ class Tube:
         return g
 
 
-DIALS = [Hourglass(), Candle(), Orbit(), Tube()]
+# ════════════════════════════════════════════════════════════════════════════
+class PixelPot:
+    """Pixel art: a tomato that ripens as the session burns down, with Kea
+    watching from the soil line. Green at the start, deep red at the end."""
+
+    name = "PIXEL"
+    flips = False
+
+    def render(self, size, frac, col, t, running, grains):
+        from ui import pixel_art as pa
+
+        w, h = size
+        g = pygame.Surface(size, pygame.SRCALPHA)
+        cx = w // 2
+
+        # the fruit, ripening: tint from green toward the session colour
+        ripe = 1.0 - frac                       # 0 at the start, 1 when done
+        tint = (*_lerp((92, 158, 66), col, ripe), int(110 + 120 * ripe))
+        px = max(3, int(min(w, h) * 0.055))
+        spr = pa.SPRITES["tomato"]
+        sw, sh = spr.size(px)
+        bob = int(math.sin(t * 2.2) * 2) if running else 0
+        pa.draw(g, spr, cx - sw // 2, int(h * 0.16) + bob, px, tint=tint)
+
+        # a row of pips: one per tenth still to go
+        pips = int(round(frac * 10))
+        pw = max(3, px // 2)
+        total = 10 * (pw * 2)
+        for i in range(10):
+            on = i < pips
+            c = col if on else (58, 52, 48)
+            gx = cx - total // 2 + i * pw * 2
+            g.fill(c, (gx, int(h * 0.60), pw, pw))
+
+        # Kea, watching the pot: awake while it runs, dozing when held
+        kp = max(2, px - 1)
+        kea = (pa.KEA_IDLE.at(t) if running else pa.SPRITES["kea_sleep"])
+        kw, kh = kea.size(kp)
+        pa.draw(g, kea, cx - kw // 2, int(h * 0.68), kp)
+
+        # soil line under them both
+        pygame.draw.rect(g, (74, 56, 38), (int(w * 0.12), int(h * 0.68) + kh,
+                                           int(w * 0.76), max(3, px)))
+        return g
+
+
+DIALS = [Hourglass(), Candle(), Orbit(), Tube(), PixelPot()]
 
 
 def pick(exclude=None):

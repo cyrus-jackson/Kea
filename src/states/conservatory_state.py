@@ -23,6 +23,7 @@ from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
 from current_affairs import CurrentAffairs
 from backend import world_weather, lifebook
+from ui import pixel_art
 
 SCALE = SCREEN_HEIGHT / 480.0
 
@@ -438,10 +439,17 @@ class ConservatoryState(State):
         pct = self.font_label.render(f"{int(yield_pct * 100):3d}%", True, CREAM)
         surface.blit(pct, (cx - pct.get_width() // 2, cy + s(6)))
 
-        # generation tag (bottom-left)
+        # generation tag (bottom-left), with a pixel specimen that grows
+        # with the garden's own fill: sprout -> plant -> bloom
+        stage = pixel_art.GROWTH[min(len(pixel_art.GROWTH) - 1,
+                                     int(yield_pct * len(pixel_art.GROWTH)))]
+        gp = max(2, int(2 * SCALE))
+        gw, gh = stage.size(gp)
+        pixel_art.draw(surface, stage, s(10), SCREEN_HEIGHT - s(20) - gh, gp)
+
         gen = self.font_label.render(
             f"GEN {self.generation:02d}  ·  DAY {now.timetuple().tm_yday}", True, (168, 140, 100))
-        surface.blit(gen, (s(10), SCREEN_HEIGHT - s(18)))
+        surface.blit(gen, (s(10) + gw + s(6), SCREEN_HEIGHT - s(18)))
 
         # dispatch painted on the planter box — marquee if it doesn't fit
         area = pygame.Rect(s(10), self.shelf_y + s(42),

@@ -22,6 +22,7 @@ import random
 from config import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE
 from states.base_state import State
 from states import pomodoro_dials
+from ui import pixel_art
 from hardware_input import BUTTON_POMODORO_EVENT, BUTTON_NOTIFICATION_EVENT
 
 WORK_TIME = 20 * 60
@@ -353,6 +354,22 @@ class PomodoroState(State):
         # which instrument is mounted, engraved small in the corner
         nm = self.font_small.render(self.dial.name, True, BRASS_DARK)
         surface.blit(nm, (s(10), SCREEN_HEIGHT - s(22)))
+
+        # Kea watches the clock: focused while it runs, dozing when held,
+        # pleased on a rest. (Skipped on PIXEL, which has its own droid.)
+        if self.dial.name != "PIXEL":
+            if self.transition_timer > 0:
+                face = pixel_art.SPRITES["kea_happy"]
+            elif not self.running:
+                face = pixel_art.SPRITES["kea_sleep"]
+            elif work:
+                face = pixel_art.KEA_IDLE.at(self.t)
+            else:
+                face = pixel_art.SPRITES["kea_happy"]
+            fp = max(2, int(2 * SCALE))
+            fw, fh = face.size(fp)
+            pixel_art.draw(surface, face, SCREEN_WIDTH - fw - s(10),
+                           SCREEN_HEIGHT - fh - s(16), fp)
 
         # ── transition banner ───────────────────────────────────────────
         if self.transition_timer > 0 and self.transition_mode:
