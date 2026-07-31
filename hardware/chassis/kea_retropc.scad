@@ -18,7 +18,7 @@
 // Servos want their OWN 5 V — never the Pi header.
 // ============================================================
 
-part = "case";  // "case" | "case_floor" | "turntable"
+part = "monitor";  // "case" | "case_floor" | "turntable"
                 // | "monitor_left" | "monitor_right" | "monitor" (preview)
                 // | "monitor_door" | "wedge" | "cam_cradle" | "assembly"
                 //
@@ -101,6 +101,10 @@ mfoot= 6;     // monitor foot thickness (bolts to the turntable)
 // horizontal pins + wires. That side's cradle guide is kept short and the
 // stack is NOT clamped to the wall there.
 gpio_side = 1;   // -1 = left, +1 = right
+// Cradle rib on the POWER/JACK side. 0 = none (default): the headphone jack
+// protrudes from that edge of the board and a rib there blocks it. If you
+// ever want lateral location back, keep it BELOW the jack (mon_aud_z).
+pwr_rib_h = 0;
 sym = slen*sin(recl);
 szm = mfoot + slen*cos(recl);
 Hm  = szm + mcap;             // monitor height (above its foot)
@@ -383,14 +387,22 @@ module mon_cradle() {
   gx0=stack_cx-28-3.5; gx1=stack_cx+28+0.5;
   cd=stack_t;                               // cradle depth — Pi+display+GPIO adapter
   gh_short = 14;
+  // Which side is which: the power/jack side is opposite the GPIO side.
+  pwr_is_left = (gpio_side > 0);
   translate([wall,wall,2.5]) cube([Wm-2*wall,cd,4]);   // shelf
-  // Side guides. Where the stack is flush to the wall there is no room for a
-  // rib and none is needed — the wall face locates it. The GPIO side's guide
-  // stays short so the sideways header has an open channel.
-  if (gx0 >= wall + 0.5)
-    translate([gx0,wall,4]) cube([3, cd, gpio_side<0 ? gh_short : 58]);
-  if (gx1 + 3 <= Wm - wall - 0.5)
-    translate([gx1,wall,4]) cube([3, cd, gpio_side>0 ? gh_short : 58]);
+  // Side guides.
+  //   JACK SIDE — nothing. A rib here ran straight down the gap between the
+  //   stack and the wall and fouled the headphone jack, which sticks out of
+  //   that very edge. Set pwr_rib_h > 0 for a low nub below the jack if the
+  //   stack ever needs more lateral location; the wedge holds it otherwise.
+  //   GPIO SIDE — short, so the sideways header keeps its open channel.
+  if (pwr_is_left) {
+    if (pwr_rib_h > 0) translate([gx0,wall,4]) cube([3, cd, pwr_rib_h]);
+    if (gx1 + 3 <= Wm - wall - 0.5) translate([gx1,wall,4]) cube([3, cd, gh_short]);
+  } else {
+    if (gx0 >= wall + 0.5) translate([gx0,wall,4]) cube([3, cd, gh_short]);
+    if (pwr_rib_h > 0) translate([gx1,wall,4]) cube([3, cd, pwr_rib_h]);
+  }
   // back flanges (the wedge bears on these) — split for the ribbon path
   translate([max(gx0, wall), wall+cd-3, 8]) cube([21,3,42]);
   translate([min(gx1+3-21, Wm-wall-21), wall+cd-3, 8]) cube([21,3,42]);

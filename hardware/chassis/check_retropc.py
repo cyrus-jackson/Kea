@@ -272,8 +272,14 @@ chk("audio aperture lands inside the side wall",
     6 < mfoot + mon_aud_z < Hm - 6, f"audio z {mfoot+mon_aud_z:.0f} of {Hm:.1f}")
 chk("audio aperture takes a 3.5 mm plug body", mon_aud_d >= 9,
     f"{mon_aud_d:.0f} mm")
-chk("no cradle rib where the stack is flush (it would be inside the wall)",
-    "if (gx0 >= wall + 0.5)" in src, "guide must be suppressed when flush")
+# THE JACK-SIDE RIB: it ran down the very gap the headphone jack sticks into.
+pwr_rib_h = p("pwr_rib_h")
+chk("no cradle rib blocking the headphone-jack side",
+    pwr_rib_h == 0 or pwr_rib_h + 4 < mon_aud_z - mon_aud_d/2,
+    f"rib height {pwr_rib_h:.0f} vs jack at z {mon_aud_z:.0f}")
+chk("jack-side gap is left completely open to the wall",
+    pwr_rib_h == 0,
+    f"anything in x {stack_cx-28-3.5:.1f}..{stack_cx-28:.1f} fouls the jack")
 chk("screen aperture still lands inside the body once flush",
     stack_cx - 51/2 > wall - 0.5 and stack_cx + 51/2 < Wm - wall + 0.5,
     f"aperture {stack_cx-25.5:.1f}..{stack_cx+25.5:.1f} of width {Wm:.0f}")
