@@ -66,9 +66,12 @@ btn_dx = 22;      // spacing of the FIVE buttons (back row), centred on W/2
 // top's underside, output shaft + horn poke up through the top into the
 // turntable. Body dangles in the cavity, guided by a collar.
 sv_L = 23.2;
-sv_W = 13.5;      // SG92R is 13 mm wide (was 12.8 — too tight)
-sv_body_h = 22.8; // body height below the flanges
-sv_screw = 28;    // flange screw-hole spacing (M2)
+sv_W = 13.5;        // SG92R is 13 mm wide (was 12.8 — too tight)
+sv_body_h = 22.8;   // body height below the flanges
+sv_screw = 28;      // flange screw-hole spacing (M2)
+sv_flange_L = 32.5; // TIP-TO-TIP across the mounting tabs — the servo is
+                    // T-shaped, so this, not sv_L, is what must clear
+sv_guide_h  = 12;   // how far the guide ribs hang below the deck
 
 // ---------- Monitor ----------
 // The stack is NOT centred: the GPIO side needs a wide channel for the
@@ -80,8 +83,11 @@ gapP = 0;     // power side: FLUSH — the stack sits straight against the inner
               // The Pi's jack nests into the oversized wall slot.
 gapG = 17;    // GPIO-side gap: header pins + dupont shells
 Wm   = wall + gapP + 56 + gapG + wall;   // = 86 (was 100)
-Dm   = 72;    // monitor depth (was 66 — deeper for the Pi+display+GPIO-adapter
-              // stack; the cradle/wedge now take a thicker stack)
+// Stack thickness reality check: Pi PCB + GPIO header + the Winkel-Adapter
+// + the display and its socket comes out far thicker than the 33 mm this was
+// built around — it printed too tight to assemble. Give the channel real room.
+stack_t = 46;   // depth of the cradle channel (measure yours; add ~4 spare)
+Dm   = 86;      // monitor depth (was 72 — too tight for the stack)
 // Everything that must line up with the display — cradle, screen aperture,
 // bezel, hood — hangs off this, not off Wm/2.
 stack_cx = wall + gapP + 28;
@@ -97,7 +103,12 @@ gpio_side = 1;   // -1 = left, +1 = right
 sym = slen*sin(recl);
 szm = mfoot + slen*cos(recl);
 Hm  = szm + mcap;             // monitor height (above its foot)
-scr_cut = [51,75];
+// Screen aperture. The old 51x75 centred on the panel mid-point sat ~2.5 mm
+// low relative to where the display actually rests on the cradle shelf, and
+// was only ~1 mm bigger than the active area — so the top of the picture was
+// hidden behind the frame. Bigger, and centred on the STACK, not the panel.
+scr_cut = [54, 80];
+scr_cy  = 6.5 + 85.5/2;   // shelf top + half the display = true screen centre
 
 // ---------- Monitor split: two halves you bolt together ----------
 // Back to the vertical half-split (much easier to print than a lid), and
@@ -183,11 +194,17 @@ module case() {
   }
 }
 
+// NOTE: every cutter must START BELOW the material and END ABOVE it. These
+// used to begin at Hc-1 — 1 mm below the TOP face — so they only removed the
+// top 1 mm of the 3 mm deck and printed with 2 mm of plastic in the bottom of
+// every hole. Start at Hc-wall-2 and run past the surface.
 module keyboard_holes() {
-  for (tx=[tog1_x, tog2_x]) translate([tx, kb_te_row, Hc-1]) cylinder(d=tog_d, h=wall+4);
-  translate([enc_x, kb_te_row, Hc-1]) cylinder(d=enc_d, h=wall+4);
+  z0 = Hc - wall - 2;
+  h  = wall + 4;
+  for (tx=[tog1_x, tog2_x]) translate([tx, kb_te_row, z0]) cylinder(d=tog_d, h=h);
+  translate([enc_x, kb_te_row, z0]) cylinder(d=enc_d, h=h);
   for (bx=[W/2-2*btn_dx, W/2-btn_dx, W/2, W/2+btn_dx, W/2+2*btn_dx])
-    translate([bx, kb_btn_row, Hc-1]) cylinder(d=btn_d, h=wall+4);
+    translate([bx, kb_btn_row, z0]) cylinder(d=btn_d, h=h);
 }
 // (Speaker grille + mount removed — Kea uses the Bluetooth speaker.)
 // Case-top interface: a shallow seat the turntable disc rotates in, the
@@ -199,14 +216,19 @@ module turntable_socket() {
   for (s=[-1,1]) translate([W/2+s*sv_screw/2, turn_y, Hc-wall-1])
     cylinder(d=2.4, h=wall+2);                                          // flange screws
 }
-// Collar hanging from the top's underside that guides the dangling servo
-// body (keeps it from wobbling on its two flange screws).
+// The SG92R is T-shaped: its mounting flanges stick out past the body on
+// both ends (32.5 mm tip-to-tip vs a 23 mm body). The old collar was a
+// closed rectangle sized to the BODY, so the flanges could never pass
+// through it — the servo physically could not be fitted without cutting
+// the case open. Now it's two ribs that only pinch the narrow (y) faces
+// and leave the x direction wide open, so the servo goes straight up from
+// the open bottom and its flanges land flat against the deck underside.
 module servo_collar() {
-  translate([W/2, turn_y, Hc-wall-10])
-    difference() {
-      translate([-(sv_L/2+2), -(sv_W/2+2), 0]) cube([sv_L+4, sv_W+4, 10]);
-      translate([-(sv_L/2+0.3), -(sv_W/2+0.3), -1]) cube([sv_L+0.6, sv_W+0.6, 12]);
-    }
+  for (sy = [-1, 1])
+    translate([W/2 - sv_flange_L/2,
+               turn_y + sy*(sv_W/2 + 0.3) - (sy < 0 ? 2 : 0),
+               Hc - wall - sv_guide_h])
+      cube([sv_flange_L, 2, sv_guide_h]);
 }
 module case_back_access() {                     // wiring access on the back
   translate([20, Dc-wall-1, 8]) cube([W-40, wall+2, Hc-16]);
@@ -315,27 +337,31 @@ module mon_intake_vents() {
     translate([s>0 ? Wm-wall-1 : -1, 14 + k*7, mfoot+8])
       cube([wall+2, 2.2, 22]);
 }
+// Bezel + hood follow scr_cy so they frame the aperture where it actually
+// is. The frame's inner edge is held OUTSIDE the aperture, so it can never
+// creep over the picture; the hood is a slim brow well clear of the glass.
 module mon_bezel() {
-  bw=9; bz=3.5; ow=scr_cut[0]+2*bw; oh=scr_cut[1]+2*bw;
-  translate([stack_cx,0,slen/2]) rotate([-90,0,0]) linear_extrude(bz)
+  bw=7; bz=2.5; ow=scr_cut[0]+2*bw; oh=scr_cut[1]+2*bw;
+  translate([stack_cx,0,scr_cy]) rotate([-90,0,0]) linear_extrude(bz)
     difference() {
       offset(r=4) offset(delta=-4) square([ow,oh],center=true);
-      offset(r=2) offset(delta=-2) square([scr_cut[0]+5, scr_cut[1]+5],center=true);
+      offset(r=2) offset(delta=-2) square([scr_cut[0]+4, scr_cut[1]+4],center=true);
     }
-  bw2=9; hz=slen/2+scr_cut[1]/2+bw2;
-  translate([stack_cx,0,hz]) rotate([-90,0,0]) linear_extrude(12)
-    offset(r=3) offset(delta=-3) square([scr_cut[0]+2*bw2+6, 10], center=true);
+  hz = scr_cy + scr_cut[1]/2 + bw + 3;
+  if (hz + 5 < slen)                       // only if it clears the panel top
+    translate([stack_cx,0,hz]) rotate([-90,0,0]) linear_extrude(9)
+      offset(r=3) offset(delta=-3) square([scr_cut[0]+2*bw, 8], center=true);
 }
+// One clean straight-through opening. The old version added a funnel that
+// left an internal lip around the aperture — the "extra block" inside the
+// monitor. Nothing protrudes inward now: panel thickness only.
 module mon_screen_cut() {
-  hull() {
-    translate([stack_cx,-0.2,slen/2]) cube([scr_cut[0]+6,0.1,scr_cut[1]+6],center=true);
-    translate([stack_cx,4,slen/2]) cube([scr_cut[0],0.1,scr_cut[1]],center=true);
-  }
-  translate([stack_cx,4,slen/2]) cube([scr_cut[0], wall+10, scr_cut[1]], center=true);
+  translate([stack_cx, wall/2, scr_cy])
+    cube([scr_cut[0], wall + 12, scr_cut[1]], center=true);
 }
 module mon_cradle() {
   gx0=stack_cx-28-3.5; gx1=stack_cx+28+0.5;
-  cd=37;                                    // cradle depth — Pi+display+GPIO adapter
+  cd=stack_t;                               // cradle depth — Pi+display+GPIO adapter
   gh_short = 14;
   translate([wall,wall,2.5]) cube([Wm-2*wall,cd,4]);   // shelf
   // Side guides. Where the stack is flush to the wall there is no room for a

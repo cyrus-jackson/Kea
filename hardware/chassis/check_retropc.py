@@ -25,10 +25,13 @@ kb_btn_row, kb_te_row = p("kb_btn_row"), p("kb_te_row")
 tog1_x, tog2_x = p("tog1_x"), p("tog2_x")
 BTN_HEAD = 14.0     # GUUZI 12 mm metal button head diameter
 sv_L, sv_W, sv_screw = p("sv_L"), p("sv_W"), p("sv_screw")
-CRADLE_D = 37       # mon_cradle depth (must match scad); STACK+adapter+wedge
-GPIO_STACK = 33     # assumed Pi+display+GPIO-adapter thickness
+CRADLE_D = None     # read from the scad below
+GPIO_STACK = None
 gapP, gapG = p("gapP"), p("gapG")
 Dm, recl, slen, mfoot, mcap = p("Dm"), p("recl"), p("slen"), p("mfoot"), p("mcap")
+stack_t = p("stack_t")
+CRADLE_D = stack_t
+GPIO_STACK = stack_t - 4   # real stack, leaving spare
 wall_ = p("wall")
 Wm = wall_ + gapP + 56 + gapG + wall_          # matches the scad expression
 stack_cx = wall_ + gapP + 28
@@ -49,6 +52,40 @@ def chk(n, ok, d=""):
 
 
 print(f"case {W:.0f}x{Dc:.0f}x{Hc:.0f}   monitor {Wm:.0f}x{Dm:.0f}x{Hm:.1f}\n")
+
+# ══════════════════════════════════════════════════════════════════════════
+# THROUGH-CUT CHECKS — a hole can sit in exactly the right place, be exactly
+# the right size, and still print SOLID because its cutter doesn't span the
+# wall. That is what happened to the keyboard holes. Every cutter below is
+# checked to start below the material and end above it.
+# ══════════════════════════════════════════════════════════════════════════
+def through(name, cut_lo, cut_len, mat_lo, mat_hi):
+    cut_hi = cut_lo + cut_len
+    ok = cut_lo <= mat_lo + 1e-9 and cut_hi >= mat_hi - 1e-9
+    detail = (f"cutter {cut_lo:.1f}..{cut_hi:.1f} vs material "
+              f"{mat_lo:.1f}..{mat_hi:.1f}")
+    if not ok:
+        left = max(0.0, mat_hi - cut_hi) + max(0.0, cut_lo - mat_lo)
+        detail += f"  -> {left:.1f} mm of plastic LEFT IN THE HOLE"
+    chk(name, ok, detail)
+
+
+# case deck: every keyboard hole (buttons, toggles, encoder)
+kb_z0 = Hc - wall - 2          # matches keyboard_holes() in the scad
+through("keyboard holes cut clean through the deck",
+        kb_z0, wall + 4, Hc - wall, Hc)
+# turntable shaft hole + servo flange screws
+through("turntable shaft hole goes through", Hc - wall - 1, wall + 2, Hc - wall, Hc)
+# monitor roof: camera turret slot
+through("camera turret slot goes through the roof",
+        Hm - wall - 1, wall + 2, Hm - wall, Hm)
+# monitor screen aperture (cut across the panel thickness)
+through("screen aperture goes through the panel",
+        wall/2 - (wall + 12)/2, wall + 12, 0, wall)
+# door fan holes through the 2.5 mm faceplate
+through("fan bolt holes go through the door", -1, 14, 0, 2.5)
+# cam_cradle camera screw holes through its 2.5 mm plate
+through("cam_cradle screw holes go through", -1, 5, 0, 2.5)
 
 # --- bed ---
 chk("case fits bed", W <= BED and Dc <= BED and Hc <= BED)
@@ -74,10 +111,22 @@ chk("encoder clear of the nearest button",
 # --- turntable / servo ---
 chk("turntable seat fits on the case top", turn_y + turn_r < Dc - wall and turn_y - turn_r > kb_d,
     f"turntable spans {turn_y-turn_r:.0f}..{turn_y+turn_r:.0f} of depth {Dc:.0f}")
-chk("SG92R hangs under the top: cavity deep enough + flange holes on the disc",
-    Hc - wall >= 25 and sv_screw + 3 < 2*turn_r
-    and sv_L + 4 < 2*(turn_r+0.6) and sv_W + 4 < 2*(turn_r+0.6),
-    f"cavity {Hc-wall:.0f} (need >=25), flange span {sv_screw:.0f} vs disc {2*turn_r:.0f}")
+sv_flange_L, sv_guide_h = p("sv_flange_L"), p("sv_guide_h")
+chk("SG92R hangs under the deck: cavity deep enough for the body",
+    Hc - wall >= sv_body_h if (sv_body_h := p("sv_body_h")) else True,
+    f"cavity {Hc-wall:.0f} vs body {p('sv_body_h'):.1f}")
+# THE ONE THAT BIT: the servo is T-shaped, so the flanges — not the body —
+# decide whether it can be inserted at all.
+chk("servo mount is OPEN across the flanges (T-shape can be inserted)",
+    "for (sy = [-1, 1])" in src and "sv_flange_L" in src,
+    "guide must be two ribs, not a closed collar sized to the body")
+chk("guide ribs pinch only the narrow faces, leaving the flanges a path",
+    sv_flange_L > sv_L + 6,
+    f"flanges {sv_flange_L:.1f} tip-to-tip vs body {sv_L:.1f} — ribs must not enclose x")
+chk("flange screw holes match the flange span",
+    sv_screw < sv_flange_L - 2, f"screws {sv_screw:.0f} within flanges {sv_flange_L:.1f}")
+chk("servo + guide fit the case cavity height",
+    sv_guide_h + 2 < Hc - wall, f"ribs {sv_guide_h:.0f} of cavity {Hc-wall:.0f}")
 chk("monitor foot bolt circle fits on the turntable", turn_bolt/2 + 3 < turn_r,
     f"bolt r={turn_bolt/2:.0f}, turntable r={turn_r:.0f}")
 chk("monitor foot bolt circle fits under the monitor", turn_bolt + 6 < min(Wm, Dm),
