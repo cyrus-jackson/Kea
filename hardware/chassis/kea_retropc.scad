@@ -78,9 +78,10 @@ sv_guide_h  = 12;   // how far the guide ribs hang below the deck
 // sideways header, but the power side only needs enough room for the plug
 // to reach the Pi's jack through the wall. So the cassette is pushed up
 // against the power-side wall and the monitor is that much narrower.
-gapP = 0;     // power side: FLUSH — the stack sits straight against the inner
-              // wall face, which becomes its guide (so no cradle rib there).
-              // The Pi's jack nests into the oversized wall slot.
+gapP = 8;     // power side. NOT flush any more: the Pi's 3.5 mm headphone
+              // jack shares this edge with the micro-USB and stands proud of
+              // the board, so it needs clearance — and a plug needs more.
+              // Flush (0) crushed it against the wall.
 gapG = 17;    // GPIO-side gap: header pins + dupont shells
 Wm   = wall + gapP + 56 + gapG + wall;   // = 86 (was 100)
 // Stack thickness reality check: Pi PCB + GPIO header + the Winkel-Adapter
@@ -118,8 +119,8 @@ scr_cy  = 6.5 + 85.5/2;   // shelf top + half the display = true screen centre
 // drop the bolts in. Undo them to open.
 // Seam sits in the GPIO-side margin, just outside the bezel (which now spans
 // stack_cx +/- 34.5, i.e. 3.5..72.5) and inside the body edge.
-mcut_x   = 67;      // GPIO margin, just outside the bezel (ends 65.5)
-ear_len  = 11;      // right ear must stay inside Wm: 67+11 = 78 < 79
+mcut_x   = 75;      // GPIO margin, just outside the bezel (ends 73)
+ear_len  = 11;      // right ear must stay inside Wm: 75+11 = 86 < 87
 ear_w    = 10;      // ear width
 ear_p    = 7;       // how far it stands off the surface
 join_d   = 3.4;     // clearance hole — M3 bolt straight through both ears
@@ -158,6 +159,11 @@ mon_pwr_side  = -1; // -1 left wall, 1 right wall of the monitor
 mon_pwr_z     = 80; // high up the side wall — the Pi's power edge sits near the
                     // TOP of the slope, like the original chassis (calibrate)
 mon_pwr_depth = 30; // from the screen face toward the back
+// The 3.5 mm audio jack sits on the SAME edge as the micro-USB, roughly
+// 43 mm along it, and sticks out past the board — so it gets its own
+// aperture in the same wall. Measure yours at dry-fit and set mon_aud_z.
+mon_aud_z     = 37; // along the slope (power jack is at mon_pwr_z)
+mon_aud_d     = 11; // clear enough for a 3.5 mm plug body, not just the jack
 
 // ============================================================
 // CASE
@@ -330,6 +336,10 @@ module mon_power_slot() {
   translate([mon_pwr_side>0 ? Wm-wall-2 : -2, mon_pwr_depth, mfoot + mon_pwr_z])
     rotate([0,90,0])
       hull() for (dz=[-4,4], dy=[-2.5,2.5]) translate([dz,dy,0]) cylinder(d=13, h=wall+4);
+  // headphone jack, same wall, further down the same board edge
+  translate([mon_pwr_side>0 ? Wm-wall-2 : -2, mon_pwr_depth, mfoot + mon_aud_z])
+    rotate([0,90,0])
+      hull() for (dz=[-2,2]) translate([dz,0,0]) cylinder(d=mon_aud_d, h=wall+4);
 }
 // Low side-wall intake louvers so the fan pulls fresh air across the Pi.
 module mon_intake_vents() {
@@ -341,7 +351,8 @@ module mon_intake_vents() {
 // is. The frame's inner edge is held OUTSIDE the aperture, so it can never
 // creep over the picture; the hood is a slim brow well clear of the glass.
 module mon_bezel() {
-  bw=7; bz=2.5; ow=scr_cut[0]+2*bw; oh=scr_cut[1]+2*bw;
+  bw=7; bz=1.0; ow=scr_cut[0]+2*bw; oh=scr_cut[1]+2*bw;   // bz was 2.5:
+                    // a flatter frame so it doesn't shadow the picture
   translate([stack_cx,0,scr_cy]) rotate([-90,0,0]) linear_extrude(bz)
     difference() {
       offset(r=4) offset(delta=-4) square([ow,oh],center=true);
@@ -352,12 +363,21 @@ module mon_bezel() {
     translate([stack_cx,0,hz]) rotate([-90,0,0]) linear_extrude(9)
       offset(r=3) offset(delta=-3) square([scr_cut[0]+2*bw, 8], center=true);
 }
-// One clean straight-through opening. The old version added a funnel that
-// left an internal lip around the aperture — the "extra block" inside the
-// monitor. Nothing protrudes inward now: panel thickness only.
+// One clean straight-through opening, and the panel is THINNED around it so
+// the picture isn't looking out of a deep well. `face_t` is what's left of
+// the wall right around the aperture; the full `wall` remains everywhere
+// else, so the panel keeps its stiffness.
+face_t   = 1.4;    // frame thickness at the screen (was the full 3 mm wall)
+face_pad = 5;      // how far the thinned area extends past the aperture
+                   // (kept small so the relief stays on the panel)
 module mon_screen_cut() {
   translate([stack_cx, wall/2, scr_cy])
     cube([scr_cut[0], wall + 12, scr_cut[1]], center=true);
+  // relieve the back of the panel around the opening: removes wall-face_t
+  // of depth, so the display sits closer to the front surface
+  translate([stack_cx, face_t + (wall - face_t)/2 + 0.01, scr_cy])
+    cube([scr_cut[0] + 2*face_pad, wall - face_t, scr_cut[1] + 2*face_pad],
+         center=true);
 }
 module mon_cradle() {
   gx0=stack_cx-28-3.5; gx1=stack_cx+28+0.5;

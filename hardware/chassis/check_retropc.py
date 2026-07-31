@@ -152,6 +152,24 @@ chk("cradle deep enough for the GPIO-adapter stack + wedge",
     f"cradle {CRADLE_D:.0f} vs stack {GPIO_STACK:.0f}+wedge, inner {Dm-wall:.0f}")
 chk("camera turret on the monitor roof", sym+3 < turret_y < Dm-6, f"roof {sym:.1f}..{Dm:.0f}, turret {turret_y:.0f}")
 
+# --- screen frame: thin enough not to shadow the picture ---
+face_t, face_pad = p("face_t"), p("face_pad")
+bz = 1.0     # bezel proud height in mon_bezel()
+chk("screen frame is thinner than the wall (relieved behind the aperture)",
+    face_t < wall, f"frame {face_t} mm of a {wall:.0f} mm wall")
+chk("frame still thick enough to print and hold its shape",
+    face_t >= 1.2, f"{face_t} mm — below ~1.2 gets floppy/translucent")
+chk("total depth in front of the display is small",
+    face_t + bz <= 2.6,
+    f"{face_t+bz:.1f} mm (panel {face_t} + bezel {bz}) — was 3 + 2.5 = 5.5")
+chk("thinned area stays inside the panel",
+    scr_cut[1] + 2*face_pad < slen - 2
+    and scr_cut[0] + 2*face_pad < Wm - 2*wall
+    if (scr_cut := [float(v) for v in re.search(
+        r"scr_cut\s*=\s*\[([\d.]+),\s*([\d.]+)\]", src).groups()]) else True,
+    f"relief {scr_cut[0]+2*face_pad:.0f}x{scr_cut[1]+2*face_pad:.0f} "
+    f"in panel {Wm-2*wall:.0f}x{slen:.0f}")
+
 # --- turret roof slot: tight, but still passes the ribbon ---
 ts = [float(v) for v in re.search(r"turret_slot\s*=\s*\[([\d.]+),\s*([\d.]+)\]", src).groups()]
 chk("turret slot passes a 16 mm camera ribbon", ts[0] >= 16.5,
@@ -243,8 +261,17 @@ chk("monitor power slot lands inside the side wall",
 # and the wide channel must be on the GPIO side
 mon_pwr_side = p("mon_pwr_side")
 gpio_side = p("gpio_side")
-chk("power side is flush to the wall (no wasted space)",
-    gapP == 0, f"power gap {gapP:.0f} mm")
+chk("power side leaves room for the headphone jack AND a plug",
+    gapP >= 7, f"power gap {gapP:.0f} mm (jack stands proud of the board)")
+chk("power side isn't wastefully wide", gapP <= 12, f"{gapP:.0f} mm")
+mon_aud_z, mon_aud_d = p("mon_aud_z"), p("mon_aud_d")
+chk("audio aperture is separated from the power slot",
+    abs(mon_aud_z - mon_pwr_z) > mon_aud_d/2 + 10.5 + 2,
+    f"audio at {mon_aud_z:.0f}, power at {mon_pwr_z:.0f} along the slope")
+chk("audio aperture lands inside the side wall",
+    6 < mfoot + mon_aud_z < Hm - 6, f"audio z {mfoot+mon_aud_z:.0f} of {Hm:.1f}")
+chk("audio aperture takes a 3.5 mm plug body", mon_aud_d >= 9,
+    f"{mon_aud_d:.0f} mm")
 chk("no cradle rib where the stack is flush (it would be inside the wall)",
     "if (gx0 >= wall + 0.5)" in src, "guide must be suppressed when flush")
 chk("screen aperture still lands inside the body once flush",
