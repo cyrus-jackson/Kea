@@ -73,6 +73,40 @@ dtoverlay -h <your-overlay>
 Ask me to add the extra buttons/toggle to the code and I'll assign pins
 and wire up the events — right now those parts would do nothing.
 
+### 2a. With the stacking extender: what you actually gain
+
+Reaching pins 1–26 does **not** mean they're free — the display driver
+still owns the ones it uses. Find out on your own Pi rather than trusting
+a datasheet:
+
+```bash
+sudo apt install raspi-gpio      # once
+python3 tools/check_free_pins.py
+```
+
+It reads your `config.txt` overlays, asks the running Pi what every pin is
+doing, cross-references the pins Kea already claims, and prints the
+candidates. Anything reported **ALT0–ALT5** belongs to a peripheral — SPI
+for the display, I²C, UART — and is off-limits.
+
+**The real win isn't GPIOs, it's power.** The extender finally gives you:
+
+| Now reachable | Pins | Why it matters |
+|---|---|---|
+| **3.3 V** | 1, 17 | proper supply for the KY-040's `+` — retires the GPIO-12 hack (see §3) |
+| **5 V** | 2, 4 | the 30 mm fan, and the amp if you ever go wired |
+| **I²C** SDA/SCL | 3, 5 | the PCA9685 — needs exactly these two |
+
+On a typical SPI 3.5" panel the display claims **SPI0** (pins 19, 21, 23,
+24, 26) plus a few control lines (often 11, 18, 22, and sometimes 12), and
+leaves BCM 4 (pin 7), 27 (pin 13), 22 (pin 15), 23 (pin 16) free — which
+would be plenty for the extra buttons and toggle. **Confirm with the
+script before soldering**; the exact set depends on your overlay.
+
+Two to treat carefully: BCM 2/3 (pins 3/5) have fixed 1.8 kΩ pull-ups —
+fine for I²C, poor for buttons. BCM 14/15 (pins 8/10) are the serial
+console unless you've disabled it.
+
 ---
 
 ## 3. The `+` pin on the encoder (important)
@@ -91,9 +125,10 @@ to ~0.9 V — inside the Pi's undefined band — which shows up as **a phantom
 button press on every detent**. The board's pull-ups draw well under 1 mA,
 so a GPIO can supply them.
 
-- **Wire `+` → pin 32.** Don't leave it floating.
-- Prefer real 3.3 V? Use pin 1 or 17 via the extender and run Kea with
-  `KEA_ENCODER_VCC=-1` so it stops driving pin 32.
+- **Now that you have the extender, the better fix is real 3.3 V:** wire
+  `+` → **pin 1 or 17** and run Kea with `KEA_ENCODER_VCC=-1` so it stops
+  driving pin 32. A real rail is stiffer than a GPIO and frees BCM 12.
+- Without the extender: wire `+` → pin 32. Don't leave it floating.
 - **3.3 V only — never 5 V.** Through those pull-ups, 5 V would go
   straight into GPIO 5/6 and damage the Pi.
 
