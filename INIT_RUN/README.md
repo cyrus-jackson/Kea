@@ -24,12 +24,33 @@ Environment=KEA_ROTATION=90
 Environment=SDL_AUDIODRIVER=pulseaudio
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=KEA_START_VOLUME=20
+
+# --- camera data collection ---
+Environment=KEA_DATA_DIR=/home/pi/kea_data
+Environment=KEA_TAGS_FILE=/home/pi/.kea_tags.json
+
+# --- where offload.py sends it (encrypted B2 remote) ---
+# Kea itself never reads these; they're here so that anything you run
+# inside the screen session — `python3 tools/offload.py` — inherits them.
+Environment=KEA_RCLONE_REMOTE=b2_enc
+Environment=KEA_RCLONE_PATH=
+
+# Secrets (if any) come from a 0600 file, NOT from Environment= lines.
+# See § 3.8. Harmless if the file doesn't exist.
+EnvironmentFile=-/home/pi/.config/kea/secrets.env
+
 ExecStart=/bin/bash -c '/usr/bin/screen -ls main | grep -q "No Sockets found" && /usr/bin/screen -dmS main'
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+> ⚠️ **Never put a password on an `Environment=` line.** Unit files in
+> `/etc/systemd/system/` are world-readable (0644) and any user on the Pi
+> can run `systemctl cat autoscreen.service` to read them. The
+> `EnvironmentFile=` above is the safe route — see § 3.8. The leading `-`
+> means "don't fail if it's missing".
 
 ## 2. Running Kea inside the screen session
 
@@ -165,8 +186,10 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-Environment=KEA_RCLONE_REMOTE=b2
-Environment=KEA_RCLONE_PATH=kea-data/images
+Environment=KEA_DATA_DIR=%h/kea_data
+Environment=KEA_RCLONE_REMOTE=b2_enc
+Environment=KEA_RCLONE_PATH=
+EnvironmentFile=-%h/.config/kea/secrets.env
 ExecStart=/usr/bin/python3 %h/Kea/tools/offload.py --quiet
 EOF
 
@@ -211,6 +234,61 @@ nano ~/.kea_tags.json      # add "night", "two_people", "glasses", ...
 Kea re-reads it every time you open the camera screen — no restart.
 Images already saved keep the tag they were shot with, so adding tags
 never invalidates data you've already collected.
+
+### 3.8 Secrets: what actually needs to be in the environment
+
+**Short answer: probably nothing.** When you create the `b2_enc` crypt
+remote with `rclone config`, both passwords are stored (obscured) in
+`~/.config/rclone/rclone.conf`, which rclone creates as **0600 — readable
+only by you**. `offload.py` runs as `pi`, finds that file, and just works.
+No password ever has to touch a systemd unit.
+
+Lock the config down and confirm it:
+
+```bash
+chmod 600 ~/.config/rclone/rclone.conf
+ls -l ~/.config/rclone/rclone.conf     # -rw------- 1 pi pi
+```
+
+**If you'd rather keep the passwords out of rclone.conf**, rclone reads
+them from the environment instead — but put them in a protected file, not
+in the unit:
+
+```bash
+mkdir -p ~/.config/kea && chmod 700 ~/.config/kea
+cat > ~/.config/kea/secrets.env <<'EOF'
+RCLONE_CRYPT_PASSWORD=<output of: rclone obscure 'your first password'>
+RCLONE_CRYPT_PASSWORD2=<output of: rclone obscure 'your second password'>
+EOF
+chmod 600 ~/.config/kea/secrets.env
+```
+
+Both services already reference it with `EnvironmentFile=-…`, so it's
+picked up automatically and ignored if absent.
+
+> Use `rclone obscure` on the values — rclone expects the obscured form,
+> not the plaintext. And note "obscured" is *not* encryption: it stops a
+> shoulder-surfer, not someone who can read the file. The file permissions
+> are what actually protect it.
+
+**Why not `Environment=RCLONE_CRYPT_PASSWORD=…` in the unit?** Because
+`/etc/systemd/system/*.service` is world-readable, and `systemctl cat`
+or `systemctl show` will print it for any user on the box. Secrets in
+unit files is one of the most common ways they leak.
+
+Also add the same lines to the offload service so the timer sees them:
+
+```ini
+# in ~/.config/systemd/user/kea-offload.service, under [Service]
+EnvironmentFile=-%h/.config/kea/secrets.env
+```
+
+Verify what a unit will actually run with:
+
+```bash
+systemctl show autoscreen.service -p Environment
+systemctl --user show kea-offload.service -p Environment
+```
 
 ## 4. Bluetooth speaker (auto-connect on boot)
 
