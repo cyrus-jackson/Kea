@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-offload.py — move collected images to OneDrive, safely.
+offload.py — move collected images to cloud storage, safely.
 
 Uses `rclone move`, which deletes the local file ONLY after the upload has
 been verified. Nothing is ever removed on the strength of "probably went
@@ -11,14 +11,16 @@ images just accumulate locally, which at ~180 KB each is harmless.
     python3 tools/offload.py --dry-run       # show what would move
     python3 tools/offload.py --status        # what's waiting, no upload
 
-One-time setup is in INIT_RUN/README.md (§ camera data). Short version:
+Backend-agnostic: it only ever runs `rclone move <local> <remote>:<path>`,
+so B2, S3, Drive, SFTP or your Mac all work by changing two env vars —
+no code change. Setup is in INIT_RUN/README.md § 3.
 
-    rclone config          # create a remote named "onedrive"
-    rclone lsd onedrive:   # prove it works
+    rclone config        # create a remote named "b2"
+    rclone lsd b2:kea-data
 
 Environment:
-    KEA_RCLONE_REMOTE   remote name        (default: onedrive)
-    KEA_RCLONE_PATH     folder on it       (default: KeaData)
+    KEA_RCLONE_REMOTE   remote name        (default: b2)
+    KEA_RCLONE_PATH     path on it         (default: kea-data/images)
     KEA_DATA_DIR        local root         (default: ~/kea_data)
     KEA_RCLONE_BWLIMIT  e.g. 2M            (default: unset = full speed)
 """
@@ -32,8 +34,8 @@ import sys
 HOME = os.path.expanduser("~")
 ROOT = os.getenv("KEA_DATA_DIR", os.path.join(HOME, "kea_data"))
 PENDING = os.path.join(ROOT, "pending")
-REMOTE = os.getenv("KEA_RCLONE_REMOTE", "onedrive")
-REMOTE_PATH = os.getenv("KEA_RCLONE_PATH", "KeaData")
+REMOTE = os.getenv("KEA_RCLONE_REMOTE", "b2")
+REMOTE_PATH = os.getenv("KEA_RCLONE_PATH", "kea-data/images")
 BWLIMIT = os.getenv("KEA_RCLONE_BWLIMIT", "").strip()
 MIN_AGE = os.getenv("KEA_RCLONE_MIN_AGE", "2m")   # never grab a file mid-write
 

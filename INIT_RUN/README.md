@@ -71,90 +71,102 @@ If you have a keyboard attached to the Raspberry Pi or are forwarding inputs acr
 - **Attach to view the output:** `screen -r main`
 - **Detach from screen:** Press `Ctrl+A`, then `D`
 
-## 3. Camera data → OneDrive (one-time)
+## 3. Camera data → Backblaze B2 (one-time)
 
 The camera screen writes approved shots to `~/kea_data/pending/`. A timer
-then moves them to OneDrive with `rclone move`, which deletes the local
+moves them to cloud storage with `rclone move`, which deletes the local
 copy **only after** a verified upload.
 
-### 3.1 Install and authorise rclone
+**Why B2 and not OneDrive:** rclone's OneDrive backend asks for
+`Files.ReadWrite.All` — your entire drive. B2 application keys can be
+locked to a **single bucket**, so the credential sitting on the Pi opens
+one bucket of training images and nothing else. That's the point of the
+feature, and it costs no extra effort. 10 GB free.
+
+### 3.1 Make a bucket and a key scoped to it
+
+On [backblaze.com](https://www.backblaze.com/) (B2 Cloud Storage):
+
+1. **Create a bucket** — name it e.g. `kea-data`, set it **Private**.
+2. **App Keys → Add a New Application Key**:
+   - Name: `kea-pi`
+   - **Allow access to Bucket(s): `kea-data`** ← the important bit; do
+     *not* leave it on "All"
+   - Capabilities: tick **listFiles, readFiles, writeFiles, deleteFiles**
+     (delete is needed for `move` to clean up; drop it and use `copy`
+     instead if you'd rather the key can't delete)
+3. Copy the **keyID** and **applicationKey** — the secret is shown **once**.
+
+### 3.2 Configure rclone on the Pi
 
 ```bash
 sudo apt install rclone
-```
-
-**The headless catch:** `rclone config` wants a browser, and the Pi hasn't
-got a usable one. Do the OAuth on your Mac instead:
-
-```bash
-# ON YOUR MAC (rclone installed there too):
-rclone authorize "onedrive"
-# a browser opens; sign in; it prints a long token — copy the whole thing
-```
-
-Then on the Pi:
-
-```bash
 rclone config
 #  n) New remote
-#  name> onedrive
-#  Storage> onedrive
-#  ... accept defaults ...
-#  Use auto config? > n          <-- IMPORTANT, say NO
-#  paste the token from your Mac
-#  choose your drive (usually 1: OneDrive Personal)
+#  name> b2
+#  Storage> b2
+#  account> <your keyID>
+#  key>     <your applicationKey>
+#  hard_delete> false        (keeps a version history; true deletes outright)
+#  ... accept the rest ...
 ```
 
-Prove it works — this must list your OneDrive folders:
+No browser, no OAuth, no Azure — B2 uses plain keys, so this works fine
+headless. Prove it:
 
 ```bash
-rclone lsd onedrive:
+rclone lsd b2:kea-data       # should succeed and list nothing yet
 ```
 
-### 3.2 (Recommended) encrypt before upload
+Then point Kea at it:
+
+```bash
+export KEA_RCLONE_REMOTE=b2
+export KEA_RCLONE_PATH=kea-data/images
+```
+
+### 3.3 (Recommended) encrypt before upload
 
 These are photos of you and your home. `rclone crypt` encrypts filenames
-and contents on the Pi, so OneDrive only ever stores noise:
+and contents **on the Pi**, so Backblaze stores only noise:
 
 ```bash
 rclone config
-#  n) New remote  ->  name> onedrive_enc  ->  Storage> crypt
-#  remote> onedrive:KeaData
-#  encrypt filenames> standard ; set two passwords (keep them safe!)
+#  n) New remote  ->  name> b2_enc  ->  Storage> crypt
+#  remote> b2:kea-data/images
+#  filename_encryption> standard ; set two passwords
 ```
 
-Then point Kea at the encrypted remote:
-
 ```bash
-export KEA_RCLONE_REMOTE=onedrive_enc
+export KEA_RCLONE_REMOTE=b2_enc
 export KEA_RCLONE_PATH=""
 ```
 
-> Keep those passwords somewhere safe. Lose them and the images are
-> unrecoverable — that's the whole point of it.
+> Save those passwords somewhere safe. Without them the images cannot be
+> recovered — which is exactly what makes it worth doing.
 
-### 3.3 Upload manually first
+### 3.4 Upload manually first
 
 ```bash
-python3 tools/offload.py --status     # what's waiting
+python3 tools/offload.py --status     # what's waiting locally
 python3 tools/offload.py --dry-run    # what would move
 python3 tools/offload.py              # actually move it
 ```
 
-### 3.4 Run it on a timer
+### 3.5 Run it on a timer
 
 ```bash
 mkdir -p ~/.config/systemd/user
 
 cat > ~/.config/systemd/user/kea-offload.service <<'EOF'
 [Unit]
-Description=Upload Kea camera data to OneDrive
+Description=Upload Kea camera data
 After=network-online.target
 
 [Service]
 Type=oneshot
-Environment=KEA_RCLONE_REMOTE=onedrive
-Environment=KEA_RCLONE_PATH=KeaData
+Environment=KEA_RCLONE_REMOTE=b2
+Environment=KEA_RCLONE_PATH=kea-data/images
 ExecStart=/usr/bin/python3 %h/Kea/tools/offload.py --quiet
 EOF
 
@@ -173,22 +185,30 @@ EOF
 
 systemctl --user daemon-reload
 systemctl --user enable --now kea-offload.timer
-systemctl --user list-timers | grep kea      # confirm it's scheduled
+systemctl --user list-timers | grep kea
 ```
 
-Offline or OneDrive unreachable? The script says so and **leaves the files
-alone** — they go next time. At ~180 KB a shot, a backlog is harmless.
+Offline or the remote unreachable? The script says so and **leaves the
+files alone** — they go next time. At ~180 KB a shot, a backlog is
+harmless.
 
-### 3.5 Tags
+### 3.6 Switching backends later
+
+`offload.py` only ever calls `rclone move <local> <remote>:<path>`, so any
+rclone backend works with **no code change** — just the two env vars.
+Google Drive, S3, an SFTP box, your Mac: `KEA_RCLONE_REMOTE` and
+`KEA_RCLONE_PATH` are the whole interface.
+
+### 3.7 Tags
 
 Tags live in `~/.kea_tags.json`, created on first run as
 `["me", "empty", "other"]`. Edit it freely:
 
 ```bash
-nano ~/.kea_tags.json      # e.g. add "night", "two_people", "glasses"
+nano ~/.kea_tags.json      # add "night", "two_people", "glasses", ...
 ```
 
-Kea re-reads the file every time you open the camera screen — no restart.
+Kea re-reads it every time you open the camera screen — no restart.
 Images already saved keep the tag they were shot with, so adding tags
 never invalidates data you've already collected.
 
