@@ -90,6 +90,7 @@ WORLDS = [
     ("pomodoro",     "FOCUS",   "2", (228, 174, 86)),
     ("logbook",      "LOGBOOK", "L", (172, 136, 68)),
     ("console",      "CONSOLE", "C", (240, 176, 64)),
+    ("camera",       "CAMERA",  "K", (176, 138, 66)),
 ]
 
 AUTO_DWELL = 15.0     # fallback; the live value is the CONSOLE's "dwell" dial

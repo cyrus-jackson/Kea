@@ -71,7 +71,128 @@ If you have a keyboard attached to the Raspberry Pi or are forwarding inputs acr
 - **Attach to view the output:** `screen -r main`
 - **Detach from screen:** Press `Ctrl+A`, then `D`
 
-## 3. Bluetooth speaker (auto-connect on boot)
+## 3. Camera data → OneDrive (one-time)
+
+The camera screen writes approved shots to `~/kea_data/pending/`. A timer
+then moves them to OneDrive with `rclone move`, which deletes the local
+copy **only after** a verified upload.
+
+### 3.1 Install and authorise rclone
+
+```bash
+sudo apt install rclone
+```
+
+**The headless catch:** `rclone config` wants a browser, and the Pi hasn't
+got a usable one. Do the OAuth on your Mac instead:
+
+```bash
+# ON YOUR MAC (rclone installed there too):
+rclone authorize "onedrive"
+# a browser opens; sign in; it prints a long token — copy the whole thing
+```
+
+Then on the Pi:
+
+```bash
+rclone config
+#  n) New remote
+#  name> onedrive
+#  Storage> onedrive
+#  ... accept defaults ...
+#  Use auto config? > n          <-- IMPORTANT, say NO
+#  paste the token from your Mac
+#  choose your drive (usually 1: OneDrive Personal)
+```
+
+Prove it works — this must list your OneDrive folders:
+
+```bash
+rclone lsd onedrive:
+```
+
+### 3.2 (Recommended) encrypt before upload
+
+These are photos of you and your home. `rclone crypt` encrypts filenames
+and contents on the Pi, so OneDrive only ever stores noise:
+
+```bash
+rclone config
+#  n) New remote  ->  name> onedrive_enc  ->  Storage> crypt
+#  remote> onedrive:KeaData
+#  encrypt filenames> standard ; set two passwords (keep them safe!)
+```
+
+Then point Kea at the encrypted remote:
+
+```bash
+export KEA_RCLONE_REMOTE=onedrive_enc
+export KEA_RCLONE_PATH=""
+```
+
+> Keep those passwords somewhere safe. Lose them and the images are
+> unrecoverable — that's the whole point of it.
+
+### 3.3 Upload manually first
+
+```bash
+python3 tools/offload.py --status     # what's waiting
+python3 tools/offload.py --dry-run    # what would move
+python3 tools/offload.py              # actually move it
+```
+
+### 3.4 Run it on a timer
+
+```bash
+mkdir -p ~/.config/systemd/user
+
+cat > ~/.config/systemd/user/kea-offload.service <<'EOF'
+[Unit]
+Description=Upload Kea camera data to OneDrive
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=KEA_RCLONE_REMOTE=onedrive
+Environment=KEA_RCLONE_PATH=KeaData
+ExecStart=/usr/bin/python3 %h/Kea/tools/offload.py --quiet
+EOF
+
+cat > ~/.config/systemd/user/kea-offload.timer <<'EOF'
+[Unit]
+Description=Upload Kea camera data hourly
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now kea-offload.timer
+systemctl --user list-timers | grep kea      # confirm it's scheduled
+```
+
+Offline or OneDrive unreachable? The script says so and **leaves the files
+alone** — they go next time. At ~180 KB a shot, a backlog is harmless.
+
+### 3.5 Tags
+
+Tags live in `~/.kea_tags.json`, created on first run as
+`["me", "empty", "other"]`. Edit it freely:
+
+```bash
+nano ~/.kea_tags.json      # e.g. add "night", "two_people", "glasses"
+```
+
+Kea re-reads the file every time you open the camera screen — no restart.
+Images already saved keep the tag they were shot with, so adding tags
+never invalidates data you've already collected.
+
+## 4. Bluetooth speaker (auto-connect on boot)
 
 Kea speaks and beeps through the default audio output. To send that to a
 Bluetooth speaker (e.g. the JBL Go 4) automatically — so you never re-pair or

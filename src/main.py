@@ -43,6 +43,7 @@ from states.orrery_state import OrreryState
 from states.starport_state import StarportState
 from states.logbook_state import LogbookState
 from states.console_state import ConsoleState
+from states.camera_state import CameraState
 from backend import voice
 from backend import lifebook
 from backend import settings
@@ -219,6 +220,7 @@ def main():
     manager.add_state('starport', StarportState(manager))
     manager.add_state('logbook', LogbookState(manager))
     manager.add_state('console', ConsoleState(manager))
+    manager.add_state('camera', CameraState(manager))
     settings.init()             # restore the saved brightness
     lifebook.bump('boots')
 
