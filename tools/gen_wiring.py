@@ -47,26 +47,37 @@ def grab_int(src, name, default=None):
 rows = []           # (signal, bcm, note)
 
 # buttons
-block = re.search(r"BUTTON_CONFIG\s*=\s*\{(.*?)\}", HW, re.S).group(1)
-for bcm, desc in re.findall(r"(\d+)\s*:\s*\([A-Z_]+,\s*\"([^\"]+)\"\)", block):
-    rows.append((f"Button — {desc}", int(bcm), "switch to GND (internal pull-up)"))
+def pin_const(name, default=None):
+    """Read a `NAME = _pin("KEA_X", 12)` style assignment."""
+    m = re.search(rf'^{name}\s*=\s*_pin\([^,]+,\s*(-?\d+)\)', HW, re.M)
+    return int(m.group(1)) if m else default
+
+
+# buttons: names come from BUTTON_CONFIG, pins from the constants it uses
+block = re.search(r"BUTTON_CONFIG\s*=\s*\{(.*?)\n\}", HW, re.S).group(1)
+for const, desc in re.findall(r"(\w+):\s*\([A-Z_]+,\s*\"([^\"]+)\"\)", block):
+    bcm = pin_const(const)
+    if bcm is not None:
+        rows.append((f"Button — {desc}", bcm,
+                     "switch to GND (internal pull-up)"))
 
 # encoder
-clk, dt, sw = (int(v) for v in
-               re.search(r"ENC_CLK,\s*ENC_DT,\s*ENC_SW\s*=\s*(\d+),\s*(\d+),\s*(\d+)",
-                         HW).groups())
-rows.append(("Encoder CLK", clk, "KY-040 CLK"))
-rows.append(("Encoder DT", dt, "KY-040 DT"))
-rows.append(("Encoder SW", sw, "KY-040 SW (shaft press)"))
+rows.append(("Encoder CLK", pin_const("ENC_CLK"), "KY-040 CLK"))
+rows.append(("Encoder DT", pin_const("ENC_DT"), "KY-040 DT"))
+rows.append(("Encoder SW", pin_const("ENC_SW"), "KY-040 SW (shaft press)"))
 
 enc_vcc = grab_int(HW, "ENC_VCC", -1)
 if enc_vcc >= 0:
     rows.append(("Encoder + (VCC)", enc_vcc,
                  "DRIVEN HIGH BY THE CODE as a 3.3 V rail — wire KY-040 '+' here"))
 
-# toggle
-tog = grab_int(HW, "TOGGLE_PIN")
-rows.append(("Toggle (centre pin)", tog, "one outer leg to GND, third unused"))
+# toggles
+rows.append(("Toggle A (centre leg)", pin_const("TOGGLE_PIN"),
+             "one outer leg to GND, third unused"))
+t2 = pin_const("TOGGLE2_PIN", -1)
+if t2 >= 0:
+    rows.append(("Toggle B (centre leg)", t2,
+                 "one outer leg to GND, third unused"))
 
 # optional backlight
 bl = grab_int(ST, "BACKLIGHT_PIN", -1)

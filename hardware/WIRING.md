@@ -17,14 +17,17 @@ python3 tools/gen_wiring.py
 
 | Signal | BCM | Header pin | Note |
 |---|---|---|---|
-| Button — Blue (Cycle worlds) | 21 | **40** | switch to GND |
-| Button — Red (Pomodoro) | 20 | **38** | switch to GND |
-| Button — Green (Annunciator) | 26 | **37** | switch to GND |
+| Button 1 — Blue (Cycle worlds) | 21 | **40** | switch to GND |
+| Button 2 — Red (Pomodoro) | 20 | **38** | switch to GND |
+| Button 3 — Green (Annunciator) | 26 | **37** | switch to GND |
+| Button 4 — Home (jump to Nexus) | 13 | **33** | switch to GND |
+| Button 5 — Console (settings) | 4 | **7** | switch to GND — **needs extender** |
 | Encoder CLK | 5 | **29** | KY-040 `CLK` |
 | Encoder DT | 6 | **31** | KY-040 `DT` |
 | Encoder SW | 16 | **36** | KY-040 `SW` (shaft press) |
-| Encoder **+** | 12 | **32** | see §3 — the code drives this HIGH |
-| Toggle (centre leg) | 19 | **35** | one outer leg to GND, third unused |
+| Encoder **+** | 12 | **32** | see §3 — better: real 3.3 V on pin 1/17 |
+| Toggle A (centre leg) | 19 | **35** | per-screen role; outer leg to GND |
+| Toggle B (centre leg) | 27 | **13** | global mute; **needs extender** |
 | Ground (common) | — | **30, 34, 39** | every switch's other leg |
 
 Every input uses the Pi's **internal pull-up**, so each switch simply
@@ -45,33 +48,32 @@ physical direction means "on"; if it ends up backwards, run Kea with
 
 ---
 
-## 2. What's left over — read this before you wire
+## 2. Parts vs code
 
-Your parts and the software don't match yet:
+All 8 inputs are now wired up in software:
 
-| You have | Code supports | Gap |
+| You have | Code supports | Status |
 |---|---|---|
-| 5 buttons | **3** | 2 buttons have no pin and no function |
-| 2 toggles | **1** | 2nd toggle has no pin and no function |
-| 3 servos (SG92R) | **none** | no servo code exists yet |
-| PCA9685 | **none** | not driven by any code yet |
+| 5 buttons | **5** | ✅ all wired (Home + Console added) |
+| 2 toggles | **2** | ✅ A = per-screen, B = global mute |
+| 1 encoder | **1** | ✅ turn + press |
+| 3 servos (SG92R) | **none** | ⛔ no servo code yet |
+| PCA9685 | **none** | ⛔ not driven yet |
 
-**Only ONE spare pin remains on the exposed block** (27–40): pin **33**
-(BCM 13). Pins 27/28 are reserved for HAT EEPROM — don't use them.
+The exposed block (27–40) is now full: buttons 1–4, the encoder and
+toggle A use it all. **Button 5 (pin 7) and toggle B (pin 13) sit under
+the display**, so they need the extender — and their defaults are only
+*likely* free. Confirm both before soldering (§2a).
 
-So the 4th button can go on pin 33, but the 5th button, the 2nd toggle
-and the PCA9685 all need pins *underneath* the display — which is exactly
-what your **GPIO Winkel-Adapter (157081)** is for. Which of those lower
-pins are free depends on your display's overlay, so **verify before
-wiring** rather than trusting a guess:
+Every pin is env-overridable, so you never have to edit code:
 
 ```bash
-gpio readall          # or: pinctrl get      (shows what each pin is doing)
-dtoverlay -h <your-overlay>
+KEA_BTN_CONSOLE=22 KEA_TOGGLE2_PIN=23 python3 src/main.py
 ```
 
-Ask me to add the extra buttons/toggle to the code and I'll assign pins
-and wire up the events — right now those parts would do nothing.
+Full list: `KEA_BTN_BLUE`, `KEA_BTN_RED`, `KEA_BTN_GREEN`, `KEA_BTN_HOME`,
+`KEA_BTN_CONSOLE`, `KEA_ENC_CLK`, `KEA_ENC_DT`, `KEA_ENC_SW`,
+`KEA_TOGGLE_PIN`, `KEA_TOGGLE2_PIN`.
 
 ### 2a. With the stacking extender: what you actually gain
 
@@ -163,30 +165,32 @@ Pi GND ─────────────┘   ← the two grounds MUST be 
 4. Boot, then run the tester before Kea:
 
 ```bash
-python3 tools/test_encoder.py
+python3 tools/test_controls.py      # all 8 inputs, with a summary
 ```
 
-Turn the knob a click at a time: exactly one `CW`/`CCW` per detent, and
-`CLK=1 DT=1` at rest. Press the shaft: a lone `PRESS`. Flip the toggle:
-`TOGGLE -> ON/OFF`.
-
-Then check the buttons — Kea prints a line for each press:
-
-```bash
-python3 src/main.py     # press each button, watch stdout
-```
+Press every button, flip both toggles, turn and press the knob. Each
+event prints once. Ctrl-C gives a summary listing anything **MISSING** —
+that's your fix-list. `--monitor` shows raw live pin levels instead.
 
 ---
 
-## 6. Known software issue (not a wiring fault)
+## 6. What each control does
 
-The encoder currently posts its events **from its polling thread**.
-`pygame.event.post()` can fail silently off the main thread, so the dial
-may decode perfectly in `test_encoder.py` and still do nothing in Kea.
-The fix (queue in the thread, post on the main thread) was written and
-then lost when `master` was reset. If turning the knob does nothing while
-the tester looks perfect, that's this — ask me to re-apply it.
+| Control | Action |
+|---|---|
+| Button 1 (Blue) | cycle worlds |
+| Button 2 (Red) | Pomodoro |
+| Button 3 (Green) | annunciator / stamp DONE |
+| Button 4 | jump home to Nexus |
+| Button 5 | open the Console (brightness / dwell) |
+| Encoder turn | browse on Nexus, adjust on Console, tune elsewhere |
+| Encoder press | select / next dial / home |
+| Toggle A | per-screen role (each screen defines its own) |
+| Toggle B | global voice mute (`KEA_TOGGLE2_ROLE=autopilot` to change) |
 
-Also: if you haven't wired the encoder or toggle yet, start Kea with
+If a toggle ends up backwards once nutted into the deck, use
+`KEA_TOGGLE_INVERT=1` / `KEA_TOGGLE2_INVERT=1` rather than rewiring.
+
+Note: if you haven't wired the encoder or toggle yet, start Kea with
 `KEA_ENCODER=0` / `KEA_TOGGLE=0` so floating pins don't fire phantom
 events.

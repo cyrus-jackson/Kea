@@ -40,15 +40,47 @@ BUTTON_NOTIFICATION_EVENT = pygame.USEREVENT + 3
 ENCODER_TURN_EVENT = pygame.USEREVENT + 4     # .direction = +1 / -1
 ENCODER_PRESS_EVENT = pygame.USEREVENT + 5
 TOGGLE_EVENT = pygame.USEREVENT + 6           # .on = True / False
+BUTTON_HOME_EVENT = pygame.USEREVENT + 7      # 4th button: straight to Nexus
+BUTTON_CONSOLE_EVENT = pygame.USEREVENT + 8   # 5th button: the Console screen
+TOGGLE2_EVENT = pygame.USEREVENT + 9          # 2nd toggle, .on = True / False
+
+
+def _pin(name, default):
+    """Pin numbers are env-overridable: run tools/check_free_pins.py, then
+    set e.g. KEA_BTN_MENU=22 if the default clashes on your Pi."""
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
 
 # ── pins (BCM) ──────────────────────────────────────────────────────────────
+# The first three + the encoder + toggle A live on pins 27-40, which the
+# display leaves exposed. The last two buttons and toggle B need the GPIO
+# extender — their defaults are pins an SPI 3.5" panel usually leaves alone,
+# but CONFIRM with tools/check_free_pins.py before soldering.
+BTN_BLUE    = _pin("KEA_BTN_BLUE", 21)     # pin 40  — exposed
+BTN_RED     = _pin("KEA_BTN_RED", 20)      # pin 38  — exposed
+BTN_GREEN   = _pin("KEA_BTN_GREEN", 26)    # pin 37  — exposed
+BTN_HOME    = _pin("KEA_BTN_HOME", 13)     # pin 33  — exposed, the last free one
+BTN_CONSOLE = _pin("KEA_BTN_CONSOLE", 4)   # pin 7   — needs the extender
+
 BUTTON_CONFIG = {
-    21: (BUTTON_AMBIENT_EVENT, "Blue (Cycle)"),
-    20: (BUTTON_POMODORO_EVENT, "Red (Pomodoro)"),
-    26: (BUTTON_NOTIFICATION_EVENT, "Green (Annunciator)"),
+    BTN_BLUE:    (BUTTON_AMBIENT_EVENT, "Blue (Cycle)"),
+    BTN_RED:     (BUTTON_POMODORO_EVENT, "Red (Pomodoro)"),
+    BTN_GREEN:   (BUTTON_NOTIFICATION_EVENT, "Green (Annunciator)"),
+    BTN_HOME:    (BUTTON_HOME_EVENT, "Home (Nexus)"),
+    BTN_CONSOLE: (BUTTON_CONSOLE_EVENT, "Console (Settings)"),
 }
-ENC_CLK, ENC_DT, ENC_SW = 5, 6, 16
-TOGGLE_PIN = 19
+if len(BUTTON_CONFIG) != 5:
+    print("WARNING: two buttons share a pin — check your KEA_BTN_* settings; "
+          f"got {sorted(BUTTON_CONFIG)}")
+
+ENC_CLK = _pin("KEA_ENC_CLK", 5)           # pin 29
+ENC_DT = _pin("KEA_ENC_DT", 6)             # pin 31
+ENC_SW = _pin("KEA_ENC_SW", 16)            # pin 36
+TOGGLE_PIN = _pin("KEA_TOGGLE_PIN", 19)    # pin 35 — exposed
+TOGGLE2_PIN = _pin("KEA_TOGGLE2_PIN", 27)  # pin 13 — needs the extender
 
 # The KY-040's + pin powers its onboard 10k pull-ups. Pins 27-40 carry no
 # 3.3 V rail, and leaving + floating makes those pull-ups couple the data
@@ -62,8 +94,12 @@ try:
 except ValueError:
     ENC_VCC = 12
 
-# What the physical toggle does: "autopilot" | "mute" | "none"
+# What toggle A does when a screen doesn't claim it: "autopilot"|"mute"|"none"
 TOGGLE_ROLE = os.getenv("KEA_TOGGLE_ROLE", "autopilot").strip().lower()
+# Toggle B is global and screens never claim it. Default: mute Kea's voice.
+TOGGLE2_ROLE = os.getenv("KEA_TOGGLE2_ROLE", "mute").strip().lower()
+TOGGLE2_INVERT = os.getenv("KEA_TOGGLE2_INVERT", "0").strip().lower() in {"1", "true", "on"}
+TOGGLE2_ENABLED = os.getenv("KEA_TOGGLE2", "1").strip().lower() not in {"0", "false", "off"}
 # Which way is "on". Set 1 if the switch ends up backwards once it's
 # nutted into the deck — cheaper than unsoldering the ground leg.
 TOGGLE_INVERT = os.getenv("KEA_TOGGLE_INVERT", "0").strip().lower() in {"1", "true", "on"}
@@ -95,8 +131,14 @@ class HardwareButtons:
     def __init__(self):
         self.previous_states = {}
         self.toggle_on = False
+        self.toggle2_on = False
         self._enc_thread = None
         self._stop = threading.Event()
+        # The encoder thread only DECODES; it queues results here and the
+        # main thread posts them. pygame.event.post() can fail silently off
+        # the main thread, which makes a perfectly decoded turn vanish.
+        self._pending = []
+        self._plock = threading.Lock()
 
         if not HAS_GPIO:
             return
@@ -114,6 +156,11 @@ class HardwareButtons:
             self.toggle_on = (GPIO.input(TOGGLE_PIN) == GPIO.LOW) != TOGGLE_INVERT
             self.previous_states[TOGGLE_PIN] = GPIO.input(TOGGLE_PIN)
 
+        if TOGGLE2_ENABLED and TOGGLE2_PIN >= 0:
+            GPIO.setup(TOGGLE2_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+            self.toggle2_on = (GPIO.input(TOGGLE2_PIN) == GPIO.LOW) != TOGGLE2_INVERT
+            self.previous_states[TOGGLE2_PIN] = GPIO.input(TOGGLE2_PIN)
+
         if ENC_ENABLED:
             if ENC_VCC >= 0:
                 # stand-in 3.3 V rail for the KY-040's pull-ups
@@ -126,6 +173,11 @@ class HardwareButtons:
             self._enc_thread.start()
 
     # ══════════════════════════════════════════════════════════════════════
+    def _queue(self, event_type, **kw):
+        """Called from the encoder thread: record, don't post."""
+        with self._plock:
+            self._pending.append((event_type, kw))
+
     def _encoder_loop(self):
         """1 kHz quadrature decode. Emits one event per detent, in the
         direction the knob actually moved."""
@@ -143,8 +195,8 @@ class HardwareButtons:
                     # a detent is complete when we settle back at rest with
                     # a consistent direction behind us
                     if state == _REST and abs(accum) >= 2:
-                        _post(ENCODER_TURN_EVENT,
-                              direction=1 if accum > 0 else -1)
+                        self._queue(ENCODER_TURN_EVENT,
+                                    direction=1 if accum > 0 else -1)
                         accum = 0
                     elif state == _REST:
                         accum = 0          # bounced without completing
@@ -155,7 +207,7 @@ class HardwareButtons:
                 if sw != sw_prev and now - sw_changed > 0.05:
                     sw_changed = now
                     if sw == GPIO.LOW:
-                        _post(ENCODER_PRESS_EVENT)
+                        self._queue(ENCODER_PRESS_EVENT)
                     sw_prev = sw
             except Exception:
                 pass
@@ -166,6 +218,12 @@ class HardwareButtons:
         """Poll buttons and the toggle. Called once per frame."""
         if not HAS_GPIO:
             return
+
+        # post whatever the encoder thread decoded, from THIS thread
+        with self._plock:
+            pending, self._pending = self._pending, []
+        for event_type, kw in pending:
+            _post(event_type, **kw)
 
         for pin, (event_type, desc) in BUTTON_CONFIG.items():
             current = GPIO.input(pin)
@@ -179,8 +237,16 @@ class HardwareButtons:
             if current != self.previous_states.get(TOGGLE_PIN):
                 self.previous_states[TOGGLE_PIN] = current
                 self.toggle_on = (current == GPIO.LOW) != TOGGLE_INVERT
-                print(f"Toggle -> {'ON' if self.toggle_on else 'OFF'}")
+                print(f"Toggle A -> {'ON' if self.toggle_on else 'OFF'}")
                 _post(TOGGLE_EVENT, on=self.toggle_on)
+
+        if TOGGLE2_ENABLED and TOGGLE2_PIN >= 0:
+            current = GPIO.input(TOGGLE2_PIN)
+            if current != self.previous_states.get(TOGGLE2_PIN):
+                self.previous_states[TOGGLE2_PIN] = current
+                self.toggle2_on = (current == GPIO.LOW) != TOGGLE2_INVERT
+                print(f"Toggle B -> {'ON' if self.toggle2_on else 'OFF'}")
+                _post(TOGGLE2_EVENT, on=self.toggle2_on)
 
     def cleanup(self):
         self._stop.set()

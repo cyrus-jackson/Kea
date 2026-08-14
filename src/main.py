@@ -55,6 +55,10 @@ from hardware_input import (
     ENCODER_PRESS_EVENT,
     TOGGLE_EVENT,
     TOGGLE_ROLE,
+    BUTTON_HOME_EVENT,
+    BUTTON_CONSOLE_EVENT,
+    TOGGLE2_EVENT,
+    TOGGLE2_ROLE,
 )
 from states.nexus_state import WORLDS
 
@@ -113,6 +117,7 @@ class StateManager:
         self.current_state_name = None
         self.previous_state_name = None   # so transient states can go back
         self.toggle_on = False            # physical switch position
+        self.toggle2_on = False           # second (global) switch
 
     def add_state(self, name, state):
         self.states[name] = state
@@ -256,6 +261,22 @@ def main():
                 elif manager.current_state_name != 'pomodoro':
                     manager.change_state('notification')
             
+            # --- 4th / 5th buttons: jump straight to a screen ---
+            elif event.type == BUTTON_HOME_EVENT:
+                manager.change_state('nexus')
+            elif event.type == BUTTON_CONSOLE_EVENT:
+                manager.change_state('console')
+            # --- Toggle B: global, screens never claim it ---
+            elif event.type == TOGGLE2_EVENT:
+                manager.toggle2_on = event.on
+                if TOGGLE2_ROLE == 'mute':
+                    voice.set_muted(event.on)
+                elif TOGGLE2_ROLE == 'autopilot':
+                    nx = manager.states.get('nexus')
+                    if nx is not None:
+                        nx.auto_pilot = event.on
+                        nx.dwell = 0.0
+
             # --- Rotary encoder: browse on Nexus, tune elsewhere ---
             elif event.type == ENCODER_TURN_EVENT:
                 cur = manager.current_state
