@@ -16,17 +16,89 @@ python3 tools/gen_wiring.py
 
 ---
 
-## 1. Fit the extender
+## 1. Fit the extender — and prove it's the right way round
 
-The display mates onto the extender's pass-through header; the extender
-brings the same 40 pins out sideways where you can reach them.
+**Why this matters:** a 2×20 socket seats perfectly well rotated 180° —
+nothing physically stops it. Worked through, a reversed extender puts the
+Pi's **5 V onto the extender's ground net** (a dead short across the
+supply) and **5 V onto a GPIO** at the same time. That trips or cooks the
+PSU and can destroy the Pi. Verify *before* power, not after.
 
-1. Pi off, power unplugged.
-2. Extender onto the Pi's header — **pin 1 to pin 1**. Check the corner
-   marking; on backwards it will short 5 V into GPIOs.
-3. Display onto the extender's pass-through.
-4. Power up and confirm the display still works **before** wiring anything
-   else. If it doesn't, stop — the extender is seated wrong.
+### Step 1 — find pin 1 on both boards (unpowered)
+
+Pin 1 is marked, always, in at least one of these ways:
+
+- **A square solder pad** on the underside — every other pin is round.
+  This is the most reliable tell; flip the board and look.
+- Silkscreen: a **`1`**, a small **triangle**, or a **dot** by that corner.
+- On the Pi, pin 1 is at the end of the header **nearest the micro-SD
+  card**, on the inner row. Pins 1 and 2 are the pair furthest from the
+  USB ports.
+
+Sanity anchor: **pin 1 = 3.3 V, pin 2 = 5 V**, and they sit side by side
+at the same end. If your extender labels any pin `3V3` or `5V`, that end
+*is* the pin-1 end.
+
+### Step 2 — seat it and eyeball it
+
+1. Pi **off and unplugged**.
+2. Push the extender on so pin 1 meets pin 1.
+3. Look along both ends: **no pin should stick out uncovered**, and the
+   socket must not be shifted by one column or sitting on one row only.
+   An offset seat is as damaging as a reversed one.
+
+### Step 3 — continuity test, still unpowered (the safe proof)
+
+You don't need to probe under the extender: **the metal shell of the USB
+or Ethernet port is connected to the Pi's ground.** Use it as a reference.
+
+With a multimeter on continuity (beep):
+
+| Probe A | Probe B | Expect |
+|---|---|---|
+| USB port metal shell | extender pin **6** (and 9, 14, 20, 25, 30, 34, 39) | **beeps** — these are grounds |
+| USB port metal shell | extender pin **1** | **silent** — pin 1 is 3.3 V, not ground |
+| USB port metal shell | extender pin **2** | **silent** — pin 2 is 5 V |
+
+If pin 1 or 2 beeps to ground, or the ground pins *don't* beep, the
+extender is reversed or offset. **Stop and re-seat it.**
+
+> Quick logic: grounds sit at pins 6/9/14/20/25/30/34/39. Rotated 180°,
+> those positions would land on 35/32/27/21/16/11/7/2 — which are *not*
+> grounds. So the beep pattern alone tells you the orientation.
+
+### Step 4 — power test, nothing else connected
+
+Extender on, **display and all wiring off**. Power up and measure with the
+black probe on a ground pin (6) and red on:
+
+- **pin 1 → 3.3 V** (3.2–3.4)
+- **pin 2 → 5 V** (4.9–5.2)
+
+Anything near 0 V, or reversed, means it's wrong — pull the power.
+
+### Step 5 — functional check
+
+Fit the display and boot. **If the display works, the extender is
+correctly oriented** — its SPI lines would be scrambled otherwise. That's
+a solid free check even without a multimeter.
+
+Then, before wiring anything, confirm the Pi still sees its own pins:
+
+```bash
+python3 tools/check_free_pins.py
+```
+
+### No multimeter?
+
+Do Steps 1, 2 and 5 only — pin-1 markings, a careful look for offset, then
+the display test. It's less certain than continuity, but a reversed
+extender essentially always breaks the display, so a working screen is
+strong evidence. **Don't wire anything else until the display has come up
+once with the extender fitted.**
+
+> Whatever you do, if anything gets warm or you smell hot plastic, pull
+> the power immediately.
 
 ---
 
