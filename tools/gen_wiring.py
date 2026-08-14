@@ -69,7 +69,7 @@ rows.append(("Encoder SW", pin_const("ENC_SW"), "KY-040 SW (shaft press)"))
 enc_vcc = grab_int(HW, "ENC_VCC", -1)
 if enc_vcc >= 0:
     rows.append(("Encoder + (VCC)", enc_vcc,
-                 "DRIVEN HIGH BY THE CODE as a 3.3 V rail — wire KY-040 '+' here"))
+                 "code drives this HIGH — wire KY-040 '+' here (no extender)"))
 
 # toggles
 rows.append(("Toggle A (centre leg)", pin_const("TOGGLE_PIN"),
@@ -88,10 +88,14 @@ out.append("| Signal | BCM | Header pin | Reachable? | Note |")
 out.append("|---|---|---|---|---|")
 for sig, bcm, note in rows:
     pin = pin_of(bcm)
-    reach = "yes" if EXPOSED(pin) else "**needs extender**"
+    reach = "always exposed" if EXPOSED(pin) else "via extender — **verify free**"
     out.append(f"| {sig} | {bcm} | **{pin}** | {reach} | {note} |")
 gnd = ", ".join(str(p) for p in GROUND_PINS if EXPOSED(p))
-out.append(f"| Ground (common) | — | {gnd} | yes | every switch's other leg |")
+out.append(f"| Ground (common) | — | {gnd} | always exposed | every switch's other leg |")
+if enc_vcc < 0:
+    out.append("| Encoder + (VCC) | — | **1** or **17** | via extender | "
+               "**real 3.3 V** — never 5 V |")
+out.append("| Fan + / - | — | **4** (5V) / GND | via extender | 30 mm fan |")
 
 print("\n".join(out))
 print()

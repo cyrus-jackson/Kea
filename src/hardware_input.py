@@ -82,17 +82,19 @@ ENC_SW = _pin("KEA_ENC_SW", 16)            # pin 36
 TOGGLE_PIN = _pin("KEA_TOGGLE_PIN", 19)    # pin 35 — exposed
 TOGGLE2_PIN = _pin("KEA_TOGGLE2_PIN", 27)  # pin 13 — needs the extender
 
-# The KY-040's + pin powers its onboard 10k pull-ups. Pins 27-40 carry no
-# 3.3 V rail, and leaving + floating makes those pull-ups couple the data
-# lines to each other through it (ground DT and SW sags to ~1.1 V, inside
-# the Pi's undefined band, so it reads as a phantom button press).
-# The pull-ups draw well under 1 mA total, so a spare GPIO driven HIGH is
-# a perfectly good 3.3 V supply — GPIO12 (pin 32) sits right next to the
-# encoder's pins. Set KEA_ENCODER_VCC=-1 if you power + some other way.
+# The KY-040's + pin powers its onboard 10k pull-ups, and MUST be supplied:
+# left floating, grounding one data line drags the others to ~1 V — inside
+# the Pi's undefined band — which reads as a phantom press on every detent.
+#
+# With the GPIO extender fitted, wire + to REAL 3.3 V (pin 1 or 17). That's
+# stiffer than a GPIO and costs no pins, so it's the default: -1 means "the
+# code doesn't drive any pin; you supplied + from the 3.3 V rail".
+# No extender? Set KEA_ENCODER_VCC=12 and wire + to pin 32 instead — the
+# code will then drive that pin HIGH as a stand-in rail.
 try:
-    ENC_VCC = int(os.getenv("KEA_ENCODER_VCC", "12"))
+    ENC_VCC = int(os.getenv("KEA_ENCODER_VCC", "-1"))
 except ValueError:
-    ENC_VCC = 12
+    ENC_VCC = -1
 
 # What toggle A does when a screen doesn't claim it: "autopilot"|"mute"|"none"
 TOGGLE_ROLE = os.getenv("KEA_TOGGLE_ROLE", "autopilot").strip().lower()
