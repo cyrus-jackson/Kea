@@ -47,6 +47,36 @@ at the same end. If your extender labels any pin `3V3` or `5V`, that end
    socket must not be shifted by one column or sitting on one row only.
    An offset seat is as damaging as a reversed one.
 
+### Step 2a — you have TWO breakouts: top and right
+
+This extender brings the 40 pins out **twice** — a vertical header on top
+and a horizontal one on the right:
+
+- **Top (vertical)** — the display stacks onto this. Straight pass-through,
+  same numbering as the Pi.
+- **Right (horizontal)** — this is where your jumper wires go.
+
+⚠️ **Don't assume the right-hand header is numbered like the top one.**
+Right-angle breakouts frequently come out **mirrored** (the rows swap as
+the pins fold over), so "pin 1" can be at the opposite corner or the
+opposite row from what you'd guess. Getting this wrong is the same class
+of mistake as fitting the extender backwards.
+
+**Work out its numbering from the grounds — it's a unique fingerprint.**
+With the meter on continuity and one probe on the USB shell, walk the
+horizontal header and note every position that beeps. Compare:
+
+| Grounds land on | Your header is |
+|---|---|
+| 6, 9, 14, 20, 25, 30, 34, 39 | **correct** — number it like the Pi |
+| 5, 10, 13, 19, 26, 29, 33, 40 | **rows swapped** — odd/even are flipped |
+| 1, 8, 12, 15, 22, 28, 31, 36 | **end reversed** — count from the other end |
+| 2, 7, 11, 16, 21, 27, 32, 35 | **rotated 180°** |
+
+All four patterns are different, so the beeps tell you exactly which
+layout you have — no guessing. Work out where pin 1 really is, mark that
+corner with a dab of paint or a marker, and wire from there.
+
 ### Step 3 — continuity test, still unpowered (the safe proof)
 
 You don't need to probe under the extender: **the metal shell of the USB
@@ -62,6 +92,9 @@ With a multimeter on continuity (beep):
 
 If pin 1 or 2 beeps to ground, or the ground pins *don't* beep, the
 extender is reversed or offset. **Stop and re-seat it.**
+
+Run this on **whichever header you'll actually wire to** — for this build
+that's the horizontal one on the right (see Step 2a).
 
 > Quick logic: grounds sit at pins 6/9/14/20/25/30/34/39. Rotated 180°,
 > those positions would land on 35/32/27/21/16/11/7/2 — which are *not*
@@ -91,11 +124,20 @@ python3 tools/check_free_pins.py
 
 ### No multimeter?
 
-Do Steps 1, 2 and 5 only — pin-1 markings, a careful look for offset, then
-the display test. It's less certain than continuity, but a reversed
-extender essentially always breaks the display, so a working screen is
-strong evidence. **Don't wire anything else until the display has come up
-once with the extender fitted.**
+Do Steps 1, 2 and 5 — pin-1 markings, a careful look for offset, then the
+display test. A reversed extender essentially always breaks the display,
+so a working screen is strong evidence. **Don't wire anything else until
+the display has come up once with the extender fitted.**
+
+For the horizontal header's numbering without a meter, use a **known
+ground and a single LED with a resistor**, or safest of all: wire *one*
+button first, to what you believe is pin 40 and a ground, then run
+`python3 tools/test_controls.py` and press it. If "Blue (Cycle)" prints,
+your numbering is right and you can wire the rest with confidence. One
+wrong guess on a plain switch costs nothing — it just won't respond.
+
+> A multimeter that does continuity is about €10 and removes all of this
+> doubt. For a build with a Pi in it, it pays for itself the first time.
 
 > Whatever you do, if anything gets warm or you smell hot plastic, pull
 > the power immediately.
