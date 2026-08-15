@@ -54,6 +54,13 @@ class CameraService:
             return self._real
         try:
             from picamera2 import Picamera2      # noqa: WPS433 (optional dep)
+            # Ask first: if libcamera can see nothing, Picamera2() raises the
+            # famously unhelpful "Camera __init__ sequence did not complete".
+            try:
+                if not Picamera2.global_camera_info():
+                    raise RuntimeError("no cameras detected by libcamera")
+            except AttributeError:
+                pass                              # older picamera2
             self._cam = Picamera2()
             cfg = self._cam.create_still_configuration(
                 main={"size": (WIDTH, HEIGHT)})
@@ -63,11 +70,33 @@ class CameraService:
             self._real = True
             self._error = None
         except Exception as e:                   # no camera, no lib, in use…
+            # Release anything half-built; a dangling handle makes the NEXT
+            # attempt fail too, which is why this error tends to persist.
+            try:
+                if self._cam is not None:
+                    self._cam.close()
+            except Exception:
+                pass
             self._cam = None
             self._real = False
-            self._error = str(e).split("\n")[0][:80]
+            self._error = self._explain(e)
         self._started = True
         return self._real
+
+    @staticmethod
+    def _explain(exc):
+        """Turn picamera2's opaque errors into something actionable."""
+        raw = str(exc).split("\n")[0]
+        low = raw.lower()
+        if "did not complete" in low or "no cameras" in low:
+            return "no camera found — run tools/check_camera.py (legacy stack?)"
+        if isinstance(exc, ImportError) or "picamera2" in low:
+            return "picamera2 missing — sudo apt install python3-picamera2"
+        if "device or resource busy" in low or "in use" in low:
+            return "camera busy — another process holds it"
+        if "permission" in low:
+            return "permission denied — add your user to the 'video' group"
+        return raw[:70]
 
     def stop(self):
         if self._cam is not None:
