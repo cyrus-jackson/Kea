@@ -1,7 +1,7 @@
 """
 settings.py — the knobs Kea remembers.
 
-Two live preferences, adjusted on the CONSOLE screen with the rotary
+The live preferences, adjusted on the CONSOLE screen with the rotary
 encoder and persisted to ~/.kea_settings.json so they survive a reboot:
 
     brightness   10-100 %   backlight (real on the Pi, simulated elsewhere)
@@ -9,6 +9,8 @@ encoder and persisted to ~/.kea_settings.json so they survive a reboot:
                             dispatches the next one
     shoot_every  2-60 s     interval between frames in the camera's
                             AUTO SHOOT mode
+    idle_mins    1-60 min   how long Kea sits untouched before it goes
+                            back to walking the drift circuit
 
 Nothing here raises: a missing backlight, an unwritable home directory
 or a corrupt file all degrade to sane defaults.
@@ -30,6 +32,8 @@ SPEC = {
     "dwell": [15, 3, 120, 1],
     # seconds between frames when the camera's AUTO SHOOT toggle is on
     "shoot_every": [6, 2, 60, 1],
+    # minutes untouched before Kea resumes the drift rounds
+    "idle_mins": [5, 1, 60, 1],
 }
 
 # Where the Pi exposes the panel backlight. The official DSI panel and most

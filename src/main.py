@@ -44,6 +44,7 @@ from states.starport_state import StarportState
 from states.logbook_state import LogbookState
 from states.console_state import ConsoleState
 from states.camera_state import CameraState
+from states.drift_state import DriftState
 from backend import voice
 from backend import lifebook
 from backend import settings
@@ -62,6 +63,43 @@ from hardware_input import (
     TOGGLE2_ROLE,
 )
 from states.nexus_state import WORLDS, NO_CYCLE, cycle_worlds
+
+
+# ── idle → the rounds ───────────────────────────────────────────────────────
+# Leave Kea alone and it goes back to what it does when nobody is watching:
+# walking the eight ambient stations (states/drift_state.py). This is the
+# whole reason those worlds no longer need cards on the Nexus rail.
+#
+# Screens that must never be interrupted, because they are mid-job:
+#   pomodoro — you are watching a timer run
+#   camera   — the sensor is live, and AUTO SHOOT may be capturing
+#   console  — you are in the middle of changing a setting
+#   drift    — already there
+NO_IDLE = {"pomodoro", "camera", "console", "drift"}
+
+
+def _idle_secs():
+    """Minutes-untouched before the rounds resume — the Console's IDLE dial."""
+    env = os.getenv("KEA_IDLE_MINS")
+    if env:
+        try:
+            return max(10.0, float(env) * 60.0)
+        except ValueError:
+            pass
+    try:
+        from backend import settings
+        return float(settings.get("idle_mins")) * 60.0
+    except Exception:
+        return 300.0
+
+
+# Events that count as "someone is here". A hardware button, the knob, the
+# lever, or a key: anything deliberate.
+WAKE_EVENTS = (
+    BUTTON_AMBIENT_EVENT, BUTTON_POMODORO_EVENT, BUTTON_NOTIFICATION_EVENT,
+    BUTTON_HOME_EVENT, BUTTON_CAMERA_EVENT, ENCODER_TURN_EVENT,
+    ENCODER_PRESS_EVENT, TOGGLE_EVENT, TOGGLE2_EVENT, pygame.KEYDOWN,
+)
 
 
 _chip_font = None
@@ -123,6 +161,22 @@ def _draw_toggle_chip(surface, manager):
         surface.blit(edge, box.topleft)
     txt.set_alpha(int(255 * alpha))
     surface.blit(txt, (box.x + pad, box.y + pad))
+
+
+def _drift_to(manager, world):
+    """Desk shortcut: open the rounds parked at one station.
+
+    The ambient worlds are still registered states, but changing straight
+    into one would strand you there with no way onward — they have no
+    controls of their own. So the old per-world keys open DRIFT at that
+    station instead, and the circuit carries on from it.
+    """
+    d = manager.states.get('drift')
+    if d is None:
+        manager.change_state(world)
+        return
+    d.open_at(world)
+    manager.change_state('drift')
 
 
 def _tune(manager, direction):
@@ -252,6 +306,7 @@ def main():
     manager.add_state('logbook', LogbookState(manager))
     manager.add_state('console', ConsoleState(manager))
     manager.add_state('camera', CameraState(manager))
+    manager.add_state('drift', DriftState(manager))
     settings.init()             # restore the saved brightness
     lifebook.bump('boots')
 
@@ -265,6 +320,9 @@ def main():
     # Initialize hardware button poller
     hw_buttons = HardwareButtons()
     
+    idle_t = 0.0          # seconds since anyone last touched Kea
+    drift_return = None   # where to put you back when you do
+
     running = True
     while running:
         # Time management
@@ -274,6 +332,23 @@ def main():
         hw_buttons.update()
         
         events = pygame.event.get()
+
+        # Any deliberate input resets the idle clock. If the rounds are
+        # already running, that first input only wakes us — it does NOT also
+        # fire whatever it normally does, which is how every screensaver
+        # should behave: you should not lose a reminder to a DELIVERED stamp
+        # you pressed just to see the screen again.
+        woke = False
+        for event in events:
+            if event.type in WAKE_EVENTS:
+                idle_t = 0.0
+                if manager.current_state_name == 'drift' and not woke:
+                    woke = True
+        if woke:
+            manager.change_state(drift_return or 'nexus')
+            drift_return = None
+            events = [e for e in events if e.type not in WAKE_EVENTS]
+
         for event in events:
             if event.type == pygame.QUIT:
                 running = False
@@ -355,7 +430,7 @@ def main():
                 if event.key == pygame.K_ESCAPE:
                     running = False
                 elif event.key == pygame.K_1:
-                    manager.change_state('ambient')
+                    _drift_to(manager, 'ambient')
                 elif event.key == pygame.K_2:
                     if manager.current_state_name != 'pomodoro':
                         manager.change_state('pomodoro')
@@ -367,23 +442,25 @@ def main():
                     else:
                         pygame.event.post(pygame.event.Event(BUTTON_NOTIFICATION_EVENT))
                 elif event.key == pygame.K_4:
-                    manager.change_state('orbital')
+                    _drift_to(manager, 'orbital')
                 elif event.key == pygame.K_5:
-                    manager.change_state('biolab')
+                    _drift_to(manager, 'biolab')
                 elif event.key == pygame.K_0:
-                    manager.change_state('abyssal')
+                    _drift_to(manager, 'abyssal')
                 elif event.key == pygame.K_h:
                     manager.change_state('nexus')
                 elif event.key == pygame.K_d:
-                    manager.change_state('aerodrome')
+                    _drift_to(manager, 'aerodrome')
                 elif event.key == pygame.K_r:
                     manager.change_state('docket')
                 elif event.key == pygame.K_o:
-                    manager.change_state('orrery')
+                    _drift_to(manager, 'orrery')
                 elif event.key == pygame.K_s:
-                    manager.change_state('starport')
+                    _drift_to(manager, 'starport')
                 elif event.key == pygame.K_l:
                     manager.change_state('logbook')
+                elif event.key == pygame.K_w:
+                    manager.change_state('drift')
                 elif event.key == pygame.K_m:
                     voice.toggle_mute()
                 # desktop stand-ins for the deck hardware
@@ -401,7 +478,7 @@ def main():
                 elif event.key == pygame.K_6:
                     manager.change_state('telegraph')
                 elif event.key == pygame.K_7:
-                    manager.change_state('conservatory')
+                    _drift_to(manager, 'conservatory')
                 elif event.key == pygame.K_8:
                     manager.change_state('climate')
                 elif event.key == pygame.K_9:
@@ -409,7 +486,14 @@ def main():
         
         # State-specific event handling
         manager.handle_events(events)
-        
+
+        # Untouched for long enough: hand the screen back to the rounds.
+        idle_t += dt
+        if manager.current_state_name not in NO_IDLE and idle_t >= _idle_secs():
+            drift_return = manager.current_state_name
+            idle_t = 0.0
+            manager.change_state('drift')
+
         # Update
         manager.update(dt)
         manager.chip_age += dt

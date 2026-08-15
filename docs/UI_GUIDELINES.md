@@ -35,6 +35,23 @@ Check on the real panel, not just at 400×600 in the smoke test — at
 480×320 there is far less room and collisions appear that don't at desk
 size.
 
+## 1b. The rail is for instruments, not for everything
+
+**A screen with nothing to do in it does not get a card.** The Nexus rail
+grew to sixteen cards — five across, four rows, scrolling — and nine of
+them were ambient worlds. Nobody navigates to a fish tank. They belong
+behind one card and on an idle timer (`states/drift_state.py`), not in
+the hub.
+
+Before adding a card, ask: *would someone reach for this on purpose?*
+If the answer is "it's nice to look at", it is a drift station, not a
+destination. The smoke test fails the build if the rail exceeds two rows.
+
+Anything hosted inside drift must also be **exitable**: an ambient world
+has no controls of its own, so changing straight into one strands you
+there. That is why the old per-world keys now call `drift.open_at(name)`
+instead of `change_state(name)`.
+
 ## 2. Scale from `SCREEN_HEIGHT`, never hardcode pixels
 
 Every screen starts with:
@@ -123,4 +140,5 @@ GPIO — say so on the screen in plain words, with the fix if there is one.
 - [ ] no blocking work in `update()` / `draw()`
 - [ ] added to `tools/smoke_test.py`
 - [ ] if it shouldn't be cycled into, added to `NO_CYCLE`
+- [ ] earns its rail card — otherwise it's a drift station
 - [ ] **looked at on the actual panel at 480×320**

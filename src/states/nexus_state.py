@@ -4,18 +4,25 @@ nexus_state.py
 NEXUS — the default home state and the brain of Kea.
 
 Integrates everything: big clock + date, the System Protocol greeting,
-live Stuttgart weather, and a rail of the seven worlds as procedural
-icon cards. The new idea is DAY PHASES: Nexus recommends a world for
-the hour you're in (conservatory at sunrise, neon city for deep work,
-weather at lunch, orbital for the afternoon, telegraph at dusk, the lab
-in the evening, the abyss after midnight), shown as a NOW / NEXT
-transit board — with a rain override that promotes WX.SYS when an
-umbrella is coming. Press A (or wire the deck toggle to it) to enable
-AUTO-PILOT: Nexus dispatches you to the recommended world after a short
-dwell, so the display follows your day on its own.
+live Stuttgart weather, and a rail of instrument cards.
 
-The blue hardware button still cycles states; every world's key is
-printed on its card.
+The rail carries INSTRUMENTS ONLY — the nine screens you actually press
+for a reason. It used to carry all sixteen, five across, which is four
+rows you have to scroll through, and nine of those cards were ambient
+worlds: beautiful, but there is nothing to *do* in a city or a fish
+tank, so nobody navigates to them. Those eight now live behind one card
+(DRIFT) and mostly arrive on their own — see states/drift_state.py.
+
+DAY PHASES still drive the NOW / NEXT transit board, and they are now
+literally the drift circuit, so the board tells you where Kea will be
+when you stop touching it: the glasshouse at dawn, the abyss at 3am.
+A rain override promotes WX.SYS when an umbrella is coming, and overdue
+reminders promote the DOCKET over everything.
+
+Press A (or the deck toggle) for AUTO-PILOT: Nexus hands you to the
+rounds after a short dwell.
+
+The blue hardware button still cycles states; every card prints its key.
 """
 
 import pygame
@@ -31,6 +38,8 @@ from backend import lifebook
 from system_protocol import SystemProtocol
 from ui.glow_text import GlowText
 from ui import pixel_art
+from states.drift_state import (CIRCUIT as DRIFT_CIRCUIT, WORLD_NAMES,
+                                station_for as _station_for)
 
 SCALE = SCREEN_HEIGHT / 480.0
 
@@ -60,37 +69,27 @@ TEXT_DIM   = (120, 124, 140)
 CARD_BG    = (18, 18, 28)
 CARD_EDGE  = (52, 52, 72)
 
-# Day phases: (start_hour, state_name, board label) — the full collection
-PHASES = [
-    (6,  "conservatory", "CONSERVATORY"),
-    (9,  "ambient",      "NEON SPRAWL"),
-    (12, "climate",      "WX.SYS"),
-    (13, "orbital",      "ORBITAL CTRL"),
-    (15, "aerodrome",    "AERODROME"),
-    (17, "telegraph",    "TELEGRAPH"),
-    (19, "biolab",       "BIO-VAT LAB"),
-    (21, "starport",     "STARPORT B-94"),
-    (23, "abyssal",      "ABYSSAL STN"),
-]
+# The rounds. Kea's day-phase table now IS the drift circuit — one source
+# of truth, so the NOW / NEXT board on this screen describes exactly where
+# the machine will be when you leave it alone. See states/drift_state.py.
+PHASES = [(start, name, label) for name, label, start, _a in
+          sorted(DRIFT_CIRCUIT, key=lambda c: c[2])]
 
-# Card rail: every screen in the machine (4 x 3)
+# The rail: instruments only — the things you press for a reason. It used
+# to carry all sixteen screens at 5 across, which is four rows and a
+# scroll. The nine ambient worlds were nine of those cards and none of
+# them is a place you go: there is nothing to do in a city or a fish tank.
+# They live behind DRIFT now, one card, and mostly arrive by themselves.
 WORLDS = [
-    ("ambient",      "SPRAWL",  "1", NEON_PINK),
-    ("climate",      "WX.SYS",  "8", AMBER),
-    ("orbital",      "ORBITAL", "4", PHOSPHOR),
-    ("biolab",       "BIO-VAT", "5", TOXIC),
-    ("telegraph",    "TELEGRF", "6", BRASS),
-    ("conservatory", "GARDEN",  "7", LEAF),
-    ("abyssal",      "ABYSSAL", "0", SEAFOAM),
-    ("aerodrome",    "AERODRM", "D", (216, 150, 70)),
-    ("orrery",       "ORRERY",  "O", (196, 156, 80)),
-    ("starport",     "STARPRT", "S", (130, 200, 255)),
-    ("docket",       "DOCKET",  "R", (200, 60, 45)),
-    ("greetings",    "PROTOCL", "9", (255, 160, 60)),
-    ("pomodoro",     "FOCUS",   "2", (228, 174, 86)),
-    ("logbook",      "LOGBOOK", "L", (172, 136, 68)),
-    ("console",      "CONSOLE", "C", (240, 176, 64)),
-    ("camera",       "CAMERA",  "K", (176, 138, 66)),
+    ("drift",     "DRIFT",   "W", (150, 170, 255)),
+    ("pomodoro",  "FOCUS",   "2", (228, 174, 86)),
+    ("docket",    "DOCKET",  "R", (200, 60, 45)),
+    ("climate",   "WX.SYS",  "8", AMBER),
+    ("greetings", "PROTOCL", "9", (255, 160, 60)),
+    ("telegraph", "TELEGRF", "6", BRASS),
+    ("logbook",   "LOGBOOK", "L", (172, 136, 68)),
+    ("camera",    "CAMERA",  "K", (176, 138, 66)),
+    ("console",   "CONSOLE", "C", (240, 176, 64)),
 ]
 
 # Screens that stay OFF the cycle: reachable from this hub (and by their
@@ -100,11 +99,20 @@ WORLDS = [
 #   camera  — entering it powers up the sensor (~1 s) and exiting stops it
 #             again, so cycling through would spin the camera all day. It
 #             has button 5 (pin 7) to itself.
-NO_CYCLE = {"console", "camera"}
+#   worlds  — the eight ambient scenes are still registered (drift borrows
+#             the instances) but they are no longer destinations. You reach
+#             them through DRIFT or by leaving Kea alone.
+NO_CYCLE = {"console", "camera"} | set(WORLD_NAMES)
 
 # The dial/button cycle: every world except those.
 def cycle_worlds():
     return [w for w in WORLDS if w[0] not in NO_CYCLE]
+
+
+def station_index_now():
+    """Which of the eight stations the rounds are at right now — the DRIFT
+    card lights that dot, so the hub shows where Kea would go."""
+    return _station_for(datetime.datetime.now().hour)
 
 
 AUTO_DWELL = 15.0     # fallback; the live value is the CONSOLE's "dwell" dial
@@ -174,12 +182,13 @@ class NexusState(State):
         self._clock_str = ""
         self._clock_surf = None
 
-        # layout: 5 x 3 rail holding the whole collection
+        # layout: 5 across — nine instruments, two rows, no scrolling
         self.cols = 5
         self.rail_y = s(200)
         self.card_w = (SCREEN_WIDTH - s(16) - s(5) * (self.cols - 1)) // self.cols
         self.card_h = s(56)
 
+        self._drift_station = station_index_now()
         self._bg = self._build_background()
         self._cards = [self._build_card(w) for w in WORLDS]
 
@@ -223,6 +232,17 @@ class NexusState(State):
                 pygame.draw.rect(card, dim, (cx + s(bx) - s(3), cy + s(14) - s(bh),
                                              s(6), s(bh)))
             pygame.draw.circle(card, accent, (cx + s(11), cy - s(9)), s(4))
+        elif state == "drift":            # the circuit: eight stops, one lit
+            import math as _m
+            pygame.draw.circle(card, dim, (cx, cy), s(11), 1)
+            live = station_index_now()
+            for i in range(8):
+                a = -_m.pi / 2 + i * _m.pi / 4
+                px, py = cx + int(s(11) * _m.cos(a)), cy + int(s(11) * _m.sin(a))
+                if i == live:
+                    pygame.draw.circle(card, accent, (px, py), s(3))
+                else:
+                    pygame.draw.circle(card, dim, (px, py), s(2))
         elif state == "orbital":          # scope + sweep
             pygame.draw.circle(card, dim, (cx, cy), s(13), 1)
             pygame.draw.circle(card, dim, (cx, cy), s(7), 1)
@@ -374,6 +394,14 @@ class NexusState(State):
 
     def update(self, dt):
         self.time_alive += dt
+        # the DRIFT card's lit dot follows the rounds; rebuilt only when the
+        # station actually changes, so it costs nothing per frame
+        st = station_index_now()
+        if st != self._drift_station:
+            self._drift_station = st
+            for i, wd in enumerate(WORLDS):
+                if wd[0] == "drift":
+                    self._cards[i] = self._build_card(wd)
         self.weather_timer += dt
         self.greet_timer += dt
         self.reminders.update(dt)          # keep the docket feed warm
@@ -399,6 +427,11 @@ class NexusState(State):
             if self.dwell >= _dwell():
                 self.dwell = 0.0
                 target = self._recommended(datetime.datetime.now())[0]
+                # an ambient station means "start the rounds"; drift resumes
+                # at the right hour by itself. Overrides (docket / rain) are
+                # real screens and still go straight there.
+                if target in WORLD_NAMES:
+                    target = "drift"
                 if self.manager.current_state_name != target:
                     self.manager.change_state(target)
 
@@ -475,8 +508,10 @@ class NexusState(State):
             if fill > 2:
                 pygame.draw.rect(surface, col, (bx + 1, wy + s(23), fill - 2, s(4) - 2))
 
-        # ── world rail (4 + 3 cards) ─────────────────────────────────────
+        # ── instrument rail ──────────────────────────────────────────────
         rec_state = self._recommended(now)[0]
+        if rec_state in WORLD_NAMES:
+            rec_state = "drift"        # the rounds are the recommendation
         gap = s(5)
         for i, (world, card) in enumerate(zip(WORLDS, self._cards)):
             row, col = divmod(i, self.cols)

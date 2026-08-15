@@ -33,29 +33,50 @@ python3 src/main.py
 
 ## Controls
 
-The app boots into **NEXUS**, the home hub: clock, System Protocol greeting, live weather, and **every screen as a card on a 4×3 rail**. It recommends a world for the current **day phase** — garden at sunrise → neon city for work → weather at lunch → orbital afternoons → aerodrome → telegraph at dusk → bio-lab evenings → starport at night → the abyss after 23:00 — with a rain override and a docket override when reminders go overdue. Press `A` on the hub to enable **auto-pilot**: Nexus dispatches to the recommended world automatically.
+The app boots into **NEXUS**, the home hub: clock, System Protocol greeting, live weather, and a rail of **instrument cards** — the nine screens you press for a reason, two rows, no scrolling.
+
+The eight ambient worlds are not on the rail. There is nothing to *do* in a neon city or a fish tank, so nobody navigates to them; they are what Kea does when you are not there. They live behind one card, **DRIFT**, and mostly arrive on their own.
+
+### DRIFT — the rounds
+
+Kea keeps a circuit of eight stations and walks it, and the circuit follows the sun:
+
+| | Station | |
+|---|---|---|
+| 05 | the glasshouse | first light, wet soil |
+| 08 | the orrery | brass, the day being wound |
+| 11 | orbital control | high noon upstairs |
+| 14 | bay 94 | dust and two setting suns |
+| 17 | the aerodrome | golden hour, last departure |
+| 20 | neon sprawl | the city takes over |
+| 22 | the bio-vat lab | everyone's gone, the vats are awake |
+| 01 | abyssal station | the small hours, deepest point |
+
+Garden → clockwork → orbit → desert → dusk → city → lab → the deep, and back into the garden at dawn. **Leave Kea alone for a few minutes and it resumes the rounds wherever the hour says it should be** — the glasshouse at 6am, the bottom of the ocean at 3am. Touch anything and you are back where you were; that first press only wakes it, so you never lose a reminder to a button you pressed just to see the screen.
+
+Passages are not cuts and deliberately not dissolves — the outgoing station slides away behind a lit seam to reveal the next one already running, and a **field note** names where you came from ("glass to glass — but this window holds back an ocean"), so the worlds read as one round rather than eight screensavers.
+
+Tune the wait on the Console's **IDLE** dial (1-60 min, default 5); `KEA_DRIFT_HOLD` sets how long each station is held (default 90 s).
+
+The **NOW / NEXT** transit board on Nexus is driven by the same circuit, so it tells you where Kea will be when you stop touching it — with a rain override that promotes WX.SYS and a docket override when reminders go overdue. Press `A` for **auto-pilot**: Nexus hands you to the rounds after a short dwell.
 
 Run `python3 tools/smoke_test.py` after changes: it renders every state headlessly and verifies each Nexus card and day phase points at a registered state.
 
 **Keyboard:**
+
+Instruments:
 - `H` nexus (home hub)
-- `1` ambient
-- `2` pomodoro
-- `3` notification
-- `4` street
-- `5` cloud city
-- `4` orbital control (atompunk radar)
-- `5` bio-vat lab (biopunk specimens)
-- `6` telegraph
-- `7` conservatory (solarpunk garden)
-- `8` climate
-- `9` greetings
-- `0` abyssal station (oceanpunk deep sea)
-- `D` aerodrome (dieselpunk airfield — dispatches fly by as towed banners)
+- `2` pomodoro · `3` notification · `6` telegraph · `8` climate · `9` greetings
 - `R` dispatch docket (your phone reminders as aging paper cards)
-- `O` the orrery (clockpunk — live 3D solar system at today's real planetary positions)
-- `S` starport bay 94 (twin-sun desert dock; dispatches arrive as a hologram)
 - `L` the logbook (the machine's own history, kept in ink)
+- `K` camera · `C` console
+
+The rounds — these open **DRIFT** parked at that station, so the circuit carries on from there rather than stranding you in a world with no way out:
+- `W` drift (resumes at the current hour's station)
+- `7` the glasshouse (solarpunk garden) · `O` the orrery (clockpunk 3D solar system)
+- `4` orbital control (atompunk radar) · `S` starport bay 94 (twin-sun desert dock)
+- `D` aerodrome (dieselpunk airfield) · `1` neon sprawl (cyberpunk city)
+- `5` bio-vat lab (biopunk specimens) · `0` abyssal station (oceanpunk deep sea)
 
 ## Reminders from your phone (the Dispatch Docket)
 
@@ -92,7 +113,7 @@ The **Pomodoro** (`2`) is an hourglass: sand drains in real time, the stream sto
 - `Esc` quits
 
 **Rotary dial (KY-040) & toggle:**
-- **Turn** — on Nexus, browses the world rail; anywhere else, tunes straight through the worlds like a radio dial
+- **Turn** — on Nexus, browses the instrument rail; in DRIFT, walks the circuit by hand; anywhere else, tunes through the screens like a radio dial
 - **Press** — on Nexus, enters the highlighted world; anywhere else, returns home
 - **Toggle** — auto-pilot on/off (or voice mute with `KEA_TOGGLE_ROLE=mute`)
 - Desktop stand-ins: `←`/`→` turn, `Enter` press, `T` toggle

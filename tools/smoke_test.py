@@ -48,6 +48,8 @@ from states.pomodoro_state import PomodoroState            # noqa: E402
 from states.notification_state import NotificationState    # noqa: E402
 from states.console_state import ConsoleState              # noqa: E402
 from states.camera_state import CameraState                # noqa: E402
+from states.drift_state import (DriftState, CIRCUIT, WORLD_NAMES,   # noqa: E402
+                                ARRIVALS, PASSAGES, station_for)
 
 STATES = [AmbientState, ClimateState, TelegraphState, GreetingsState,
           ConservatoryState, OrbitalState, BiolabState, AbyssalState,
@@ -60,14 +62,32 @@ failures = []
 
 class FakeManager:
     current_state_name = "smoke"
+    toggle_on = False
+
+    def __init__(self):
+        self.states = {}
 
     def change_state(self, name):
         pass
 
 
+built = {}          # name -> instance, so drift can borrow real worlds
+NAME_OF = {
+    "AmbientState": "ambient", "ClimateState": "climate",
+    "TelegraphState": "telegraph", "GreetingsState": "greetings",
+    "ConservatoryState": "conservatory", "OrbitalState": "orbital",
+    "BiolabState": "biolab", "AbyssalState": "abyssal",
+    "AerodromeState": "aerodrome", "OrreryState": "orrery",
+    "StarportState": "starport", "DocketState": "docket",
+    "LogbookState": "logbook", "NexusState": "nexus",
+    "PomodoroState": "pomodoro", "NotificationState": "notification",
+    "ConsoleState": "console", "CameraState": "camera",
+}
+
 for cls in STATES:
     try:
         st = cls(FakeManager())
+        built[NAME_OF.get(cls.__name__, cls.__name__)] = st
         st.enter()                                 # states may rely on it
         for _ in range(20):
             st.update(1 / 30)
@@ -78,6 +98,50 @@ for cls in STATES:
     except Exception as exc:                       # noqa: BLE001
         failures.append(f"{cls.__name__}: {type(exc).__name__}: {exc}")
         print(f"[FAIL] {cls.__name__}: {exc}")
+
+# ── DRIFT: the rounds, hosting the borrowed worlds ─────────────────────────
+try:
+    dm = FakeManager()
+    dm.states = built
+    drift = DriftState(dm)
+    drift.enter()
+    for _ in range(20):
+        drift.update(1 / 30)
+    drift.draw(surface)
+    drift.draw_pomodoro(surface, 754, "work")
+    # walk the entire circuit, forwards then back, drawing each passage
+    for step in (1, -1):
+        for _ in range(len(CIRCUIT)):
+            drift.move_cursor(step)
+            for _ in range(4):
+                drift.update(1 / 30)
+                drift.draw(surface)
+    drift.exit()
+    print("[PASS] DriftState (walked all "
+          f"{len(CIRCUIT)} stations both ways)")
+except Exception as exc:                           # noqa: BLE001
+    failures.append(f"DriftState: {type(exc).__name__}: {exc}")
+    print(f"[FAIL] DriftState: {exc}")
+
+# the circuit's story data must be complete — a missing arrival line would
+# only show up as a KeyError hours into a drift nobody is watching
+for _n, _l, _h, _a in CIRCUIT:
+    if _n not in ARRIVALS or not ARRIVALS[_n]:
+        failures.append(f"station '{_n}' has no arrival field notes")
+        print(f"[FAIL] arrivals -> {_n}")
+for a, b in PASSAGES:
+    if a not in WORLD_NAMES or b not in WORLD_NAMES:
+        failures.append(f"passage ({a} -> {b}) names a station not on the circuit")
+        print(f"[FAIL] passage -> {a} -> {b}")
+
+# every hour of the day must land on exactly one station
+_covered = {station_for(h) for h in range(24)}
+if len(_covered) != len(CIRCUIT):
+    missing = [CIRCUIT[i][0] for i in range(len(CIRCUIT)) if i not in _covered]
+    failures.append(f"stations never reached by the clock: {missing}")
+    print(f"[FAIL] hours -> {missing}")
+else:
+    print(f"[PASS] all 24 hours map onto all {len(CIRCUIT)} stations")
 
 # every Nexus card + day phase must point at a state registered in main.py
 main_src = open(os.path.join(ROOT, "src", "main.py"), encoding="utf-8").read()
@@ -92,6 +156,19 @@ for name in sorted({p[1] for p in PHASES}):
     if name not in registered:
         failures.append(f"Day phase '{name}' is not registered in main.py")
         print(f"[FAIL] phase -> {name}")
+for name in WORLD_NAMES:
+    if name not in registered:
+        failures.append(f"Drift station '{name}' is not registered in main.py")
+        print(f"[FAIL] station -> {name}")
+
+# the rail has to fit on one screen without scrolling — that was the whole
+# point of the cut, and it silently regresses the moment a card is added
+_cols, _rows = 5, -(-len(WORLDS) // 5)
+if _rows > 2:
+    failures.append(f"Nexus rail is {_rows} rows ({len(WORLDS)} cards) — it scrolls again")
+    print(f"[FAIL] rail -> {_rows} rows")
+else:
+    print(f"[PASS] rail is {len(WORLDS)} cards in {_rows} rows")
 
 if not failures:
     print(f"[PASS] all {len(WORLDS)} cards and {len(PHASES)} phases route correctly")

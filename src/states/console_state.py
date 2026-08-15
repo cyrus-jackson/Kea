@@ -12,6 +12,8 @@ you Kea.
     DIAL 2  DWELL         3-120 s   how long each screen is held before
                                     auto-pilot moves on
     DIAL 3  AUTO SHOOT     2-60 s   camera interval when AUTO SHOOT is on
+    DIAL 4  IDLE          1-60 min  untouched time before the drift rounds
+                                    take the screen back
 
 Controls:
     encoder turn    move the selected dial up / down
@@ -53,6 +55,7 @@ DIALS = [
     ("brightness", "BRIGHTNESS", "%", "PANEL BACKLIGHT"),
     ("dwell", "DWELL", "s", "AUTO-PILOT HOLD"),
     ("shoot_every", "AUTO SHOOT", "s", "CAMERA INTERVAL"),
+    ("idle_mins", "IDLE", "m", "BEFORE DRIFT"),
 ]
 
 
