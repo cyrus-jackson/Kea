@@ -52,6 +52,55 @@ has no controls of its own, so changing straight into one strands you
 there. That is why the old per-world keys now call `drift.open_at(name)`
 instead of `change_state(name)`.
 
+## 1c. The look: neon on black, and where it comes from
+
+**Kea is dystopian, cyberpunk, a bit Star Wars cockpit, a bit roguelike
+terminal, pixel art throughout.** Saturated neon on near-black, hard
+edges, glowing type. Nothing pastel, nothing corporate, no grey office
+enamel. It is a machine salvaged from somewhere worse than here and it
+should look like it.
+
+**Pull every colour from `src/ui/palette.py`.** Screens used to declare
+their own at the top — about two hundred hardcoded tuples across
+twenty-one files — and that is exactly how a theme dies: each new screen
+picks "a nice amber" slightly different from the last nice amber, and
+after a dozen screens there is no house style, just twelve opinions. The
+Console and the Board had drifted all the way to grey and brass.
+
+```python
+from ui import palette as pal
+
+surf.fill(pal.VOID)                       # never pure black
+surf.blit(pal.glow_text(font, "READY", pal.CYAN), (x, y))
+pal.glow_rect(surf, box, pal.MAGENTA, radius=s(5))
+```
+
+If a colour is not in `palette.py` it probably should not be on screen.
+Need a new one? Add it there, with a name, so the next screen reuses it.
+
+- `CYAN` is the default accent. `MAGENTA` is hot/danger/night, `ACID` is
+  alive/go, `AMBER` is attention, `BLOOD` is stop.
+- Use the semantic aliases (`OK`, `WARN`, `DANGER`, `ACCENT`) for
+  meaning and the raw names for decoration. Then "what colour is danger"
+  changes in one place.
+- `pal.cycle(i)` gives the next distinct accent for cards, tags, series.
+- **Glow is the look.** Neon without bloom is just bright text. Use
+  `glow_text`, `halo`, `glow_rect` — all cached, so a glow costs about
+  500x less after the first frame. Never blur per frame.
+- Bevelled/clipped corners (`pal.bevel`) read as hardware; plain
+  rectangles read as a business dashboard.
+- Ambient worlds keep their own identities — the glasshouse is green
+  because it is a glasshouse, the abyss is seafoam. The palette governs
+  the *instruments*, and gives the worlds their accents.
+
+### Atmosphere never beats legibility
+
+The panel is dim and flat; neon on black that sings on a monitor can be
+mush on the real thing. `pal.contrast(fg, bg)` measures the luminance
+gap and `pal.readable(fg, bg, small=)` is the check — body text needs
+60, text under ~14 px needs 85. `INK_FAINT` is decoration only; never
+put words in it. The smoke test enforces this.
+
 ## 2. Scale from `SCREEN_HEIGHT`, never hardcode pixels
 
 Every screen starts with:
@@ -141,4 +190,7 @@ GPIO — say so on the screen in plain words, with the fix if there is one.
 - [ ] added to `tools/smoke_test.py`
 - [ ] if it shouldn't be cycled into, added to `NO_CYCLE`
 - [ ] earns its rail card — otherwise it's a drift station
+- [ ] every colour comes from `ui/palette.py`, none declared locally
+- [ ] bright text glows (`pal.glow_text`), and the glow is cached
+- [ ] `pal.readable()` passes for every text/background pair
 - [ ] **looked at on the actual panel at 480×320**

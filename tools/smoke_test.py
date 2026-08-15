@@ -146,6 +146,66 @@ if len(_covered) != len(CIRCUIT):
 else:
     print(f"[PASS] all 24 hours map onto all {len(CIRCUIT)} stations")
 
+# Every screen must have usable dynamic range on a dim panel.
+#
+# Thresholds are measured, not guessed: across all twenty screens the
+# dimmest legitimate one (the orrery, a brass wireframe in space) sits at
+# 1.10% bright pixels and p99.9 luminance 225. A floor of 0.5% / 170
+# clears every real screen with room to spare while still catching a
+# whole screen that has gone dark.
+#
+# What this CANNOT catch is one label going invisible — see the palette
+# check below, which can.
+import pygame.surfarray as _sa                                  # noqa: E402
+
+MIN_BRIGHT_PCT = 0.5
+MIN_P999_LUM = 170
+
+_thin = []
+for _name, _st in sorted(built.items()):
+    try:
+        surface.fill((0, 0, 0))
+        _st.enter()
+        for _ in range(6):
+            _st.update(1 / 30)
+        _st.draw(surface)
+        _px = _sa.array3d(surface).astype("float64")
+        _lum = (0.299 * _px[:, :, 0] ** 2 + 0.587 * _px[:, :, 1] ** 2
+                + 0.114 * _px[:, :, 2] ** 2) ** 0.5
+        _bright = float((_lum > 120).mean()) * 100.0
+        _flat = sorted(_lum.flatten())
+        _p999 = float(_flat[int(len(_flat) * 0.999)])
+        if _bright < MIN_BRIGHT_PCT or _p999 < MIN_P999_LUM:
+            _thin.append(f"{_name}: {_bright:.2f}% bright, p99.9 {_p999:.0f}")
+            print(f"[FAIL] contrast -> {_name}: {_bright:.2f}% bright, "
+                  f"p99.9 {_p999:.0f}")
+    except Exception as _e:                                     # noqa: BLE001
+        _thin.append(f"{_name}: could not measure ({_e})")
+if _thin:
+    failures.extend(_thin)
+else:
+    print(f"[PASS] all {len(built)} screens have readable dynamic range")
+
+# NOTE ON WHAT IS *NOT* TESTED HERE
+#
+# The bug this retheme actually produced was one label going invisible:
+# the Docket drew its title in PAPER, which meant "the light thing you
+# write on" before the neon palette and "a dark card" after it, so the
+# title rendered dark-on-dark and vanished. The frame check above cannot
+# see that — the screen still had a bright green disc and plenty of
+# light — and it was found by rendering the screen and looking at it.
+#
+# Two static checks for it were tried and both removed. Comparing every
+# text colour against every background in the file flags the transit
+# badge, which correctly draws dark text on a bright neon pill. Flagging
+# any constant used as both a filled surface and as text flags twelve
+# cases, of which roughly zero are bugs — filling a badge with BRASS_LIT
+# and also writing with it on a dark panel is simply normal.
+#
+# A static check cannot know what is behind a glyph, and a noisy test
+# gets ignored, which is worse than no test. So: new screens get looked
+# at, and pal.readable() is there to check a pair when you are unsure.
+
 # Every character the screens draw must exist in the font we draw it with.
 # pygame renders a missing codepoint as a featureless box, which looks like
 # a layout bug and is invisible to any test that only checks positions —

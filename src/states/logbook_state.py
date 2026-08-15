@@ -21,6 +21,7 @@ import datetime
 
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
+from ui import palette as pal
 from backend import lifebook, vitals
 from backend.reminders import ReminderService
 
@@ -36,18 +37,20 @@ def lerp_color(a, b, t):
 
 
 # ── Palette: oxblood leather, aged paper, iron-gall ink ─────────────────────
-LEATHER      = (58, 30, 28)
-LEATHER_DARK = (36, 18, 17)
-BRASS        = (172, 136, 68)
-BRASS_LIT    = (222, 188, 118)
-PAPER        = (232, 219, 188)
-PAPER_SHADE  = (214, 198, 164)
-RULE         = (196, 178, 146)
-INK          = (48, 38, 30)
-INK_FAINT    = (124, 108, 86)
-INK_RED      = (150, 46, 38)
-RIBBON       = (168, 40, 40)
-
+# Palette from ui/palette.py — see UI_GUIDELINES §1c. This was an aged
+# paper ledger on a leather desk. It is now what it always wanted to be:
+# a phosphor terminal log, the roguelike message history of a machine.
+LEATHER      = pal.PANEL
+LEATHER_DARK = pal.VOID
+BRASS        = pal.CYAN
+BRASS_LIT    = pal.ICE
+PAPER        = pal.VOID_HI
+PAPER_SHADE  = pal.VOID
+RULE         = pal.mix(pal.ACID, pal.VOID, 0.80)
+INK          = pal.ACID
+INK_FAINT    = pal.mix(pal.ACID, pal.VOID, 0.50)
+INK_RED      = pal.MAGENTA
+RIBBON       = pal.mix(pal.MAGENTA, pal.VOID, 0.62)  # a marker, not a wall
 MILESTONES = {
     "pomodoros":       ([10, 25, 50, 100, 250, 500, 1000], "FOCUS SESSIONS"),
     "conservatory_gen": ([5, 10, 25, 50, 100, 250], "GARDEN GENERATIONS"),

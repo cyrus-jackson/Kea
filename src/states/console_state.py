@@ -29,6 +29,7 @@ import pygame
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
 from backend import settings
+from ui import palette as pal
 
 SCALE = SCREEN_HEIGHT / 480.0
 
@@ -37,19 +38,21 @@ def s(v):
     return max(1, int(v * SCALE))
 
 
-# ── Palette: brushed steel, engraved ink, warning amber ─────────────────────
-STEEL_HI   = (126, 132, 140)
-STEEL      = (92, 98, 106)
-STEEL_LO   = (58, 63, 70)
-PANEL      = (44, 48, 54)
-PANEL_DARK = (30, 33, 38)
-ENGRAVE    = (206, 212, 220)
-ENGRAVE_LO = (140, 148, 158)
-AMBER      = (240, 176, 64)
-AMBER_LIT  = (255, 214, 130)
-GREEN_LAMP = (120, 226, 140)
-RED_STRIPE = (176, 62, 48)
-SHADOW     = (18, 20, 24)
+# ── Palette ─────────────────────────────────────────────────────────────────
+# From ui/palette.py — see UI_GUIDELINES §1c. This was brushed steel and
+# engraved ink, i.e. a photocopier. It is now a calibration deck.
+STEEL_HI   = pal.EDGE
+STEEL      = pal.mix(pal.EDGE, pal.VOID, 0.35)
+STEEL_LO   = pal.PANEL_HI
+PANEL      = pal.PANEL
+PANEL_DARK = pal.VOID
+ENGRAVE    = pal.INK
+ENGRAVE_LO = pal.INK_DIM
+AMBER      = pal.AMBER
+AMBER_LIT  = pal.GOLD
+GREEN_LAMP = pal.ACID
+RED_STRIPE = pal.MAGENTA     # hazard chevrons, but in hot pink
+SHADOW     = pal.SHADOW
 
 DIALS = [
     ("brightness", "BRIGHTNESS", "%", "PANEL BACKLIGHT"),
@@ -154,12 +157,8 @@ class ConsoleState(State):
     def _make_bg(self, size):
         w, h = size
         bg = pygame.Surface(size)
-        bg.fill(PANEL)
-        # brushed vertical grain
-        for x in range(0, w, 2):
-            k = 10 + int(8 * math.sin(x * 0.7) + 6 * math.sin(x * 0.13))
-            pygame.draw.line(bg, (PANEL[0] + k, PANEL[1] + k, PANEL[2] + k),
-                             (x, 0), (x, h))
+        bg.fill(pal.VOID)
+        bg.blit(pal.grid((w, h), step=s(20), glow_every=5), (0, 0))
         # header plate
         head = pygame.Rect(0, 0, w, s(62))
         pygame.draw.rect(bg, STEEL_LO, head)
@@ -178,10 +177,8 @@ class ConsoleState(State):
                                  (x + sw - s(5), stripe_y + s(6)),
                                  (x - s(5), stripe_y + s(6))])
         # engraved title
-        title = self.font_title.render("CONSOLE", True, ENGRAVE)
-        shade = self.font_title.render("CONSOLE", True, SHADOW)
-        bg.blit(shade, (s(15) + 1, s(15) + 1))
-        bg.blit(title, (s(15), s(15)))
+        pal.blit_glow(bg, self.font_title, "CONSOLE", pal.CYAN,
+                      (s(15), s(15)), radius=3)
         sub = self.font_tiny.render("SERVICE PANEL / CALIBRATION", True, ENGRAVE_LO)
         bg.blit(sub, (s(16), s(40)))
         # four corner screws
@@ -205,14 +202,16 @@ class ConsoleState(State):
         pygame.draw.rect(surf, STEEL_LO, box, 1, border_radius=s(5))
         if active:
             glow = AMBER_LIT if self.flash > 0 else AMBER
-            pygame.draw.rect(surf, glow, box, s(2), border_radius=s(5))
+            pal.glow_rect(surf, box, glow, s(2), radius=s(5), spread=3,
+                          alpha=70)
 
         # label + reading
         col = AMBER_LIT if active else ENGRAVE_LO
         surf.blit(self.font_dial.render(label, True, col), (x + s(10), y + s(8)))
         surf.blit(self.font_tiny.render(sub, True, ENGRAVE_LO), (x + s(10), y + s(30)))
 
-        vs = self.font_val.render(str(val), True, AMBER_LIT if active else ENGRAVE)
+        vs = (pal.glow_text(self.font_val, str(val), AMBER_LIT, radius=3)
+              if active else self.font_val.render(str(val), True, ENGRAVE))
         surf.blit(vs, (x + w - vs.get_width() - s(26), y + s(10)))
         surf.blit(self.font_small.render(unit, True, ENGRAVE_LO),
                   (x + w - s(22), y + s(24)))

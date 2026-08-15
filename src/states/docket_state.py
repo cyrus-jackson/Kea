@@ -22,6 +22,7 @@ import datetime
 
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
+from ui import palette as pal
 from backend.reminders import ReminderService, stage_for, TOPIC
 
 SCALE = SCREEN_HEIGHT / 480.0
@@ -36,16 +37,18 @@ def lerp_color(a, b, t):
 
 
 BG        = (17, 13, 10)
-WOOD      = (42, 31, 21)
-WOOD_DARK = (30, 22, 15)
-BRASS     = (152, 120, 58)
-PAPER     = (233, 217, 178)
-PAPER_OLD = (214, 194, 150)
-INK       = (62, 45, 28)
-INK_FAINT = (130, 110, 84)
-STAMP_RED = (186, 48, 36)
-DONE_GRN  = (98, 168, 88)
-
+# Palette from ui/palette.py — see UI_GUIDELINES §1c. The dockets were
+# paper on a wooden desk; they are now holo-tickets shot down a tube.
+# The urgency stamps keep their meaning: magenta shouts, acid means done.
+WOOD         = pal.VOID
+WOOD_DARK    = pal.SHADOW
+BRASS        = pal.CYAN
+PAPER        = pal.PANEL
+PAPER_OLD    = pal.PANEL_HI
+INK          = pal.INK
+INK_FAINT    = pal.INK_DIM
+STAMP_RED    = pal.MAGENTA
+DONE_GRN     = pal.ACID
 STAGE_COLORS = {
     "POSTED":     (110, 150, 120),
     "BOARDING":   (170, 140, 70),
@@ -104,8 +107,8 @@ class DocketState(State):
         plate = pygame.Rect(s(10), s(8), SCREEN_WIDTH - s(20), s(40))
         pygame.draw.rect(surf, WOOD_DARK, plate, border_radius=s(6))
         pygame.draw.rect(surf, BRASS, plate, 2, border_radius=s(6))
-        t = self.font_title.render("DISPATCH DOCKET", True, PAPER)
-        surf.blit(t, (plate.x + s(12), plate.y + s(6)))
+        pal.blit_glow(surf, self.font_title, "DISPATCH DOCKET", pal.CYAN,
+                      (plate.x + s(12), plate.y + s(6)))
 
         # pneumatic tube along the right edge
         tx = SCREEN_WIDTH - s(13)
@@ -334,12 +337,15 @@ class DocketState(State):
         cy = int(SCREEN_HEIGHT * 0.42)
         # wax seal of a clear conscience
         pulse = 0.5 + 0.5 * math.sin(t * 1.5)
-        pygame.draw.circle(surface, lerp_color(DONE_GRN, WOOD, 0.35),
+        surface.blit(pal.halo(int(s(56)), pal.ACID, 70),
+                     (SCREEN_WIDTH // 2 - s(56), cy - s(56)))
+        pygame.draw.circle(surface, lerp_color(DONE_GRN, WOOD, 0.25),
                            (SCREEN_WIDTH // 2, cy), s(34))
         pygame.draw.circle(surface, lerp_color(DONE_GRN, (255, 255, 255), 0.2 * pulse),
                            (SCREEN_WIDTH // 2, cy), s(34), 2)
-        chk = self.font_stamp.render("ALL CLEAR", True, PAPER)
-        surface.blit(chk, ((SCREEN_WIDTH - chk.get_width()) // 2, cy + s(48)))
+        chk = pal.glow_text(self.font_stamp, "ALL CLEAR", pal.ACID)
+        surface.blit(chk, ((SCREEN_WIDTH - chk.get_width()) // 2,
+                           cy + s(48) - pal.glow_pad()))
         sub = self.font_small.render("THE DOCKET SLEEPS. NOTHING OWED.", True, INK_FAINT)
         surface.blit(sub, ((SCREEN_WIDTH - sub.get_width()) // 2, cy + s(74)))
         how = self.font_small.render(f"POST TO  ntfy.sh/{TOPIC}", True, BRASS)
