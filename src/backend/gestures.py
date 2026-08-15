@@ -5,22 +5,31 @@ servo.py knows how to move a servo safely. This decides what to move it
 *to*, from what is going on in the app. Kept apart so the driver stays a
 driver and the policy stays readable.
 
-THE ARM HAS TWO JOBS AND ONE ARM
+THREE JOBS, ONE ARM
 
-Two behaviours want it:
+    THE GAUGE    the angle is the countdown to a departure YOU armed
+                 with RED on the Board. Opt-in, time-critical, and the
+                 screen shows the same thing so the two never disagree.
+    THE FOCUS    during a Pomodoro the angle is how far through you are,
+                 and it taps at each quarter — one tap at a quarter, two
+                 at half, three at three-quarters, four at the end. You
+                 can hear your progress without looking up.
+    THE MAST     down = nothing owed, half = something pending, up =
+                 overdue. Ambient, slow, the state of your obligations.
 
-    THE MAST     down = nothing owed, 45 deg = something pending,
-                 up = overdue. Slow, persistent, the ambient state of
-                 your obligations.
-    THE GAUGE    the angle *is* the countdown to a tram you can still
-                 catch. Fast, transient, and time-critical.
+Priority is gauge > focus > mast, and the reasoning is about what is
+recoverable. Missing a tram cannot be undone and you deliberately armed
+it, so it wins. A Pomodoro quarter is worth knowing but nothing breaks
+if you learn it thirty seconds late. The mast will still be true in an
+hour, so it yields to both.
 
-They cannot both have it, so the gauge takes over when a departure is
-inside GAUGE_WINDOW minutes and hands back afterwards. That is the right
-way round: the mast is information that will still be true in an hour,
-the countdown stops being useful the moment you have missed it. The
-handover is announced by a distinct double-tap so you never misread a
-gauge angle as an obligation level.
+Every handover is announced by a distinct double-tap, because otherwise
+"half raised" means three different things with no way to tell which.
+
+The gauge used to follow whatever departure happened to be soonest,
+which was wrong twice over: the arm reported a tram you had no intention
+of catching, and you could not tell which one it meant. It now only
+tracks a departure you armed.
 
 THE MONITOR IS ABOUT ATTENTION, NOT STATUS
 
@@ -50,6 +59,7 @@ GAUGE_WINDOW = 12.0
 
 MAST_POLL = 5.0          # seconds between checking what is owed
 GAUGE_POLL = 20.0        # seconds between recomputing the countdown
+FOCUS_POLL = 10.0        # seconds between updating the focus angle
 DOUBLE_TAKE_DEG = 12.0   # how far the monitor flicks
 MIN_STEP_DEG = 4.0       # mast: ignore smaller changes, not worth the noise
 # The gauge is a continuous readout, so small moves ARE the point. At 20 s
@@ -70,6 +80,9 @@ class Gestures:
         self._gauge_t = GAUGE_POLL
         self._last_count = None
         self._gauge_active = False
+        self._focus_t = FOCUS_POLL
+        self._focus_quarter = None   # last quarter announced
+        self._owner = None           # "gauge" / "focus" / "mast"
         self._arm_target = None
         self._take = None            # (stage, deadline, home angle)
         self._tap = None             # queued handover taps
@@ -91,6 +104,31 @@ class Gestures:
             return 0.5
         return 0.0
 
+    def _focus(self):
+        """(fraction through the session, quarter 1-4) or None.
+
+        Only while a work session is actually running — a break is rest,
+        and an arm ticking through your rest is the opposite of rest.
+        """
+        try:
+            p = self.manager.states.get("pomodoro") if self.manager else None
+        except Exception:                              # noqa: BLE001
+            return None
+        if p is None or not getattr(p, "running", False):
+            return None
+        if getattr(p, "mode", "work") != "work":
+            return None
+        try:
+            from states.pomodoro_state import WORK_TIME
+            total = float(getattr(p, "session_len", None) or WORK_TIME)
+            left = float(p.time_left)
+        except Exception:                              # noqa: BLE001
+            return None
+        if total <= 0:
+            return None
+        done = max(0.0, min(1.0, 1.0 - left / total))
+        return done, min(4, int(done * 4) + (1 if done >= 1.0 else 0))
+
     def _gauge_fraction(self):
         """1.0 = go now, 0.0 = GAUGE_WINDOW minutes out. None if no tram.
 
@@ -110,23 +148,17 @@ class Gestures:
             st = self.manager.states.get("transit") if self.manager else None
         except Exception:                              # noqa: BLE001
             return None
-        if st is None or not getattr(st, "rows", None):
+        if st is None:
             return None
         try:
             from backend import vvs
-            now = vvs._now()
-            best = None
-            for _deps, _err in [st.rows.get(r.label, ([], None))
-                                for r in st.routes]:
-                for d in _deps:
-                    if d.catchable(now):
-                        left = d.leave_in(now)
-                        if best is None or left < best:
-                            best = left
-                        break              # soonest per route is enough
-            if best is None or best > GAUGE_WINDOW:
+            d = st.tracked_departure()     # ONLY what you armed with RED
+            if d is None:
                 return None
-            return max(0.0, min(1.0, 1.0 - best / GAUGE_WINDOW))
+            left = d.leave_in(vvs._now())
+            if left > GAUGE_WINDOW:
+                return 0.0                 # armed but still far off: flat
+            return max(0.0, min(1.0, 1.0 - left / GAUGE_WINDOW))
         except Exception:                              # noqa: BLE001
             return None
 
@@ -136,13 +168,23 @@ class Gestures:
         lo = arm.positions.get(arm.labels[0], arm.lo)
         hi = arm.positions.get(arm.labels[2], arm.hi)
         target = lo + (hi - lo) * max(0.0, min(1.0, fraction))
-        floor = GAUGE_MIN_STEP_DEG if why == "gauge" else MIN_STEP_DEG
+        floor = (GAUGE_MIN_STEP_DEG if why in ("gauge", "focus")
+                 else MIN_STEP_DEG)
         if (self._arm_target is not None
                 and abs(target - self._arm_target) < floor):
             return False                   # too small to be worth the noise
         self._arm_target = target
         arm.move_to(target)
         return True
+
+    def _claim(self, who):
+        """Hand the arm to a new owner, announcing the change."""
+        if self._owner == who:
+            return
+        if self._owner is not None:
+            self._handover_tap()       # only announce a real handover
+        self._owner = who
+        self._arm_target = None        # force the first move of the new job
 
     def _handover_tap(self):
         """Two quick taps: the arm has changed what it is telling you.
@@ -159,6 +201,12 @@ class Gestures:
         arm = servo.flag()
         base = arm.angle if arm.angle is not None else arm.centre_deg
         self._tap = [base, 4, 0.0]         # home, steps left, next-step time
+
+    def _tap_n(self, n):
+        """n taps, queued. Used for quarters: you can count them by ear."""
+        arm = servo.flag()
+        base = arm.angle if arm.angle is not None else arm.centre_deg
+        self._tap = [base, n * 2, 0.0]
 
     def _tick_tap(self, now):
         if not self._tap:
@@ -236,26 +284,43 @@ class Gestures:
 
             self._gauge_t += dt
             self._mast_t += dt
+            self._focus_t += dt
+
+            # Who owns the arm right now? gauge > focus > mast, decided
+            # by what cannot be recovered if you miss it.
+            focus = self._focus()
 
             if self._gauge_t >= GAUGE_POLL:
                 self._gauge_t = 0.0
                 g = self._gauge_fraction()
                 if g is not None:
-                    if not self._gauge_active:
-                        self._gauge_active = True
-                        self._handover_tap()
-                        self._arm_target = None        # force the first move
+                    self._claim("gauge")
                     self._point_arm(g, "gauge")
-                elif self._gauge_active:
-                    self._gauge_active = False         # tram gone: hand back
-                    self._handover_tap()
-                    self._arm_target = None
-                    self._mast_t = MAST_POLL
+                elif self._owner == "gauge":
+                    self._owner = None     # tram gone: release
 
-            if not self._gauge_active and self._mast_t >= MAST_POLL:
+            if self._owner != "gauge" and focus is not None:
+                done, quarter = focus
+                if self._owner != "focus":
+                    self._claim("focus")
+                    self._focus_quarter = None
+                if quarter != self._focus_quarter and quarter >= 1:
+                    self._focus_quarter = quarter
+                    self._tap_n(quarter)   # 1..4 taps: count them by ear
+                    self._arm_target = None
+                if self._focus_t >= FOCUS_POLL:
+                    self._focus_t = 0.0
+                    self._point_arm(done, "focus")
+            elif self._owner == "focus" and focus is None:
+                self._owner = None
+                self._focus_quarter = None
+
+            if self._owner is None and self._mast_t >= MAST_POLL:
                 self._mast_t = 0.0
                 m = self._mast_fraction()
                 if m is not None:
+                    if self._owner != "mast":
+                        self._claim("mast")
                     self._point_arm(m, "mast")
 
             servo.update(now)                          # idle-relax both

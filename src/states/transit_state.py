@@ -32,7 +32,21 @@ delay, the platform. Reference, not the headline.
     ENCODER turn    switch between your routes
     ENCODER press   back to Nexus
     GREEN           refresh now
+    RED             TRACK / untrack the headline departure
     TOGGLE          SHOW LEGS on a journey; ALL LINES on a stop board
+
+TRACKING
+
+The semaphore arm can point at a countdown, but only at one you have
+explicitly armed with RED. It used to gauge whatever the soonest
+catchable departure happened to be, which meant the arm was telling you
+about a tram you had no intention of taking and you could not tell which
+one it meant. Now the arm only moves for a departure you chose, and the
+screen says which — the arm and the display never disagree.
+
+A tracked departure is remembered by route and *planned* time, so it
+survives a refresh, a delay, and switching routes. It clears itself when
+the tram goes, is cancelled, or drops off the board.
 
 CONFIGURATION
 
@@ -214,6 +228,10 @@ class TransitState(State):
         self.msg = ""
         self.msg_t = 0.0
         self.t = 0.0
+        # (route label, planned departure isoformat) — identity that
+        # survives a refetch, since Journey objects are rebuilt each time
+        # and a delay moves the estimated time but never the planned one.
+        self.tracked = None
 
         # Cells are counted from the real panel width rather than picked
         # by eye: hardcoding 16 ran the destination off the edge of a
@@ -248,6 +266,54 @@ class TransitState(State):
         self._refresh()
         self._flash("REFRESHING")
         return True
+
+    def on_red_button(self):
+        """Arm or disarm the semaphore for the headline departure."""
+        d = self.headline()
+        if d is None:
+            self._flash("NOTHING TO TRACK")
+            return True
+        key = (self._route().label, d.planned.isoformat())
+        if self.tracked == key:
+            self.tracked = None
+            self._flash("TRACKING OFF")
+        else:
+            self.tracked = key
+            self._flash(f"TRACKING {d.line} {d.planned:%H:%M}")
+        return True
+
+    def headline(self):
+        """The departure the big number is about — the one RED arms."""
+        deps, _err = self._current()
+        if not deps:
+            return None
+        now = vvs._now()
+        return next((d for d in deps if d.catchable(now)), deps[0])
+
+    def tracked_departure(self):
+        """The armed departure, or None. Read by backend/gestures.py.
+
+        Returns None once it has gone, been cancelled, or fallen off the
+        board — so the arm releases itself rather than pointing at a tram
+        that no longer exists.
+        """
+        if not self.tracked:
+            return None
+        label, planned_iso = self.tracked
+        deps, _err = self.rows.get(label, ([], None))
+        now = vvs._now()
+        for d in deps:
+            if d.planned.isoformat() == planned_iso:
+                if d.cancelled or d.in_min(now) < 0:
+                    self.tracked = None
+                    return None
+                return d
+        return None                    # dropped off the board entirely
+
+    def is_tracked(self, d):
+        return (self.tracked is not None and d is not None
+                and self.tracked == (self._route().label,
+                                     d.planned.isoformat()))
 
     def on_toggle(self, on):
         self.all_lines = on
@@ -401,9 +467,9 @@ class TransitState(State):
             else:
                 nxt = live[0]
                 self._headline(surface, box, "!", "ALL MISSED", RED_GO,
-                               f"the {nxt.line} at {nxt.estimated:%H:%M} "
-                               f"is closer than your walk",
-                               line=nxt.line, product=nxt.product)
+                               "closer than your walk",
+                               line=nxt.line, product=nxt.product,
+                               depart_at=f"DEPARTS {nxt.estimated:%H:%M}")
         else:
             left = catch.leave_in(now)
             if left < 1:
@@ -412,9 +478,12 @@ class TransitState(State):
                 col, word, note = AMBER, "LEAVE IN", "put your shoes on"
             else:
                 col, word, note = GREEN_OK, "LEAVE IN", "no rush"
+            delay = f"  +{catch.delay_min}" if catch.delay_min > 0 else ""
             self._headline(surface, box, str(int(left)), word, col, note,
                            unit="MIN", line=catch.line,
-                           product=catch.product)
+                           product=catch.product,
+                           tracked=self.is_tracked(catch),
+                           depart_at=f"DEPARTS {catch.estimated:%H:%M}{delay}")
 
         # ── the split-flap rows: what you are catching, and where to ────
         fy = box.bottom + s(10)
@@ -479,6 +548,9 @@ class TransitState(State):
                     mid = d.towards[:18]
                 surface.blit(self.font_small.render(mid, True, INK_DIM),
                              (s(102), ly + s(3)))
+                if self.is_tracked(d):
+                    pygame.draw.circle(surface, pal.ACID,
+                                       (s(8), ly + s(9)), s(3))
                 if d.cancelled:
                     tag, tc = "CANCELLED", RED_GO
                 elif d.delay_min > 0:
@@ -522,11 +594,20 @@ class TransitState(State):
         return rect.width
 
     def _headline(self, surface, box, big, word, colour, note, unit="",
-                  line=None, product=""):
+                  line=None, product="", tracked=False, depart_at=""):
         cx = box.centerx
         if line:
             self._line_badge(surface, box.x + s(10), box.y + s(8),
                              line, product)
+        # The arm and the screen must never disagree about what is armed.
+        if tracked:
+            tag = self.font_tiny.render("ARM TRACKING", True, pal.ACID)
+            tw = tag.get_width() + s(10)
+            tr = pygame.Rect(box.right - tw - s(8), box.y + s(9), tw, s(15))
+            pygame.draw.rect(surface, pal.mix(pal.ACID, pal.VOID, 0.75), tr,
+                             border_radius=s(3))
+            pygame.draw.rect(surface, pal.ACID, tr, 1, border_radius=s(3))
+            surface.blit(tag, (tr.x + s(5), tr.y + s(2)))
         lab = self.font_small.render(word, True, colour)
         surface.blit(lab, (cx - lab.get_width() // 2, box.y + s(12)))
         gp = pal.glow_pad(3)
@@ -538,6 +619,12 @@ class TransitState(State):
             surface.blit(u, (nx + num.get_width() - gp * 2 + s(6),
                              box.y + s(74)))
         surface.blit(num, (nx - gp, box.y + s(26) - gp))
+        if depart_at:
+            # LEAVE IN answers "do I stand up". This answers "what time is
+            # it actually there", which is the number you say out loud and
+            # the one you check against a clock on the wall.
+            dt_s = self.font_row.render(depart_at, True, colour)
+            surface.blit(dt_s, (cx - dt_s.get_width() // 2, box.bottom - s(38)))
         n = self.font_tiny.render(note[:44], True, INK_DIM)
         surface.blit(n, (cx - n.get_width() // 2, box.bottom - s(20)))
 
@@ -554,7 +641,7 @@ class TransitState(State):
         else:
             age = "NO DATA YET"
         surface.blit(self.font_tiny.render(age, True, INK_DIM), (s(14), y + s(8)))
-        hint = "GREEN REFRESH" + ("  ·  DIAL: ROUTE" if len(self.routes) > 1 else "")
+        hint = ("RED UNTRACK" if self.tracked else "RED TRACK") + "  ·  GREEN REFRESH"
         g = self.font_tiny.render(hint, True, INK_DIM)
         surface.blit(g, (w - g.get_width() - s(14), y + s(8)))
         if self.msg_t > 0:
