@@ -61,7 +61,7 @@ from hardware_input import (
     TOGGLE2_EVENT,
     TOGGLE2_ROLE,
 )
-from states.nexus_state import WORLDS
+from states.nexus_state import WORLDS, NO_CYCLE, cycle_worlds
 
 
 _chip_font = None
@@ -97,8 +97,9 @@ def _draw_toggle_chip(surface, manager):
 
 
 def _tune(manager, direction):
-    """Encoder turned outside Nexus: tune through the worlds like a dial."""
-    names = [w[0] for w in WORLDS]
+    """Encoder turned outside Nexus: tune through the worlds like a dial.
+    Skips NO_CYCLE screens (Console) — those are Nexus-only."""
+    names = [w[0] for w in cycle_worlds()]
     try:
         i = names.index(manager.current_state_name)
     except ValueError:
@@ -147,16 +148,15 @@ class StateManager:
                     pass
 
     def next_state(self):
-        """Cycles to the next available state sequentially."""
-        if not self.state_names:
+        """Cycle to the next state, skipping the Nexus-only ones."""
+        names = [n for n in self.state_names if n not in NO_CYCLE]
+        if not names:
             return
-        if self.current_state_name in self.state_names:
-            current_index = self.state_names.index(self.current_state_name)
-            next_index = (current_index + 1) % len(self.state_names)
+        if self.current_state_name in names:
+            i = (names.index(self.current_state_name) + 1) % len(names)
         else:
-            next_index = 0
-            
-        self.change_state(self.state_names[next_index])
+            i = 0
+        self.change_state(names[i])
             
     def handle_events(self, events):
         if self.current_state:

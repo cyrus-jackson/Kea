@@ -24,12 +24,17 @@ KEA_DIR="${KEA_DIR:-$HOME/Kea}"
 PY="${KEA_PYTHON:-python3}"
 
 # Kea draws onto X and speaks through PulseAudio. main.py sets the audio
-# bits itself, but DISPLAY has to be right before it starts.
+# bits itself, but DISPLAY and the rotation have to be right before it starts.
 export DISPLAY="${DISPLAY:-:0}"
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-pulseaudio}"
+# The panel is mounted portrait, so the logical 320x480 canvas is turned 90
+# degrees onto the physical 480x320. Override with KEA_ROTATION=0/180/270.
+export KEA_ROTATION="${KEA_ROTATION:-90}"
 [ -d "/run/user/$(id -u)" ] && export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
-RUN_CMD="cd '$KEA_DIR' && $PY src/main.py"
+# Pass the env explicitly: `screen -X stuff` types into a shell that may not
+# have inherited any of it (a detached session started at boot, say).
+RUN_CMD="cd '$KEA_DIR' && KEA_ROTATION=$KEA_ROTATION SDL_AUDIODRIVER=$SDL_AUDIODRIVER DISPLAY=$DISPLAY $PY src/main.py"
 
 is_running()  { pgrep -f "$PY .*src/main\.py" >/dev/null 2>&1; }
 have_session(){ screen -ls "$SESSION" 2>/dev/null | grep -q "[0-9]\+\.$SESSION"; }

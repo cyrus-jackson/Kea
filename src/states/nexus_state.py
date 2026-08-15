@@ -93,6 +93,16 @@ WORLDS = [
     ("camera",       "CAMERA",  "K", (176, 138, 66)),
 ]
 
+# Screens that stay OFF the cycle: reachable from this hub (and by their
+# key / button), but never landed on by the blue button, the encoder dial
+# or auto-pilot. Settings screens shouldn't interrupt you at random.
+NO_CYCLE = {"console"}
+
+# The dial/button cycle: every world except those.
+def cycle_worlds():
+    return [w for w in WORLDS if w[0] not in NO_CYCLE]
+
+
 AUTO_DWELL = 15.0     # fallback; the live value is the CONSOLE's "dwell" dial
 
 
