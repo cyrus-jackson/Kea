@@ -25,19 +25,9 @@ Environment=SDL_AUDIODRIVER=pulseaudio
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=KEA_START_VOLUME=20
 
-# --- camera data collection ---
+# --- camera data collection (these two ARE read by Kea) ---
 Environment=KEA_DATA_DIR=/home/pi/kea_data
 Environment=KEA_TAGS_FILE=/home/pi/.kea_tags.json
-
-# --- where offload.py sends it (encrypted B2 remote) ---
-# Kea itself never reads these; they're here so that anything you run
-# inside the screen session — `python3 tools/offload.py` — inherits them.
-Environment=KEA_RCLONE_REMOTE=b2_enc
-Environment=KEA_RCLONE_PATH=
-
-# Secrets (if any) come from a 0600 file, NOT from Environment= lines.
-# See § 3.8. Harmless if the file doesn't exist.
-EnvironmentFile=-/home/pi/.config/kea/secrets.env
 
 ExecStart=/bin/bash -c '/usr/bin/screen -ls main | grep -q "No Sockets found" && /usr/bin/screen -dmS main'
 Restart=on-failure
@@ -46,11 +36,10 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
-> ⚠️ **Never put a password on an `Environment=` line.** Unit files in
-> `/etc/systemd/system/` are world-readable (0644) and any user on the Pi
-> can run `systemctl cat autoscreen.service` to read them. The
-> `EnvironmentFile=` above is the safe route — see § 3.8. The leading `-`
-> means "don't fail if it's missing".
+> **No upload settings here.** Kea never reads `KEA_RCLONE_*` — only
+> `tools/offload.py` does — so those live on the offload service (§ 3.5)
+> where they belong. And no credentials live in any unit file: rclone
+> keeps them itself (§ 3.8).
 
 ## 2. Running Kea inside the screen session
 
@@ -189,7 +178,6 @@ Type=oneshot
 Environment=KEA_DATA_DIR=%h/kea_data
 Environment=KEA_RCLONE_REMOTE=b2_enc
 Environment=KEA_RCLONE_PATH=
-EnvironmentFile=-%h/.config/kea/secrets.env
 ExecStart=/usr/bin/python3 %h/Kea/tools/offload.py --quiet
 EOF
 
@@ -235,60 +223,63 @@ Kea re-reads it every time you open the camera screen — no restart.
 Images already saved keep the tag they were shot with, so adding tags
 never invalidates data you've already collected.
 
-### 3.8 Secrets: what actually needs to be in the environment
+### 3.8 Credentials — rclone keeps them, nothing else needs to
 
-**Short answer: probably nothing.** When you create the `b2_enc` crypt
-remote with `rclone config`, both passwords are stored (obscured) in
-`~/.config/rclone/rclone.conf`, which rclone creates as **0600 — readable
-only by you**. `offload.py` runs as `pi`, finds that file, and just works.
-No password ever has to touch a systemd unit.
+**Nothing goes in any unit file, and there is no secrets file.** When you
+create the `b2` and `b2_enc` remotes, `rclone config` writes the B2 key
+and both crypt passwords into:
 
-Lock the config down and confirm it:
+```
+~/.config/rclone/rclone.conf
+```
+
+which rclone creates **0600 — readable only by you**. `offload.py` runs as
+`pi`, rclone finds that file, and it works. That's why the offload service
+sets only *which* remote to use, never how to open it.
+
+Confirm the permissions once:
 
 ```bash
-chmod 600 ~/.config/rclone/rclone.conf
-ls -l ~/.config/rclone/rclone.conf     # -rw------- 1 pi pi
+ls -l ~/.config/rclone/rclone.conf     # want: -rw------- 1 pi pi
+chmod 600 ~/.config/rclone/rclone.conf # if it isn't
 ```
 
-**If you'd rather keep the passwords out of rclone.conf**, rclone reads
-them from the environment instead — but put them in a protected file, not
-in the unit:
+**Be clear-eyed about what that does and doesn't give you.** By default
+rclone stores passwords *obscured*, which is reversible — `rclone reveal`
+turns them back into plaintext. It stops a shoulder-surfer, not anyone
+who can read the file. **The 0600 permission is the actual protection**,
+so the meaningful risks are: someone with root on the Pi, someone who
+takes the SD card, or an unencrypted backup of your home directory.
+
+For a desk companion on your own network that's a reasonable place to
+land — and note the two layers you already have:
+
+- the B2 key only opens **one bucket** (§ 3.1), so a stolen key can't
+  reach anything else you own
+- `b2_enc` encrypts **before** upload, so Backblaze only ever holds
+  ciphertext
+
+**Want the config itself encrypted at rest?** rclone can do that:
 
 ```bash
-mkdir -p ~/.config/kea && chmod 700 ~/.config/kea
-cat > ~/.config/kea/secrets.env <<'EOF'
-RCLONE_CRYPT_PASSWORD=<output of: rclone obscure 'your first password'>
-RCLONE_CRYPT_PASSWORD2=<output of: rclone obscure 'your second password'>
-EOF
-chmod 600 ~/.config/kea/secrets.env
+rclone config      # then:  s) Set configuration password
 ```
 
-Both services already reference it with `EnvironmentFile=-…`, so it's
-picked up automatically and ignored if absent.
+The whole file becomes unreadable without the password — but every
+non-interactive run then needs `RCLONE_CONFIG_PASS`, so the timer would
+need that password stored *somewhere*, and you're back to protecting a
+file with 0600. It genuinely helps against a stolen SD card; it doesn't
+help against someone who already has your user account. Worth it if the
+Pi travels, overkill if it lives on your desk.
 
-> Use `rclone obscure` on the values — rclone expects the obscured form,
-> not the plaintext. And note "obscured" is *not* encryption: it stops a
-> shoulder-surfer, not someone who can read the file. The file permissions
-> are what actually protect it.
-
-**Why not `Environment=RCLONE_CRYPT_PASSWORD=…` in the unit?** Because
-`/etc/systemd/system/*.service` is world-readable, and `systemctl cat`
-or `systemctl show` will print it for any user on the box. Secrets in
-unit files is one of the most common ways they leak.
-
-Also add the same lines to the offload service so the timer sees them:
-
-```ini
-# in ~/.config/systemd/user/kea-offload.service, under [Service]
-EnvironmentFile=-%h/.config/kea/secrets.env
-```
-
-Verify what a unit will actually run with:
+Check what a unit will really run with:
 
 ```bash
 systemctl show autoscreen.service -p Environment
 systemctl --user show kea-offload.service -p Environment
 ```
+
+Neither should ever print a password.
 
 ## 4. Bluetooth speaker (auto-connect on boot)
 
