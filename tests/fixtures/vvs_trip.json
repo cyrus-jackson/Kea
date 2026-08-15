@@ -1,0 +1,49 @@
+{"version":"11.0.6.72","journeys":[
+{"interchanges":0,"legs":[
+ {"duration":240,"distance":2427,
+  "origin":{"id":"de:08111:6008:3:3","name":"Universität","type":"platform",
+    "parent":{"id":"de:08111:6008","name":"Universität","type":"stop"},
+    "departureTimePlanned":"2026-08-15T13:16:00Z","departureTimeEstimated":"2026-08-15T13:16:00Z",
+    "properties":{"platform":"3"}},
+  "destination":{"id":"de:08111:2589:0:4","name":"Max-Planck-Institute","type":"platform",
+    "parent":{"id":"de:08111:2589","name":"Max-Planck-Institute","type":"stop"},
+    "arrivalTimePlanned":"2026-08-15T13:20:00Z","arrivalTimeEstimated":"2026-08-15T13:20:00Z",
+    "properties":{"platform":"4"}},
+  "transportation":{"disassembledName":"748","number":"748",
+    "product":{"id":5,"class":5,"name":"Bus"},
+    "destination":{"id":"5031257","name":"Maichingen Bf"}}}]},
+
+{"interchanges":1,"legs":[
+ {"duration":180,
+  "origin":{"name":"Universität","parent":{"name":"Universität"},
+    "departureTimePlanned":"2026-08-15T13:30:00Z","departureTimeEstimated":"2026-08-15T13:32:00Z",
+    "properties":{"platform":"1"}},
+  "destination":{"name":"Vaihingen","parent":{"name":"Vaihingen"},
+    "arrivalTimePlanned":"2026-08-15T13:33:00Z","arrivalTimeEstimated":"2026-08-15T13:35:00Z"},
+  "transportation":{"disassembledName":"S1","number":"S1",
+    "product":{"id":1,"class":1,"name":"S-Bahn"},"destination":{"name":"Herrenberg"}}},
+ {"duration":120,
+  "origin":{"name":"Vaihingen","parent":{"name":"Vaihingen"},
+    "departureTimePlanned":"2026-08-15T13:35:00Z"},
+  "destination":{"name":"Vaihingen Bf (Ost)","parent":{"name":"Vaihingen Bf (Ost)"},
+    "arrivalTimePlanned":"2026-08-15T13:37:00Z"},
+  "transportation":{"product":{"id":99,"class":99,"name":"Fussweg"}}},
+ {"duration":300,
+  "origin":{"name":"Vaihingen Bf (Ost)","parent":{"name":"Vaihingen Bf (Ost)"},
+    "departureTimePlanned":"2026-08-15T13:40:00Z"},
+  "destination":{"name":"Max-Planck-Institute","parent":{"name":"Max-Planck-Institute"},
+    "arrivalTimePlanned":"2026-08-15T13:45:00Z"},
+  "transportation":{"disassembledName":"84","number":"84",
+    "product":{"id":5,"class":5,"name":"Bus"},"destination":{"name":"Büsnau"}}}]},
+
+{"interchanges":0,"legs":[
+ {"origin":{"name":"Universität","parent":{"name":"Universität"},
+    "departureTimePlanned":"2026-08-15T14:00:00Z"},
+  "destination":{"name":"Max-Planck-Institute","parent":{"name":"Max-Planck-Institute"},
+    "arrivalTimePlanned":"2026-08-15T14:04:00Z"},
+  "realtimeStatus":["MONITORED","TRIP_CANCELLED"],
+  "transportation":{"disassembledName":"748","number":"748",
+    "product":{"class":5,"name":"Bus"},"destination":{"name":"Ostelsheim"}}}]},
+
+{"interchanges":0,"legs":[{"garbage":"a leg with no times must be dropped"}]}
+]}

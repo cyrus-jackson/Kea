@@ -23,6 +23,8 @@ from backend import vvs                                    # noqa: E402
 
 RAW = json.load(open(os.path.join(ROOT, "tests", "fixtures", "vvs_hbf.json"),
                      encoding="utf-8"))
+TRIP = json.load(open(os.path.join(ROOT, "tests", "fixtures", "vvs_trip.json"),
+                      encoding="utf-8"))
 NOW = datetime.datetime(2026, 8, 15, 14, 30, tzinfo=vvs._tz())
 
 fails = []
@@ -88,6 +90,55 @@ def main():
     vvs._get = lambda u, p: {"stopEvents": []}
     check("nothing running is NOT an error",
           vvs.departures(vvs.Route("x")), ([], None))
+
+    # ── journeys (A -> B) ──────────────────────────────────────────────
+    print("\njourneys")
+    vvs._get = lambda url, params: TRIP
+    r = vvs.Route("de:08111:6008", to_id="de:08111:2589",
+                  label="MAX-PLANCK", walk_min=5)
+    js, err = vvs.trips(r)
+    check("route knows it is a journey", r.is_trip, True)
+    check("no error on a good trip response", err, None)
+    check("3 journeys parsed, the legless one dropped", len(js), 3)
+    check("direct bus is 0 changes", js[0].changes, 0)
+    check("duration from first departure to last arrival",
+          js[0].duration_min, 4)
+    check("destination is where YOU are going, not the bus terminus",
+          js[0].towards, "Max-Planck-Institute")
+
+    multi = js[1]
+    check("3 legs, one of them a walk",
+          [l.walking for l in multi.legs], [False, True, False])
+    check("a walking leg is not an interchange", multi.changes, 1)
+    check("'board' names the vehicle, never the walk", multi.line, "S1")
+    check("realtime estimate wins over planned",
+          multi.planned.strftime("%H:%M"),
+          vvs._parse_time("2026-08-15T13:32:00Z").strftime("%H:%M"))
+    check("cancelled trip flagged", js[2].cancelled, True)
+    check("cancelled journey is never catchable", js[2].catchable(), False)
+
+    print("\njourneys and departures are interchangeable to the screen")
+    for name in ("leave_in", "catchable", "in_min"):
+        check(f"Journey has {name}()", hasattr(js[0], name), True)
+    check("leave_in subtracts the walk here too",
+          round(js[1].leave_in()), round(js[1].in_min()) - 5)
+
+    print("\nroute config")
+    os.environ.pop("KEA_VVS_ROUTES", None)
+    d = vvs.routes_from_env()
+    check("unset gives Kea's three defaults", [x.label for x in d],
+          ["HAUPTBAHNHOF", "VAIHINGEN", "MAX-PLANCK"])
+    check("all three are journeys", all(x.is_trip for x in d), True)
+    check("all three start at Universität",
+          {x.stop_id for x in d}, {vvs.STOPS["universitaet"]})
+    check("empty string means an empty board", vvs.routes_from_env(""), [])
+    mixed = vvs.routes_from_env("a>b|J|9 ; c|S|U6|Flug|4")
+    check("journey and stop forms can be mixed",
+          [x.is_trip for x in mixed], [True, False])
+    check("journey walk time parsed from field 3", mixed[0].walk_min, 9)
+    check("stop walk time parsed from field 5", mixed[1].walk_min, 4)
+    check("garbage entries are skipped, not fatal",
+          len(vvs.routes_from_env(">;|||;x>y|OK")), 1)
 
     print()
     if fails:

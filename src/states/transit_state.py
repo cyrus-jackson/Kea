@@ -127,14 +127,11 @@ class Flaps:
             pygame.draw.rect(surf, FLAP, cell, border_radius=s(2))
             pygame.draw.rect(surf, FLAP_HI, cell, 1, border_radius=s(2))
 
-            ch = self.target[i]
-            if self.t[i] > 0:                     # mid-tumble: garbage
-                ch = self._rng.choice(ALPHABET)
-            if ch != " ":
-                g = self._glyph(ch, colour)
-                surf.blit(g, g.get_rect(center=cell.center))
-
-            # the hinge line across the middle, which is the whole look
+            # Hinge and falling flap go down FIRST, character on top.
+            # Drawn the other way round the seam cuts the glyph exactly at
+            # its waist and an "S" reads as a "C" — which is how a board
+            # full of S-Bahn lines becomes unreadable. A real split-flap
+            # shows the seam around the letter, not through it.
             my = cell.centery
             pygame.draw.line(surf, SPLIT, (cell.x, my), (cell.right, my), 1)
             if self.t[i] > 0:                     # the flap falling
@@ -145,6 +142,13 @@ class Flaps:
                                      (cell.x, my, self.cw, h))
                     pygame.draw.line(surf, SPLIT, (cell.x, my + h),
                                      (cell.right, my + h), 1)
+
+            ch = self.target[i]
+            if self.t[i] > 0:                     # mid-tumble: garbage
+                ch = self._rng.choice(ALPHABET)
+            if ch != " ":
+                g = self._glyph(ch, colour)
+                surf.blit(g, g.get_rect(center=cell.center))
 
 
 class TransitState(State):
@@ -211,7 +215,10 @@ class TransitState(State):
         self._refresh()
 
     def toggle_label(self):
-        return "ALL LINES"
+        r = self._route()
+        # The lever means something different per mode: a journey has no
+        # line filter to drop, but it does have legs worth unfolding.
+        return "SHOW LEGS" if (r is not None and r.is_trip) else "ALL LINES"
 
     def handle_events(self, events):
         for e in events:
@@ -226,10 +233,12 @@ class TransitState(State):
         return self.routes[self.idx % len(self.routes)] if self.routes else None
 
     def _query_routes(self):
-        """With ALL LINES on, drop the filters but keep the walk time."""
+        """With ALL LINES on, drop the filters but keep the walk time.
+        Journey routes have no line filter to drop, so they pass through."""
         if not self.all_lines:
             return self.routes
-        return [vvs.Route(r.stop_id, label=r.label, walk_min=r.walk_min)
+        return [r if r.is_trip
+                else vvs.Route(r.stop_id, label=r.label, walk_min=r.walk_min)
                 for r in self.routes]
 
     def _refresh(self):
@@ -265,8 +274,13 @@ class TransitState(State):
             self._refresh()
 
         deps, _err = self._current()
-        nxt = deps[0] if deps else None
+        now = vvs._now()
+        nxt = next((d for d in deps if d.catchable(now)), None) or \
+            (deps[0] if deps else None)
         self.line_flaps.set(nxt.line.upper() if nxt else "")
+        # On a journey this is where you are actually going. The vehicle's
+        # own terminus is useless here — the 748 to Max-Planck says
+        # "OSTELSHEIM" on the front.
         self.dest_flaps.set(nxt.towards.upper() if nxt else "")
         self.line_flaps.update(dt)
         self.dest_flaps.update(dt)
@@ -295,9 +309,14 @@ class TransitState(State):
                 c = AMBER if i == self.idx else (60, 62, 70)
                 pygame.draw.circle(surface, c,
                                    (pip_x + i * s(9), s(54)), s(3))
-        sub = f"{route.walk_min} MIN WALK"
-        if self.all_lines:
-            sub += "  ·  ALL LINES"
+        if route.is_trip:
+            # the origin's real name only exists once data has landed
+            frm = deps[0].legs[0].frm if deps and deps[0].legs else "…"
+            sub = f"FROM {frm.upper()[:18]}  ·  {route.walk_min} MIN WALK"
+        else:
+            sub = f"{route.walk_min} MIN WALK"
+            if self.all_lines:
+                sub += "  ·  ALL LINES"
         surface.blit(self.font_tiny.render(sub, True, INK_DIM), (s(14), s(66)))
 
         # ── the headline ────────────────────────────────────────────────
@@ -313,8 +332,13 @@ class TransitState(State):
             self._headline(surface, box, "·", "NOTHING RUNNING", INK_DIM,
                            "no departures on this route right now")
         elif catch is None:
-            self._headline(surface, box, "!", "ALL MISSED", RED_GO,
-                           "next one is closer than your walk")
+            live = [d for d in deps if not d.cancelled]
+            if not live:
+                self._headline(surface, box, "!", "ALL CANCELLED", RED_GO,
+                               "every service ahead is cancelled")
+            else:
+                self._headline(surface, box, "!", "ALL MISSED", RED_GO,
+                               "next one is closer than your walk")
         else:
             left = catch.leave_in(now)
             if left < 1:
@@ -333,39 +357,71 @@ class TransitState(State):
         if head is not None:
             bits = []
             if head.platform:
-                bits.append(head.platform)
+                bits.append(("PL " if route.is_trip else "") + head.platform)
             bits.append(f"{head.estimated:%H:%M}")
-            if head.delay_min > 0:
+            if route.is_trip:
+                # what a journey knows that a departure doesn't
+                bits.append(f"PL {head.platform}" if False else
+                            f">{head.arrival:%H:%M}")
+                bits.append(f"{head.duration_min}m")
+                bits.append("DIRECT" if head.changes == 0
+                            else f"{head.changes}CH")
+            elif head.delay_min > 0:
                 bits.append(f"+{head.delay_min}")
-            g = self.font_small.render("  ·  ".join(bits), True, INK_DIM)
+            g = self.font_small.render(" · ".join(bits), True, INK_DIM)
             surface.blit(g, (w - g.get_width() - s(14), fy + s(7)))
         self.dest_flaps.draw(surface, s(14), fy + s(28))
 
         # ── the following departures ────────────────────────────────────
         ly = fy + s(60)
-        surface.blit(self.font_tiny.render("THEN", True, INK_DIM), (s(14), ly))
-        pygame.draw.line(surface, CASE_HI, (s(48), ly + s(5)),
+        legs_mode = route.is_trip and self.all_lines and head is not None
+        heading = "THIS JOURNEY" if legs_mode else "THEN"
+        surface.blit(self.font_tiny.render(heading, True, INK_DIM), (s(14), ly))
+        pygame.draw.line(surface, CASE_HI, (s(14) + s(74), ly + s(5)),
                          (w - s(14), ly + s(5)))
         ly += s(14)
-        shown = [d for d in deps[:6] if d is not catch][:3]
-        if not shown:
-            surface.blit(self.font_small.render("—", True, INK_DIM), (s(14), ly))
-        for d in shown:
-            col = INK_DIM if d.cancelled else INK
-            surface.blit(self.font_row.render(f"{d.estimated:%H:%M}", True, col),
-                         (s(14), ly))
-            surface.blit(self.font_row.render(d.line[:4], True, BRASS), (s(62), ly))
-            surface.blit(self.font_small.render(d.towards[:18], True, INK_DIM),
-                         (s(98), ly + s(3)))
-            if d.cancelled:
-                tag, tc = "CANCELLED", RED_GO
-            elif d.delay_min > 0:
-                tag, tc = f"+{d.delay_min}", AMBER
-            else:
-                tag, tc = f"{d.leave_in(now):+.0f}", INK_DIM
-            g = self.font_small.render(tag, True, tc)
-            surface.blit(g, (w - g.get_width() - s(14), ly + s(3)))
-            ly += s(22)
+
+        if legs_mode:
+            for leg in head.legs[:4]:
+                col = INK_DIM if leg.walking else INK
+                surface.blit(self.font_row.render(f"{leg.dep:%H:%M}", True, col),
+                             (s(14), ly))
+                badge = "WALK" if leg.walking else leg.line[:4]
+                surface.blit(self.font_row.render(badge, True,
+                                                  INK_DIM if leg.walking else BRASS),
+                             (s(62), ly))
+                surface.blit(self.font_small.render(leg.to[:17], True, INK_DIM),
+                             (s(102), ly + s(3)))
+                g = self.font_small.render(f"{leg.arr:%H:%M}", True, INK_DIM)
+                surface.blit(g, (w - g.get_width() - s(14), ly + s(3)))
+                ly += s(22)
+        else:
+            shown = [d for d in deps[:6] if d is not catch][:3]
+            if not shown:
+                surface.blit(self.font_small.render("—", True, INK_DIM),
+                             (s(14), ly))
+            for d in shown:
+                col = INK_DIM if d.cancelled else INK
+                surface.blit(self.font_row.render(f"{d.estimated:%H:%M}", True, col),
+                             (s(14), ly))
+                surface.blit(self.font_row.render(d.line[:4], True, BRASS),
+                             (s(62), ly))
+                if route.is_trip:
+                    mid = (f">{d.arrival:%H:%M}  "
+                           + ("direct" if d.changes == 0 else f"{d.changes} ch"))
+                else:
+                    mid = d.towards[:18]
+                surface.blit(self.font_small.render(mid, True, INK_DIM),
+                             (s(102), ly + s(3)))
+                if d.cancelled:
+                    tag, tc = "CANCELLED", RED_GO
+                elif d.delay_min > 0:
+                    tag, tc = f"+{d.delay_min}", AMBER
+                else:
+                    tag, tc = f"{d.leave_in(now):+.0f}", INK_DIM
+                g = self.font_small.render(tag, True, tc)
+                surface.blit(g, (w - g.get_width() - s(14), ly + s(3)))
+                ly += s(22)
 
         self._draw_footer(surface, now)
 

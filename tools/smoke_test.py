@@ -146,6 +146,40 @@ if len(_covered) != len(CIRCUIT):
 else:
     print(f"[PASS] all 24 hours map onto all {len(CIRCUIT)} stations")
 
+# Every character the screens draw must exist in the font we draw it with.
+# pygame renders a missing codepoint as a featureless box, which looks like
+# a layout bug and is invisible to any test that only checks positions —
+# an arrow in the transit board shipped exactly that way.
+_probe = pygame.font.Font(None, 24)
+
+
+def _renders(ch):
+    import pygame.surfarray as _sa
+    return (_sa.array3d(_probe.render(ch, True, (255, 255, 255))).sum()
+            != _sa.array3d(_probe.render("\uffff", True, (255, 255, 255))).sum())
+
+
+_lit = re.compile(r'"([^"\n]*)"|\'([^\'\n]*)\'')
+_missing = {}
+for _fn in sorted(os.listdir(os.path.join(ROOT, "src", "states"))):
+    if not _fn.endswith("_state.py"):
+        continue
+    for _ln in open(os.path.join(ROOT, "src", "states", _fn), encoding="utf-8"):
+        _st = _ln.strip()
+        if _st.startswith("#") or _st.startswith('"""') or "render(" not in _ln:
+            continue
+        for _g in _lit.findall(_ln):
+            for _s2 in _g:
+                for _c in _s2:
+                    if ord(_c) > 127 and not _renders(_c):
+                        _missing.setdefault(_fn, set()).add(_c)
+if _missing:
+    for _fn, _cs in _missing.items():
+        failures.append(f"{_fn} draws glyphs the font lacks: {sorted(_cs)}")
+        print(f"[FAIL] glyphs -> {_fn}: {sorted(_cs)}")
+else:
+    print("[PASS] every drawn glyph exists in the font")
+
 # every Nexus card + day phase must point at a state registered in main.py
 main_src = open(os.path.join(ROOT, "src", "main.py"), encoding="utf-8").read()
 registered = set(re.findall(r"add_state\(\s*['\"]([a-z_]+)['\"]", main_src))

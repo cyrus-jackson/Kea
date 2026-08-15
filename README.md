@@ -80,34 +80,53 @@ The rounds — these open **DRIFT** parked at that station, so the circuit carri
 
 ## The Board (real departures)
 
-A split-flap departure board wired to the live VVS network. It answers one
-question in the largest type the panel can manage: **do I need to stand up?**
+A split-flap board wired to the live VVS network. It answers one question in
+the largest type the panel can manage: **do I need to stand up?**
 
 Not "when is the next tram" — your phone does that better. The number that
 matters already counts the walk: a tram six minutes out is not six minutes
 away if the platform is a five minute walk, it is **one**. So the headline is
-LEAVE IN, and it goes green → amber → red as it runs out. Delays, cancelled
-trips and the platform are all there, small, underneath.
+LEAVE IN, green → amber → red as it runs out.
 
-Find your stop and the exact line/destination spellings:
+Out of the box it tracks three journeys from **Universität**:
+
+| | | |
+|---|---|---|
+| HAUPTBAHNHOF | Universität → Hauptbahnhof (tief) | S-Bahn |
+| VAIHINGEN | Universität → Vaihingen Bahnhof | S-Bahn |
+| MAX-PLANCK | Universität → Max-Planck-Institute | Bus 748, ~4 min |
+
+These are **journeys**, not stop departures, and they have to be. Two of the
+three can't be expressed as "departures from Universität filtered by
+destination": the 748 to Max-Planck says *Ostelsheim* on the front, and the
+S-Bahn into town shows a dozen different terminus names through the day.
+Filtering on those strings is guesswork, so Kea asks the journey planner the
+question you're actually asking. You get arrival time, duration and change
+count, which a platform board can't tell you.
+
+The dial switches routes, GREEN refreshes, and the toggle unfolds the legs of
+the journey you're about to take (`15:32 S1 → Vaihingen, walk, 15:40 bus 84`).
+
+### Tracking more
+
+```bash
+# journeys:  origin>destination | label | walk_min
+# stop board: stop_id | label | lines | towards | walk_min
+KEA_VVS_ROUTES='de:08111:6008>de:08111:6118|HAUPTBAHNHOF|5 ; de:08111:6118|Hbf|U6,U7|Flughafen|7'
+```
+
+Find ids and the exact line/destination spellings:
 
 ```bash
 python3 tools/find_stop.py "Vaihingen" --departures
 ```
 
-Then configure any number of routes:
+Setting `KEA_VVS_ROUTES` replaces the defaults entirely; leave it unset to keep
+them. `walk_min` is how long it takes *you* to reach the stop — the default is
+5 minutes, and it is the one number worth getting right, because it is what
+turns a departure time into "leave now".
 
-```bash
-KEA_VVS_ROUTES='de:08111:6118|Hbf|U6,U7|Flughafen|7 ; de:08111:1234|Home|42||5'
-#               stop id      label lines direction  walk minutes
-```
-
-Only the stop id is required — no lines means every line at the stop, no
-direction means both platforms. The dial switches routes, GREEN refreshes,
-and the toggle drops your line filter to show everything leaving. No API key
-and no `pip install`: it is plain `urllib` against the public endpoint.
-
-Unset, the screen tells you the command to run rather than sitting blank.
+No API key and no `pip install`: plain `urllib` against the public endpoint.
 
 ## Reminders from your phone (the Dispatch Docket)
 
