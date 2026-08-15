@@ -51,7 +51,13 @@ GAUGE_WINDOW = 12.0
 MAST_POLL = 5.0          # seconds between checking what is owed
 GAUGE_POLL = 20.0        # seconds between recomputing the countdown
 DOUBLE_TAKE_DEG = 12.0   # how far the monitor flicks
-MIN_STEP_DEG = 4.0       # ignore smaller changes: not worth the noise
+MIN_STEP_DEG = 4.0       # mast: ignore smaller changes, not worth the noise
+# The gauge is a continuous readout, so small moves ARE the point. At 20 s
+# polls across a 12 min window each step is only about 2 deg on a typical
+# arm, which the mast's 4 deg threshold would swallow — the countdown
+# would visibly move every 40 s instead of every 20.
+GAUGE_MIN_STEP_DEG = 1.5
+TAP_GAP = 0.09           # seconds between the two handover taps
 
 
 class Gestures:
@@ -66,6 +72,7 @@ class Gestures:
         self._gauge_active = False
         self._arm_target = None
         self._take = None            # (stage, deadline, home angle)
+        self._tap = None             # queued handover taps
         self._aim = None             # last aim offset applied
 
     # ── the arm ────────────────────────────────────────────────────────
@@ -87,9 +94,16 @@ class Gestures:
     def _gauge_fraction(self):
         """1.0 = go now, 0.0 = GAUGE_WINDOW minutes out. None if no tram.
 
-        Reads whatever the transit screen last fetched rather than making
-        its own request — the arm must never be a reason to hit the
-        network, and a stale answer is better than a blocking one.
+        Reads whatever the Board last fetched rather than fetching here:
+        the arm must never *block* on the network.
+
+        It used to say "never be a reason to hit the network", which was
+        wrong and quietly broke the feature. States only tick while they
+        are on screen, so the Board stopped refreshing the moment you
+        left it — and the gauge, whose entire point is that you do not
+        have to look at the screen, only had data while you were looking
+        at the screen. main.py now ticks the Board's background_update()
+        off-screen: one route, every five minutes.
         """
         st = None
         try:
@@ -122,8 +136,9 @@ class Gestures:
         lo = arm.positions.get(arm.labels[0], arm.lo)
         hi = arm.positions.get(arm.labels[2], arm.hi)
         target = lo + (hi - lo) * max(0.0, min(1.0, fraction))
+        floor = GAUGE_MIN_STEP_DEG if why == "gauge" else MIN_STEP_DEG
         if (self._arm_target is not None
-                and abs(target - self._arm_target) < MIN_STEP_DEG):
+                and abs(target - self._arm_target) < floor):
             return False                   # too small to be worth the noise
         self._arm_target = target
         arm.move_to(target)
@@ -135,14 +150,26 @@ class Gestures:
         Without this a gauge angle and a mast angle look identical, and
         "half raised" would mean either "something pending" or "tram in
         six minutes" with no way to tell.
+
+        QUEUED, not slept. The first version did four writes with 0.09 s
+        sleeps between them — 0.36 s inside the render loop, eleven
+        dropped frames, and a direct violation of UI_GUIDELINES 7. The
+        taps are now steps the main loop walks through.
         """
         arm = servo.flag()
         base = arm.angle if arm.angle is not None else arm.centre_deg
-        for _ in range(2):
-            arm.write(arm.clamp(base + 8))
-            time.sleep(0.09)
-            arm.write(arm.clamp(base))
-            time.sleep(0.09)
+        self._tap = [base, 4, 0.0]         # home, steps left, next-step time
+
+    def _tick_tap(self, now):
+        if not self._tap:
+            return
+        base, left, when = self._tap
+        if now < when:
+            return
+        arm = servo.flag()
+        arm.write(arm.clamp(base + (8 if left % 2 == 0 else 0)))
+        left -= 1
+        self._tap = None if left <= 0 else [base, left, now + TAP_GAP]
 
     # ── the monitor ────────────────────────────────────────────────────
     def double_take(self):
@@ -189,6 +216,7 @@ class Gestures:
         now = time.time()
         try:
             self._tick_double_take(now)
+            self._tick_tap(now)
             # The AIM dial is a live control: turning it should move the
             # screen while you watch, so it is checked every tick. The
             # early-out in apply_aim() means that costs one float compare

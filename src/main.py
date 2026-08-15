@@ -507,6 +507,18 @@ def main():
         manager.chip_age += dt
         _gestures.update(dt)          # the two servos, driven from app state
         
+        # The Board keeps fetching off-screen, slowly, so the arm's
+        # countdown gauge has something recent to point at. Without this
+        # the gauge only has data while you are looking at the Board —
+        # which is the one time you do not need an arm to tell you.
+        if manager.current_state_name != 'transit':
+            _tr = manager.states.get('transit')
+            if _tr is not None:
+                try:
+                    _tr.background_update(dt)
+                except Exception:                           # noqa: BLE001
+                    pass
+
         # Ensure Pomodoro updates in the background if it's active but not the current state
         if manager.current_state_name != 'pomodoro':
             pomodoro_state_obj = manager.states.get('pomodoro')

@@ -102,7 +102,14 @@ PRODUCT_COLOUR = {
 }
 BADGE_INK = pal.VOID
 
-REFRESH = 60.0          # seconds between fetches
+REFRESH = 60.0          # seconds between fetches while you are looking
+# ...and while you are NOT. The arm's countdown gauge reads what this
+# screen last fetched, and states only tick while they are on screen — so
+# without a background cadence the gauge would only have data while you
+# were watching the Board, which is exactly when you do not need an arm
+# to tell you. Slower, and only the selected route, to keep it cheap:
+# one ~80 KB response every five minutes rather than three every minute.
+BACKGROUND_REFRESH = 300.0
 FLAP_TIME = 0.42        # how long a character tumbles when it changes
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -:/."
 
@@ -273,16 +280,34 @@ class TransitState(State):
                 else vvs.Route(r.stop_id, label=r.label, walk_min=r.walk_min)
                 for r in self.routes]
 
-    def _refresh(self):
+    def _refresh(self, routes=None):
         if not self.routes or self.fetching:
             return
         self.fetching = True
         self.timer = 0.0
-        vvs.fetch(self._query_routes(), self._on_data)
+        vvs.fetch(routes if routes is not None else self._query_routes(),
+                  self._on_data)
+
+    def background_update(self, dt):
+        """Ticked by main.py even when this screen is not showing.
+
+        Only the selected route, and only every BACKGROUND_REFRESH, so the
+        arm has something recent to point at without this becoming a
+        network hog. Kept separate from update() so the on-screen
+        behaviour is unchanged.
+        """
+        self.timer += dt
+        if self.timer >= BACKGROUND_REFRESH:
+            r = self._route()
+            self._refresh([r] if r else None)
 
     def _on_data(self, result):
-        """Called on the worker thread — only assignment, no drawing."""
-        self.rows = {r.label: (deps, err) for r, deps, err in result["routes"]}
+        """Called on the worker thread — only assignment, no drawing.
+
+        Merged rather than replaced: a background refresh fetches one
+        route, and overwriting the dict would blank the other two.
+        """
+        self.rows.update({r.label: (deps, err) for r, deps, err in result["routes"]})
         self.fetched = result.get("fetched")
         self.fetching = False
 
