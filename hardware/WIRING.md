@@ -286,16 +286,25 @@ No servo code exists yet, but the wiring is decided. **Signal** comes from
 the Pi; **current** never does.
 
 ```
-4×AA ──► LM2596S (set to 5.0 V FIRST) ──► PCA9685 V+
-Pi pin 1  3.3 V ────────────────────────► PCA9685 VCC
+Pi pin 1  3.3 V ────────────────────────► PCA9685 VCC   ← NEVER 5 V
 Pi pin 3  SDA (BCM 2) ──────────────────► PCA9685 SDA
 Pi pin 5  SCL (BCM 3) ──────────────────► PCA9685 SCL
-Battery − ──────────┬───────────────────► PCA9685 GND
-Pi GND ─────────────┘   ← the two grounds MUST be joined
+Pi pin 6  GND ──────────┬───────────────► PCA9685 GND
+4×AA +  ────────────────┼───────────────► PCA9685 V+
+4×AA −  ────────────────┘   ← the two grounds MUST be joined
 ```
 
-- Set the buck to **5.0 V on its voltmeter before** connecting any servo —
-  the trimmer reaches 24 V.
+**Full procedure, with the staged bring-up: [SERVO_WIRING.md](SERVO_WIRING.md).**
+
+- `VCC` to **3.3 V**, never 5 V. The board's I²C pull-ups go to `VCC`, so
+  5 V there puts 5 V on GPIO 2/3, which are 3.3 V-only. This is the one
+  that actually kills Pis.
+- `V+` is a separate rail feeding only the servo plugs. It never touches
+  the chip or the Pi, which is why battery voltage cannot reach the Pi.
+- **The LM2596 is not used here.** It needs Vin ≥ Vout + 1.5 V, so 5 V out
+  needs 6.5 V in and four AAs give 6.4 V at best — dropout from the first
+  minute. It becomes the right part again with a 6×AA pack or a wall
+  supply. Servos run direct off the 4×AA pack.
 - Enable I²C once: `sudo raspi-config` → Interface Options → I2C.
 - Verify the board answers: `i2cdetect -y 1` should show `40`.
 - Never run servos off a Pi 5 V pin — the sag resets the board.
