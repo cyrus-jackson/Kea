@@ -39,6 +39,8 @@ sys.path.insert(0, os.path.join(
 
 from backend import servo                                   # noqa: E402
 
+SPAN_MAX = 180.0
+
 
 def detect():
     print("\nPCA9685")
@@ -69,9 +71,13 @@ def detect():
 
 
 KEYS = """
-    a / d   -5 / +5 deg          j / l   -1 / +1 deg
-    1       mark {0:<10}      2   mark {1:<10}   3   mark {2}
-    s       save and quit        q   quit WITHOUT saving
+  STEP 1 — find the middle          STEP 2 — set how far it swings
+    a / d   -5 / +5 deg               [ / ]   narrow / widen by 10 deg
+    j / l   -1 / +1 deg               , / .   narrow / widen by 2 deg
+    2       mark this as {1:<11}   p       preview: {0} then {2}
+
+  Fine-tune one end only (makes the travel asymmetric):  1 = {0}   3 = {2}
+    s   save and quit        q   quit WITHOUT saving
 """
 
 
@@ -129,35 +135,70 @@ def calibrate(sv):
         return 1
 
     lo_guard, hi_guard = 5.0, 175.0        # explore freely, stop short of the ends
+    left_lab, mid_lab, right_lab = sv.labels
     print(f"\n  Calibrating {sv.name} on channel {sv.channel}")
-    print(f"  Labels: {' / '.join(sv.labels)}")
-    print("\n  Nudge until the servo is where you want that position, then")
-    print("  press 1, 2 or 3 to MARK it. Stop the moment you feel resistance —")
-    print("  a servo held against a stop is drawing stall current.")
+    print(f"\n  Find the MIDDLE first — where it should sit at rest — and mark")
+    print(f"  it with 2. Then widen the swing until the extremes are where you")
+    print(f"  want; {left_lab} and {right_lab} are derived from the centre, so")
+    print(f"  widening moves both at once.")
+    print("\n  Stop the moment you feel resistance — a servo held against a")
+    print("  stop is drawing stall current.")
     print(KEYS.format(*sv.labels))
 
-    marked = {}
     pos = sv.centre_deg
+    span = sv.span or 0.0
+    have_centre = False
     sv.write(pos)
     try:
         while True:
-            got = "  ".join(
-                f"{lab}={marked[lab]:.0f}" if lab in marked else f"{lab}=--"
-                for lab in sv.labels)
-            print(f"\r  {pos:6.1f} deg    {got}        ", end="", flush=True)
+            if have_centre:
+                l, _c, r = servo.derive(sv.centre_deg, span)
+                state = (f"centre {sv.centre_deg:5.1f}   span {span:5.1f}"
+                         f"   -> {left_lab} {l:.0f} / {right_lab} {r:.0f}")
+            else:
+                state = f"{pos:6.1f} deg    centre not marked yet"
+            print(f"\r  {state}        ", end="", flush=True)
             sv.update()                    # idle-relax still applies here
             k = _getch()
+
             if k == "q":
                 print("\n  quit — nothing saved")
                 return 1
             if k == "s":
                 break
-            if k in "123":
-                lab = sv.labels[int(k) - 1]
-                marked[lab] = pos
-                sv.set_position(lab, pos)
-                print(f"\r  marked {lab} = {pos:.1f} deg" + " " * 30)
+
+            if k == "2":
+                sv.set_position(mid_lab, pos)
+                have_centre = True
+                print(f"\r  centre marked at {pos:.1f} deg" + " " * 34)
                 continue
+
+            if have_centre and k in "[],.":
+                span = max(0.0, min(2 * min(sv.centre_deg, SPAN_MAX - sv.centre_deg),
+                                    span + {"[": -10, "]": 10, ",": -2, ".": 2}[k]))
+                sv.set_span(span)
+                l, _c, r = servo.derive(sv.centre_deg, span)
+                sv.write(r if k in "]." else l)
+                continue
+
+            if k == "p" and have_centre:
+                print(f"\r  preview: {left_lab} ... " + " " * 40, end="", flush=True)
+                sv.go(left_lab, speed=4.0)
+                time.sleep(0.4)
+                sv.go(right_lab, speed=4.0)
+                time.sleep(0.4)
+                sv.centre(speed=4.0)
+                pos = sv.centre_deg
+                continue
+
+            if k in "13" and have_centre:
+                lab = left_lab if k == "1" else right_lab
+                sv.set_position(lab, pos)
+                span = sv.span
+                print(f"\r  {lab} pinned at {pos:.1f} deg (now asymmetric)"
+                      + " " * 18)
+                continue
+
             step = {"a": -5, "d": 5, "j": -1, "l": 1}.get(k, 0)
             if not step:
                 continue
@@ -166,10 +207,11 @@ def calibrate(sv):
     finally:
         sv.relax()
 
-    missing = [l for l in sv.labels if l not in marked]
-    if missing:
-        print(f"\n  not saved — still unmarked: {', '.join(missing)}")
-        print("  all three are needed; run it again.\n")
+    if not have_centre:
+        print("\n  not saved — the centre was never marked.\n")
+        return 1
+    if sv.span <= 0:
+        print("\n  not saved — the swing is zero. Widen it with ] or .\n")
         return 1
 
     entry = sv.save()

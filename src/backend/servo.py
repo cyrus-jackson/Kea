@@ -127,6 +127,22 @@ def save_calibration(name, channel, positions):
     return data[name]
 
 
+def derive(centre, span):
+    """(left, centre, right) from a centre and a total travel.
+
+    This is the way round that matches the mechanism. You do not really
+    know where the left stop is; you know where "facing me" is, and how
+    far it should swing. So centre is measured and the extremes fall out
+    of it, symmetrically, and widening the span moves both at once.
+
+    Clamped to the servo's absolute range, so a span wider than the
+    hardware allows truncates rather than commanding past the ends.
+    """
+    half = max(0.0, float(span)) / 2.0
+    return (max(0.0, centre - half), float(centre),
+            min(SPAN_DEG, centre + half))
+
+
 def _spec(env, default_ch, default_lo, default_hi):
     """Parse 'channel:min:max' from the environment."""
     raw = os.getenv(env, "")
@@ -361,25 +377,59 @@ class Servo:
         """The measured centre, not the midpoint of the range."""
         return self.move_to(self.centre_deg, speed=speed)
 
+    def set_span(self, span):
+        """Set total travel about the measured centre, deriving both ends.
+
+        Fine-tuning one end afterwards with set_position() is allowed and
+        simply makes the travel asymmetric — some mechanisms are.
+        """
+        left, centre, right = derive(self.centre_deg, span)
+        self.positions[self.labels[0]] = left
+        self.positions[self.labels[2]] = right
+        self.lo, self.hi = left, right
+        return left, right
+
+    @property
+    def span(self):
+        """Total travel between the two extremes, in degrees."""
+        a = self.positions.get(self.labels[0])
+        b = self.positions.get(self.labels[2])
+        return abs(b - a) if (a is not None and b is not None) else 0.0
+
     def set_position(self, where, deg):
         """Record a measured position and widen the limits to include it.
 
         Calibration is the one time the limits are allowed to grow: they
         exist to stop *later* commands exceeding what you measured, not
         to stop you measuring it.
+
+        Marking the centre re-derives both extremes around the new centre,
+        keeping the span you already chose — moving the middle should
+        carry the ends with it, not leave them stranded.
         """
         deg = max(0.0, min(SPAN_DEG, float(deg)))
+        if where == self.labels[1]:
+            old_span = self.span
+            self.centre_deg = deg
+            self.positions[where] = deg
+            if old_span > 0:
+                self.set_span(old_span)
+                return deg
         self.positions[where] = deg
         self.lo = min(self.lo, deg)
         self.hi = max(self.hi, deg)
-        if where == self.labels[1]:
-            self.centre_deg = deg
         return deg
 
     def save(self):
-        """Persist the measured positions to ~/.kea_servos.json."""
-        return save_calibration(self.name, self.channel,
-                                {k: self.positions.get(k) for k in self.labels})
+        """Persist to ~/.kea_servos.json.
+
+        Both the derived extremes and the span are written: the extremes
+        so loading needs no maths, the span so a later session can widen
+        the travel without re-finding the centre.
+        """
+        out = {k: self.positions.get(k) for k in self.labels}
+        out["span"] = round(self.span, 1)
+        return save_calibration(self.name, self.channel, out)
 
     def relax(self):
         """Cut the pulse. The servo goes limp and stops drawing current.
