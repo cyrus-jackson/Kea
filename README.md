@@ -60,6 +60,25 @@ Tune the wait on the Console's **IDLE** dial (1-60 min, default 5); `KEA_DRIFT_H
 
 The **NOW / NEXT** transit board on Nexus is driven by the same circuit, so it tells you where Kea will be when you stop touching it — with a rain override that promotes WX.SYS and a docket override when reminders go overdue. Press `A` for **auto-pilot**: Nexus hands you to the rounds after a short dwell.
 
+## Is it working?
+
+```bash
+python3 tools/doctor.py            # everything passive, ~15 s
+python3 tools/doctor.py --slow     # + the encrypted offload round-trip
+python3 tools/doctor.py --interactive   # + press every button, move servos
+```
+
+One command, one answer. It runs each of the individual `check_*` tools
+as a subprocess and takes its exit code as the verdict, so nothing is
+duplicated and a check cannot drift from the tool that owns it.
+
+Passive by default: nothing moves and nothing is asked of you, so it is
+safe over SSH on a machine you cannot see. Four verdicts — **PASS**,
+**WARN** (works, will bite later), **FAIL** (broken, fix printed), and
+**SKIP** (cannot be checked here). SKIP is not a soft FAIL: running it on
+a laptop should not produce a wall of red for hardware that was never
+meant to be attached.
+
 Run `python3 tools/smoke_test.py` after changes: it renders every state headlessly and verifies each Nexus card and day phase points at a registered state.
 
 **Keyboard:**
