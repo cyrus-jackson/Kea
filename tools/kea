@@ -1,0 +1,111 @@
+#!/bin/bash
+# ============================================================
+# kea — one command to run and watch Kea.
+#
+#   kea            start it if it isn't running, then attach
+#   kea start      start it, don't attach
+#   kea stop       stop Kea (leaves the screen session)
+#   kea restart    stop, then start
+#   kea status     is it running? what's pending? where does it upload?
+#   kea attach     attach to the session (Ctrl-A then D to detach)
+#   kea log        last 40 lines Kea printed
+#
+# Replaces typing:
+#   screen -r main
+#   cd /home/pi/Kea && SDL_AUDIODRIVER=pulseaudio python src/main.py
+#
+# Install once:
+#   sudo ln -sf ~/Kea/tools/kea /usr/local/bin/kea
+# ============================================================
+set -uo pipefail
+
+SESSION="${KEA_SCREEN:-main}"
+KEA_DIR="${KEA_DIR:-$HOME/Kea}"
+PY="${KEA_PYTHON:-python3}"
+
+# Kea draws onto X and speaks through PulseAudio. main.py sets the audio
+# bits itself, but DISPLAY has to be right before it starts.
+export DISPLAY="${DISPLAY:-:0}"
+export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-pulseaudio}"
+[ -d "/run/user/$(id -u)" ] && export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+RUN_CMD="cd '$KEA_DIR' && $PY src/main.py"
+
+is_running()  { pgrep -f "$PY .*src/main\.py" >/dev/null 2>&1; }
+have_session(){ screen -ls "$SESSION" 2>/dev/null | grep -q "[0-9]\+\.$SESSION"; }
+
+ensure_session() {
+    have_session || { screen -dmS "$SESSION"; sleep 1; }
+}
+
+start() {
+    if is_running; then
+        echo "Kea is already running (pid $(pgrep -f "src/main\.py" | head -1))."
+        return 0
+    fi
+    if [ ! -f "$KEA_DIR/src/main.py" ]; then
+        echo "Can't find $KEA_DIR/src/main.py — set KEA_DIR." >&2
+        return 1
+    fi
+    ensure_session
+    # send the command into the session as if typed
+    screen -S "$SESSION" -X stuff "$RUN_CMD$(printf \\r)"
+    echo "Started Kea in screen session '$SESSION'."
+    sleep 2
+    is_running && echo "  running." || {
+        echo "  didn't come up — see: kea log" >&2; return 1; }
+}
+
+stop() {
+    if ! is_running; then echo "Kea isn't running."; return 0; fi
+    # Ctrl-C into the session first: lets Kea clean up GPIO and the camera
+    have_session && screen -S "$SESSION" -X stuff $'\003'
+    for _ in $(seq 1 10); do is_running || break; sleep 0.5; done
+    if is_running; then
+        echo "Didn't stop cleanly; killing."
+        pkill -f "src/main\.py"
+        sleep 1
+    fi
+    is_running && { echo "Still running." >&2; return 1; } || echo "Stopped."
+}
+
+status() {
+    echo "session : $(have_session && echo "'$SESSION' exists" || echo 'none')"
+    if is_running; then
+        pid=$(pgrep -f "src/main\.py" | head -1)
+        echo "kea     : RUNNING (pid $pid, up $(ps -o etime= -p "$pid" | tr -d ' '))"
+    else
+        echo "kea     : not running"
+    fi
+    echo "display : ${DISPLAY}"
+    if [ -x "$KEA_DIR/tools/offload.py" ] || [ -f "$KEA_DIR/tools/offload.py" ]; then
+        ( cd "$KEA_DIR" && $PY tools/offload.py --status 2>/dev/null | sed 's/^/          /' )
+    fi
+    systemctl --user is-active kea-offload.timer >/dev/null 2>&1 \
+        && echo "timer   : offload timer active" \
+        || echo "timer   : offload timer NOT active"
+}
+
+log() {
+    local f="/tmp/kea-screen.log"
+    if have_session; then
+        screen -S "$SESSION" -X hardcopy -h "$f" 2>/dev/null && \
+            tail -n 40 "$f" && return 0
+    fi
+    echo "No session to read. Is Kea running?" >&2
+    return 1
+}
+
+case "${1:-}" in
+    start)   start ;;
+    stop)    stop ;;
+    restart) stop; start ;;
+    status)  status ;;
+    attach)  ensure_session; screen -r "$SESSION" ;;
+    log)     log ;;
+    ""|run)  start; echo; echo "Attaching — Ctrl-A then D to leave it running."
+             sleep 1; screen -r "$SESSION" ;;
+    -h|--help|help)
+             sed -n '3,17p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *)       echo "unknown: $1   (try: kea help)" >&2; exit 2 ;;
+esac

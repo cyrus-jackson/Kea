@@ -30,10 +30,21 @@ Environment=KEA_DATA_DIR=/home/pi/kea_data
 Environment=KEA_TAGS_FILE=/home/pi/.kea_tags.json
 
 ExecStart=/bin/bash -c '/usr/bin/screen -ls main | grep -q "No Sockets found" && /usr/bin/screen -dmS main'
+# ...and actually start Kea in it. Without this you boot to an EMPTY
+# screen session and have to type the run command by hand every time.
+# The sleep gives X time to come up before SDL tries to open a window.
+ExecStartPost=/bin/bash -c 'sleep 10; /home/pi/Kea/tools/kea start'
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
+```
+
+Enable it so it runs at boot:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable autoscreen.service
 ```
 
 > **No upload settings here.** Kea never reads `KEA_RCLONE_*` — only
@@ -41,15 +52,46 @@ WantedBy=multi-user.target
 > where they belong. And no credentials live in any unit file: rclone
 > keeps them itself (§ 3.8).
 
-## 2. Running Kea inside the screen session
+## 2. Running Kea — the `kea` command
 
-Once the service creates the screen session, you have to run Kea inside of it.
+Install the shortcut once:
 
-Pass the start command to the screen session:
+```bash
+sudo ln -sf ~/Kea/tools/kea /usr/local/bin/kea
+```
+
+Then, from anywhere:
+
+```bash
+kea              # start it if needed, then attach   (Ctrl-A then D to leave)
+kea start        # start, don't attach
+kea stop         # Ctrl-C into the session so GPIO/camera release cleanly
+kea restart
+kea status       # running? what's pending? is the offload timer alive?
+kea attach       # just attach
+kea log          # last 40 lines Kea printed
+```
+
+That replaces the two-step routine of:
+
+```bash
+screen -r main
+cd /home/pi/Kea && SDL_AUDIODRIVER=pulseaudio python src/main.py
+```
+
+It creates the screen session if it's missing, refuses to start a second
+copy, and sets `DISPLAY`, `SDL_AUDIODRIVER` and `XDG_RUNTIME_DIR` for you.
+
+Overridable if your layout differs: `KEA_DIR` (default `~/Kea`),
+`KEA_SCREEN` (default `main`), `KEA_PYTHON` (default `python3`).
+
+<details>
+<summary>Doing it by hand instead</summary>
 
 ```bash
 screen -S main -X stuff $'cd /home/pi/Kea && SDL_AUDIODRIVER=pulseaudio python src/main.py\n'
 ```
+</details>
 
 `SDL_AUDIODRIVER=pulseaudio` forces pygame's audio through PulseAudio so Kea's
 voice lands on the default sink — i.e. the Bluetooth speaker (see §3). It's also
