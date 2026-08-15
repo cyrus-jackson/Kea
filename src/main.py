@@ -65,34 +65,63 @@ from states.nexus_state import WORLDS, NO_CYCLE, cycle_worlds
 
 
 _chip_font = None
+CHIP_SHOW = 2.6      # seconds the label is readable
+CHIP_FADE = 0.6      # then it fades out over this long
 
 
 def _draw_toggle_chip(surface, manager):
-    """Small badge naming what the physical toggle does on this screen."""
+    """Transient badge naming what the physical toggle does here.
+
+    It is deliberately NOT permanent. Drawn every frame it sat on top of
+    whatever the screen wanted that corner for — several screens put their
+    own status text there. So it appears when you arrive or flip the
+    lever, then fades, leaving only a 3 px pip when the toggle is engaged.
+
+    Anything an overlay wants to draw belongs in the reserved strip along
+    the bottom edge — see docs/UI_GUIDELINES.md.
+    """
     cur = manager.current_state
     if cur is None or not hasattr(cur, 'toggle_label'):
         return
     label = cur.toggle_label()
     if not label:
         return
+
     global _chip_font
     scale = surface.get_height() / 480.0
     if _chip_font is None:
         _chip_font = pygame.font.Font(None, max(11, int(14 * scale)))
+
     on = manager.toggle_on
+    age = getattr(manager, 'chip_age', 999.0)
+    pad = max(3, int(5 * scale))
+    x = max(3, int(6 * scale))
+
+    if age > CHIP_SHOW + CHIP_FADE:
+        # long past: just a small pip so the lever's state is still legible
+        if on:
+            r = max(2, int(3 * scale))
+            pygame.draw.circle(surface, (240, 208, 90),
+                               (x + r, surface.get_height() - r - pad), r)
+        return
+
+    alpha = 1.0 if age <= CHIP_SHOW else 1.0 - (age - CHIP_SHOW) / CHIP_FADE
+    alpha = max(0.0, min(1.0, alpha))
     fg = (18, 18, 20) if on else (150, 155, 165)
     bg = (240, 208, 90) if on else (30, 32, 38)
-    pad = max(3, int(5 * scale))
     txt = _chip_font.render(("▲ " if on else "▽ ") + label, True, fg)
     rect = txt.get_rect()
-    box = pygame.Rect(max(3, int(6 * scale)),
-                      surface.get_height() - rect.h - pad * 2 - max(3, int(5 * scale)),
+    box = pygame.Rect(x, surface.get_height() - rect.h - pad * 2 - max(3, int(5 * scale)),
                       rect.w + pad * 2, rect.h + pad * 2)
     chip = pygame.Surface(box.size, pygame.SRCALPHA)
-    chip.fill((*bg, 235 if on else 150))
+    chip.fill((*bg, int((235 if on else 150) * alpha)))
     surface.blit(chip, box.topleft)
     if on:
-        pygame.draw.rect(surface, (255, 240, 170), box, 1)
+        edge = pygame.Surface(box.size, pygame.SRCALPHA)
+        pygame.draw.rect(edge, (255, 240, 170, int(255 * alpha)),
+                         edge.get_rect(), 1)
+        surface.blit(edge, box.topleft)
+    txt.set_alpha(int(255 * alpha))
     surface.blit(txt, (box.x + pad, box.y + pad))
 
 
@@ -120,6 +149,7 @@ class StateManager:
         self.previous_state_name = None   # so transient states can go back
         self.toggle_on = False            # physical switch position
         self.toggle2_on = False           # second (global) switch
+        self.chip_age = 0.0               # how long the toggle chip has shown
 
     def add_state(self, name, state):
         self.states[name] = state
@@ -136,6 +166,7 @@ class StateManager:
 
         self.current_state = self.states.get(name)
         self.current_state_name = name
+        self.chip_age = 0.0        # re-announce the lever on the new screen
         
         if self.current_state:
             self.current_state.enter()
@@ -286,20 +317,26 @@ def main():
                 cur = manager.current_state
                 # Nexus browses its rail; the Console drives its dials;
                 # everywhere else the knob tunes through the worlds.
-                if manager.current_state_name in ('nexus', 'console') and \
-                        hasattr(cur, 'move_cursor'):
+                # A screen that implements move_cursor() owns the dial —
+                # Nexus browses, Console adjusts, Camera picks the tag.
+                # Anywhere else the knob tunes between worlds. (This used to
+                # be a hardcoded ('nexus','console') list, which silently
+                # stole the dial from the camera screen.)
+                if hasattr(cur, 'move_cursor'):
                     cur.move_cursor(event.direction)
                 else:
                     _tune(manager, event.direction)
             elif event.type == ENCODER_PRESS_EVENT:
                 cur = manager.current_state
-                if manager.current_state_name in ('nexus', 'console') and \
-                        hasattr(cur, 'activate') and cur.activate():
+                # Same for the press: the screen gets first refusal, and
+                # returning False means "I'm done, take me home".
+                if hasattr(cur, 'activate') and cur.activate():
                     pass
                 else:
                     manager.change_state('nexus')   # press = go home
             elif event.type == TOGGLE_EVENT:
                 manager.toggle_on = event.on
+                manager.chip_age = 0.0        # show the label again
                 cur = manager.current_state
                 # the screen you're on gets first refusal on the switch
                 if cur is not None and hasattr(cur, 'on_toggle'):
@@ -375,6 +412,7 @@ def main():
         
         # Update
         manager.update(dt)
+        manager.chip_age += dt
         
         # Ensure Pomodoro updates in the background if it's active but not the current state
         if manager.current_state_name != 'pomodoro':
