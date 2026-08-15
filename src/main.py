@@ -57,7 +57,7 @@ from hardware_input import (
     TOGGLE_EVENT,
     TOGGLE_ROLE,
     BUTTON_HOME_EVENT,
-    BUTTON_CONSOLE_EVENT,
+    BUTTON_CAMERA_EVENT,
     TOGGLE2_EVENT,
     TOGGLE2_ROLE,
 )
@@ -266,8 +266,10 @@ def main():
             # --- 4th / 5th buttons: jump straight to a screen ---
             elif event.type == BUTTON_HOME_EVENT:
                 manager.change_state('nexus')
-            elif event.type == BUTTON_CONSOLE_EVENT:
-                manager.change_state('console')
+            elif event.type == BUTTON_CAMERA_EVENT:
+                # Straight to the camera — the shutter is the GREEN button
+                # once you're there, so this is one press from anywhere.
+                manager.change_state('camera')
             # --- Toggle B: global, screens never claim it ---
             elif event.type == TOGGLE2_EVENT:
                 manager.toggle2_on = event.on

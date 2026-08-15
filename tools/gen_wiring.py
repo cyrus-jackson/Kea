@@ -49,13 +49,15 @@ rows = []           # (signal, bcm, note)
 # buttons
 def pin_const(name, default=None):
     """Read a `NAME = _pin("KEA_X", 12)` style assignment."""
-    m = re.search(rf'^{name}\s*=\s*_pin\([^,]+,\s*(-?\d+)\)', HW, re.M)
+    # tolerate extra args, e.g. _pin("KEA_BTN_CAMERA", 4, "KEA_BTN_CONSOLE")
+    m = re.search(rf'^{name}\s*=\s*_pin\([^,]+,\s*(-?\d+)', HW, re.M)
     return int(m.group(1)) if m else default
 
 
 # buttons: names come from BUTTON_CONFIG, pins from the constants it uses
 block = re.search(r"BUTTON_CONFIG\s*=\s*\{(.*?)\n\}", HW, re.S).group(1)
-for const, desc in re.findall(r"(\w+):\s*\([A-Z_]+,\s*\"([^\"]+)\"\)", block):
+for const, desc in re.findall(r"(\w+)\s*:\s*\(\s*[A-Z_]+\s*,\s*\"([^\"]+)\"\s*\)",
+                              block):
     bcm = pin_const(const)
     if bcm is not None:
         rows.append((f"Button — {desc}", bcm,

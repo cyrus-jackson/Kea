@@ -152,7 +152,7 @@ wrong guess on a plain switch costs nothing — it just won't respond.
 | 2 | Button — Red (Pomodoro) | 20 | **38** | other leg → GND |
 | 3 | Button — Green (annunciator) | 26 | **37** | other leg → GND |
 | 4 | Button — Home (to Nexus) | 13 | **33** | other leg → GND |
-| 5 | Button — Console (settings) | 4 | **7** | other leg → GND |
+| 5 | Button — Camera (capture) | 4 | **7** | other leg → GND |
 | 6 | Encoder `CLK` | 5 | **29** | KY-040 CLK |
 | 7 | Encoder `DT` | 6 | **31** | KY-040 DT |
 | 8 | Encoder `SW` | 16 | **36** | KY-040 SW |
@@ -219,11 +219,11 @@ don't use it. If either pin is taken, pick a free one from the script's
 list and set it at launch instead of editing code:
 
 ```bash
-KEA_BTN_CONSOLE=22 KEA_TOGGLE2_PIN=23 python3 src/main.py
+KEA_BTN_CAMERA=22 KEA_TOGGLE2_PIN=23 python3 src/main.py
 ```
 
 Overridable: `KEA_BTN_BLUE`, `KEA_BTN_RED`, `KEA_BTN_GREEN`,
-`KEA_BTN_HOME`, `KEA_BTN_CONSOLE`, `KEA_ENC_CLK`, `KEA_ENC_DT`,
+`KEA_BTN_HOME`, `KEA_BTN_CAMERA`, `KEA_ENC_CLK`, `KEA_ENC_DT`,
 `KEA_ENC_SW`, `KEA_TOGGLE_PIN`, `KEA_TOGGLE2_PIN`.
 
 Two to avoid for switches: BCM 2/3 (pins 3/5) have fixed 1.8 kΩ pull-ups —
@@ -269,7 +269,7 @@ python3 src/main.py
 | Button 2 (Red) | Pomodoro |
 | Button 3 (Green) | annunciator / stamp DONE |
 | Button 4 | jump home to Nexus |
-| Button 5 | open the Console (brightness / dwell) |
+| Button 5 | open the Camera screen (GREEN is then the shutter) |
 | Encoder turn | browse on Nexus, adjust on Console, tune elsewhere |
 | Encoder press | select / next dial / home |
 | Toggle A | per-screen role — each screen defines its own |

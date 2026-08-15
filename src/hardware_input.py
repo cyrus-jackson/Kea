@@ -41,17 +41,25 @@ ENCODER_TURN_EVENT = pygame.USEREVENT + 4     # .direction = +1 / -1
 ENCODER_PRESS_EVENT = pygame.USEREVENT + 5
 TOGGLE_EVENT = pygame.USEREVENT + 6           # .on = True / False
 BUTTON_HOME_EVENT = pygame.USEREVENT + 7      # 4th button: straight to Nexus
-BUTTON_CONSOLE_EVENT = pygame.USEREVENT + 8   # 5th button: the Console screen
+BUTTON_CAMERA_EVENT = pygame.USEREVENT + 8    # 5th button: the Camera screen
 TOGGLE2_EVENT = pygame.USEREVENT + 9          # 2nd toggle, .on = True / False
 
+# kept so older imports/env keep working
+BUTTON_CONSOLE_EVENT = BUTTON_CAMERA_EVENT
 
-def _pin(name, default):
+
+def _pin(name, default, *aliases):
     """Pin numbers are env-overridable: run tools/check_free_pins.py, then
-    set e.g. KEA_BTN_MENU=22 if the default clashes on your Pi."""
-    try:
-        return int(os.getenv(name, str(default)))
-    except ValueError:
-        return default
+    set e.g. KEA_BTN_CAMERA=22 if the default clashes on your Pi.
+    `aliases` are older variable names, still honoured."""
+    for n in (name,) + aliases:
+        v = os.getenv(n)
+        if v is not None:
+            try:
+                return int(v)
+            except ValueError:
+                pass
+    return default
 
 
 # ── pins (BCM) ──────────────────────────────────────────────────────────────
@@ -63,14 +71,14 @@ BTN_BLUE    = _pin("KEA_BTN_BLUE", 21)     # pin 40  — exposed
 BTN_RED     = _pin("KEA_BTN_RED", 20)      # pin 38  — exposed
 BTN_GREEN   = _pin("KEA_BTN_GREEN", 26)    # pin 37  — exposed
 BTN_HOME    = _pin("KEA_BTN_HOME", 13)     # pin 33  — exposed, the last free one
-BTN_CONSOLE = _pin("KEA_BTN_CONSOLE", 4)   # pin 7   — needs the extender
+BTN_CAMERA  = _pin("KEA_BTN_CAMERA", 4, "KEA_BTN_CONSOLE")   # pin 7 — extender
 
 BUTTON_CONFIG = {
-    BTN_BLUE:    (BUTTON_AMBIENT_EVENT, "Blue (Cycle)"),
-    BTN_RED:     (BUTTON_POMODORO_EVENT, "Red (Pomodoro)"),
-    BTN_GREEN:   (BUTTON_NOTIFICATION_EVENT, "Green (Annunciator)"),
-    BTN_HOME:    (BUTTON_HOME_EVENT, "Home (Nexus)"),
-    BTN_CONSOLE: (BUTTON_CONSOLE_EVENT, "Console (Settings)"),
+    BTN_BLUE:   (BUTTON_AMBIENT_EVENT, "Blue (Cycle)"),
+    BTN_RED:    (BUTTON_POMODORO_EVENT, "Red (Pomodoro)"),
+    BTN_GREEN:  (BUTTON_NOTIFICATION_EVENT, "Green (Annunciator)"),
+    BTN_HOME:   (BUTTON_HOME_EVENT, "Home (Nexus)"),
+    BTN_CAMERA: (BUTTON_CAMERA_EVENT, "Camera (Capture)"),
 }
 if len(BUTTON_CONFIG) != 5:
     print("WARNING: two buttons share a pin — check your KEA_BTN_* settings; "
