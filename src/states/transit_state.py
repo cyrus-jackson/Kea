@@ -275,7 +275,7 @@ class TransitState(State):
         out = []
         for r in self.routes:
             deps, _err = self.rows.get(r.label, ([], None))
-            for d in deps[:4]:
+            for d in self._future(deps)[:4]:
                 out.append((r, d))
         return out
 
@@ -306,6 +306,11 @@ class TransitState(State):
         r, d = self.selected()
         if d is None:
             self._flash("NOTHING TO TRACK")
+            return True
+        if d.cancelled:
+            # It would be accepted and then silently dropped on the next
+            # poll, which looks like the tracking quietly failing.
+            self._flash("CANCELLED — CANNOT TRACK")
             return True
         key = (r.label, d.planned.isoformat())
         if self.tracked == key:
@@ -344,7 +349,7 @@ class TransitState(State):
         label, planned_iso = self.tracked
         deps, _err = self.rows.get(label, ([], None))
         now = vvs._now()
-        for d in deps:
+        for d in self._future(deps):
             if d.planned.isoformat() == planned_iso:
                 if d.cancelled or d.in_min(now) < 0:
                     self.tracked = None
@@ -420,11 +425,25 @@ class TransitState(State):
         self.fetched = result.get("fetched")
         self.fetching = False
 
+    @staticmethod
+    def _future(deps):
+        """Drop anything that has already gone.
+
+        Necessary at DRAW time, not fetch time. The Board refreshes every
+        60 s on screen and every 5 min off it, so by the time a frame is
+        painted the top of a stale list can easily be in the past — which
+        is how departures from ten minutes ago ended up on the board.
+        Filtering at fetch would have looked right and still shown them.
+        """
+        now = vvs._now()
+        return [d for d in deps if d.in_min(now) > -0.5]
+
     def _current(self):
         r = self._route()
         if r is None:
             return [], None
-        return self.rows.get(r.label, ([], None))
+        deps, err = self.rows.get(r.label, ([], None))
+        return self._future(deps), err
 
     def _flash(self, text):
         self.msg = text
@@ -491,15 +510,32 @@ class TransitState(State):
         pal.glow_rect(surface, box, pal.mix(pal.CYAN, pal.VOID, 0.45), 1,
                       radius=s(6), spread=2, alpha=45)
 
+        # The dial can land on a departure you cannot make — with a 13
+        # minute walk to the Hauptbahnhof platform, most of the board is
+        # unmakeable most of the time. That is a state of its own, not a
+        # countdown: an earlier version kept it in the LEAVE IN branch and
+        # rendered "GO NOW  -3 MIN", which is not a thing.
         catch = self.headline()
-        if catch is not None and not catch.catchable(now):
-            catch = None if not deps else catch
+        missed = catch is not None and not catch.catchable(now)
         if err:
             self._headline(surface, box, "?", "NO SIGNAL", INK_DIM,
                            f"{err} — blind, not guessing")
         elif not deps:
             self._headline(surface, box, "·", "NOTHING RUNNING", INK_DIM,
                            "no departures on this route right now")
+        elif missed:
+            if catch.cancelled:
+                self._headline(surface, box, "!", "CANCELLED", RED_GO,
+                               "this service is not running",
+                               line=catch.line, product=catch.product,
+                               depart_at=f"{catch.estimated:%H:%M}")
+            else:
+                short = int(round(-catch.leave_in(now)))
+                self._headline(
+                    surface, box, "!", "TOO LATE", RED_GO,
+                    f"{short} min short of a {catch.walk_min} min walk",
+                    line=catch.line, product=catch.product,
+                    depart_at=f"{catch.estimated:%H:%M}")
         elif catch is None:
             # Name the next one you *can't quite* make, not one that left
             # ten minutes ago — "the S1 at 15:32" is the useful sentence.
@@ -514,7 +550,7 @@ class TransitState(State):
                 self._headline(surface, box, "!", "ALL MISSED", RED_GO,
                                "closer than your walk",
                                line=nxt.line, product=nxt.product,
-                               depart_at=f"DEPARTS {nxt.estimated:%H:%M}")
+                               depart_at=f"{nxt.estimated:%H:%M}")
         else:
             left = catch.leave_in(now)
             if left < 1:
@@ -523,12 +559,13 @@ class TransitState(State):
                 col, word, note = AMBER, "LEAVE IN", "put your shoes on"
             else:
                 col, word, note = GREEN_OK, "LEAVE IN", "no rush"
-            delay = f"  +{catch.delay_min}" if catch.delay_min > 0 else ""
             self._headline(surface, box, str(int(left)), word, col, note,
                            unit="MIN", line=catch.line,
                            product=catch.product,
                            tracked=self.is_tracked(catch),
-                           depart_at=f"DEPARTS {catch.estimated:%H:%M}{delay}")
+                           depart_at=f"{catch.estimated:%H:%M}",
+                           late=(f"+{catch.delay_min}"
+                                 if catch.delay_min > 0 else ""))
 
         # ── the split-flap rows: what you are catching, and where to ────
         fy = box.bottom + s(10)
@@ -639,16 +676,36 @@ class TransitState(State):
         return rect.width
 
     def _headline(self, surface, box, big, word, colour, note, unit="",
-                  line=None, product="", tracked=False, depart_at=""):
+                  line=None, product="", tracked=False, depart_at="",
+                  late=""):
         cx = box.centerx
         if line:
             self._line_badge(surface, box.x + s(10), box.y + s(8),
                              line, product)
+        # DEPARTS gets the same weight as the line number, mirrored into
+        # the opposite corner: the two facts you actually leave the house
+        # on are "which one" and "what time", so they read as a pair.
+        if depart_at:
+            dt_txt = self.font_badge.render(depart_at, True, pal.VOID)
+            pad = s(7)
+            dr = pygame.Rect(0, 0, dt_txt.get_width() + pad * 2,
+                             dt_txt.get_height() + s(5))
+            dr.topright = (box.right - s(10), box.y + s(8))
+            surface.blit(pal.halo(dr.h, colour, 80),
+                         (dr.centerx - dr.h, dr.centery - dr.h))
+            pygame.draw.rect(surface, colour, dr, border_radius=s(4))
+            pygame.draw.rect(surface, pal.lift(colour, 0.5), dr, 1,
+                             border_radius=s(4))
+            surface.blit(dt_txt, (dr.x + pad, dr.y + s(2)))
+            if late:
+                lt = self.font_tiny.render(late, True, AMBER)
+                surface.blit(lt, (dr.right - lt.get_width(),
+                                  dr.bottom + s(2)))
         # The arm and the screen must never disagree about what is armed.
         if tracked:
             tag = self.font_tiny.render("ARM TRACKING", True, pal.ACID)
             tw = tag.get_width() + s(10)
-            tr = pygame.Rect(box.right - tw - s(8), box.y + s(9), tw, s(15))
+            tr = pygame.Rect(box.x + s(10), box.bottom - s(20), tw, s(15))
             pygame.draw.rect(surface, pal.mix(pal.ACID, pal.VOID, 0.75), tr,
                              border_radius=s(3))
             pygame.draw.rect(surface, pal.ACID, tr, 1, border_radius=s(3))
@@ -664,12 +721,6 @@ class TransitState(State):
             surface.blit(u, (nx + num.get_width() - gp * 2 + s(6),
                              box.y + s(74)))
         surface.blit(num, (nx - gp, box.y + s(26) - gp))
-        if depart_at:
-            # LEAVE IN answers "do I stand up". This answers "what time is
-            # it actually there", which is the number you say out loud and
-            # the one you check against a clock on the wall.
-            dt_s = self.font_row.render(depart_at, True, colour)
-            surface.blit(dt_s, (cx - dt_s.get_width() // 2, box.bottom - s(38)))
         n = self.font_tiny.render(note[:44], True, INK_DIM)
         surface.blit(n, (cx - n.get_width() // 2, box.bottom - s(20)))
 

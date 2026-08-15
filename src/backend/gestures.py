@@ -62,6 +62,11 @@ MAST_POLL = 5.0          # seconds between checking what is owed
 GAUGE_POLL = 20.0        # seconds between recomputing the countdown
 FOCUS_POLL = 10.0        # seconds between updating the focus angle
 DOUBLE_TAKE_DEG = 12.0   # how far the monitor flicks
+# Every monitor move is a glide, never a jump. It carries a screen; a
+# snap-turn reads as a fault rather than as intent. Gliding is free now
+# that stepping happens in the main loop instead of blocking it.
+GLIDE_CALM = 30.0        # deg/sec — centring, aiming
+GLIDE_QUICK = 70.0       # deg/sec — the double-take, still not a snap
 MIN_STEP_DEG = 4.0       # mast: ignore smaller changes, not worth the noise
 # The gauge is a continuous readout, so small moves ARE the point. At 20 s
 # polls across a 12 min window each step is only about 2 deg on a typical
@@ -88,6 +93,7 @@ class Gestures:
         self._take = None            # (stage, deadline, home angle)
         self._tap = None             # queued handover taps
         self._aim = None             # last aim offset applied
+        self._homed = False          # has the monitor been centred yet?
 
     # ── the arm ────────────────────────────────────────────────────────
     def _mast_fraction(self):
@@ -221,13 +227,27 @@ class Gestures:
         self._tap = None if left <= 0 else [base, left, now + TAP_GAP]
 
     # ── the monitor ────────────────────────────────────────────────────
+    def home_monitor(self):
+        """Glide to the calibrated centre. Called once at startup.
+
+        Kea used to arrive on screen with the monitor snapping hard over
+        at full servo speed. Two causes, both fixed: nothing centred it
+        deliberately, and the very first command is always a leap because
+        the software does not know where the horn is. servo.py now
+        restores the last known angle from disk, so this glides from
+        roughly the right place.
+        """
+        mon = servo.monitor()
+        mon.glide_to(mon.centre_deg, GLIDE_CALM)
+        self._homed = True
+
     def double_take(self):
         """A flick and back. Queued, not blocking — the render loop is
         30 fps and a servo move takes the better part of a second."""
         mon = servo.monitor()
         home = mon.angle if mon.angle is not None else mon.centre_deg
-        self._take = ["out", time.time() + 0.35, home]
-        mon.move_to(mon.clamp(home + DOUBLE_TAKE_DEG), speed=8.0)
+        self._take = ["out", time.time() + 0.5, home]
+        mon.glide_to(mon.clamp(home + DOUBLE_TAKE_DEG), GLIDE_QUICK)
 
     def _tick_double_take(self, now):
         if not self._take:
@@ -237,10 +257,10 @@ class Gestures:
             return
         mon = servo.monitor()
         if stage == "out":
-            mon.move_to(mon.clamp(home - DOUBLE_TAKE_DEG * 0.4), speed=8.0)
-            self._take = ["back", now + 0.3, home]
+            mon.glide_to(mon.clamp(home - DOUBLE_TAKE_DEG * 0.4), GLIDE_QUICK)
+            self._take = ["back", now + 0.45, home]
         else:
-            mon.move_to(home, speed=8.0)
+            mon.glide_to(home, GLIDE_CALM)
             self._take = None
 
     def apply_aim(self):
@@ -254,7 +274,7 @@ class Gestures:
             return
         self._aim = offset
         mon = servo.monitor()
-        mon.move_to(mon.clamp(mon.centre_deg + offset), speed=6.0)
+        mon.glide_to(mon.clamp(mon.centre_deg + offset), GLIDE_CALM)
 
     # ── the loop ───────────────────────────────────────────────────────
     def update(self, dt):
@@ -264,6 +284,8 @@ class Gestures:
             return
         now = time.time()
         try:
+            if not self._homed:
+                self.home_monitor()      # centre, gracefully, once
             self._tick_double_take(now)
             self._tick_tap(now)
             # The AIM dial is a live control: turning it should move the

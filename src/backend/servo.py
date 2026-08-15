@@ -86,8 +86,12 @@ PULSE_MAX_US = 2400
 SPAN_DEG = 180.0
 
 RELAX_AFTER = 1.2        # seconds of stillness before the pulse is cut
-STEP_DEG = 3.0           # per tick when moving smoothly
+STEP_DEG = 3.0           # per tick when moving smoothly (blocking move_to)
 TICK = 0.02
+# Degrees per second for a glide. Slow enough to look deliberate rather
+# than startled — the monitor carries a screen and a snap-turn reads as a
+# fault. Overridable per call.
+GLIDE_DPS = 45.0
 
 ADDR = int(os.getenv("KEA_PCA9685_ADDR", "0x40"), 0)
 BUS_N = int(os.getenv("KEA_I2C_BUS", "1"))
@@ -105,6 +109,30 @@ def load_calibration():
         return data if isinstance(data, dict) else {}
     except Exception:                             # noqa: BLE001
         return {}
+
+
+def _save_last(name, angle):
+    """Remember where a servo was left.
+
+    A servo has no position feedback, so on startup the software has no
+    idea where the horn is and its first command is a full-speed leap to
+    wherever it was told to go. That is the "monitor snaps hard right on
+    boot" problem: not a bug in the target, a bug in not knowing the
+    start. Persisting the last commanded angle lets the next run glide
+    from roughly the right place — true as long as the mechanism holds
+    when relaxed, which is exactly what --sagtest checks.
+    """
+    try:
+        data = load_calibration()
+        entry = dict(data.get(name, {}))
+        entry["last"] = round(float(angle), 1)
+        data[name] = entry
+        tmp = CALIB_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, sort_keys=True)
+        os.replace(tmp, CALIB_PATH)
+    except Exception:                             # noqa: BLE001
+        pass                                      # never fail a move over this
 
 
 def save_calibration(name, channel, positions):
@@ -177,6 +205,8 @@ def resolve(name, env, default_ch, default_lo, default_hi, labels):
     cal = load_calibration().get(name, {})
     ch = int(cal.get("channel", default_ch))
     pos = {k: float(cal[k]) for k in labels if k in cal}
+    last = cal.get("last")
+    last = float(last) if isinstance(last, (int, float)) else None
 
     lo = min(pos.values()) if pos else default_lo
     hi = max(pos.values()) if pos else default_hi
@@ -187,7 +217,7 @@ def resolve(name, env, default_ch, default_lo, default_hi, labels):
         ch, lo, hi = _spec(env, ch, lo, hi)
         centre = max(lo, min(hi, centre))
         source = "env"
-    return ch, lo, hi, centre, pos, source
+    return ch, lo, hi, centre, pos, source, last
 
 
 class _Synthetic:
@@ -297,7 +327,8 @@ class Servo:
 
     def __init__(self, channel, lo, hi, name="servo", relax=True,
                  invert=False, centre_deg=None, positions=None,
-                 labels=("left", "centre", "right"), source="default"):
+                 labels=("left", "centre", "right"), source="default",
+                 last=None):
         self.channel = channel
         self.lo = lo
         self.hi = hi
@@ -313,9 +344,13 @@ class Servo:
         self.centre_deg = (centre_deg if centre_deg is not None
                            else (lo + hi) / 2.0)
         self.positions.setdefault(labels[1], self.centre_deg)
-        self.angle = None            # unknown until first commanded
-        self._target = None
+        # Where we believe it is. Restored from the last run so the first
+        # move can glide instead of leaping — see _save_last().
+        self.angle = last
+        self._target = None          # glide destination, if gliding
+        self._glide_dps = GLIDE_DPS
         self._last_cmd = 0.0
+        self._last_tick = None
         self._relaxed = True
 
     @property
@@ -348,6 +383,25 @@ class Servo:
         self._last_cmd = time.time()
         self._relaxed = False
         return deg
+
+    def glide_to(self, deg, dps=None):
+        """Set a destination and ease toward it from update() — NON-BLOCKING.
+
+        move_to() walks the servo with time.sleep() between steps, which
+        is fine in a CLI tool and wrong inside a 30 fps render loop: a
+        graceful 60 degree move at a gentle rate would stall the screen
+        for over a second. Gliding hands the stepping to the main loop,
+        so slower now costs nothing.
+        """
+        self._target = self.clamp(deg)
+        self._glide_dps = float(dps or GLIDE_DPS)
+        if self.angle is None:            # nothing known: take the position
+            return self.write(self._target)
+        return self._target
+
+    @property
+    def gliding(self):
+        return self._target is not None
 
     def move_to(self, deg, speed=STEP_DEG):
         """Walk to a position rather than jumping.
@@ -449,11 +503,25 @@ class Servo:
         self._relaxed = True
 
     def update(self, now=None):
-        """Call periodically. Relaxes the channel once it has been still
-        long enough. Safe to call every frame."""
+        """Call every frame. Advances any glide, then relaxes when still."""
+        now = now or time.time()
+        dt = 0.0 if self._last_tick is None else max(0.0, now - self._last_tick)
+        self._last_tick = now
+
+        if self._target is not None and self.angle is not None:
+            gap = self._target - self.angle
+            if abs(gap) <= 0.5:
+                self.write(self._target)
+                self._target = None
+                _save_last(self.name, self.angle)
+            else:
+                step = self._glide_dps * min(dt, 0.1)     # cap after a stall
+                step = min(step, abs(gap))
+                self.write(self.angle + (step if gap > 0 else -step))
+            return                        # still moving: not idle
+
         if not self.relax_when_idle or self._relaxed:
             return
-        now = now or time.time()
         if now - self._last_cmd >= RELAX_AFTER:
             self.relax()
 
@@ -477,10 +545,11 @@ def monitor():
     """Rotates the monitor. Relaxes when idle — the bracket holds itself."""
     global _monitor
     if _monitor is None:
-        ch, lo, hi, c, pos, src = resolve(
+        ch, lo, hi, c, pos, src, last = resolve(
             "monitor", "KEA_SERVO_MONITOR", 0, 30.0, 150.0, MONITOR_LABELS)
         _monitor = Servo(ch, lo, hi, "monitor", relax=True, centre_deg=c,
-                         positions=pos, labels=MONITOR_LABELS, source=src)
+                         positions=pos, labels=MONITOR_LABELS, source=src,
+                         last=last)
     return _monitor
 
 
@@ -488,10 +557,11 @@ def flag():
     """The semaphore arm: up when something is overdue, down when clear."""
     global _flag
     if _flag is None:
-        ch, lo, hi, c, pos, src = resolve(
+        ch, lo, hi, c, pos, src, last = resolve(
             "flag", "KEA_SERVO_FLAG", 1, 10.0, 100.0, FLAG_LABELS)
         _flag = Servo(ch, lo, hi, "flag", relax=True, centre_deg=c,
-                      positions=pos, labels=FLAG_LABELS, source=src)
+                      positions=pos, labels=FLAG_LABELS, source=src,
+                      last=last)
     return _flag
 
 
@@ -523,8 +593,11 @@ def update(now=None):
 
 def relax_all():
     """Everything limp. Call on shutdown — leaving a servo powered and
-    holding is how a pack is flat by morning."""
+    holding is how a pack is flat by morning. Also records where each
+    one was left, so the next run glides rather than leaps."""
     for sv in all_servos():
+        if sv.angle is not None:
+            _save_last(sv.name, sv.angle)
         sv.relax()
 
 
