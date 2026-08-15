@@ -40,6 +40,45 @@ GPIO 2 and GPIO 3, which are 3.3 V-only pins with no protection. The chip
 runs happily on 3.3 V (its spec is 3.0–5.5 V), so there is nothing to
 gain and a Pi to lose.
 
+<details>
+<summary><b>"But every tutorial wires VCC to 5 V — doesn't the board need it?"</b></summary>
+
+No. Your board's own datasheet settles it:
+
+> Die Versorgung der Lasten (z. B. Servos, LEDs) erfolgt über den
+> separaten **V+** Anschluss mit **3,3 V bis 5 V**. Die IC-Spannung
+> (**VCC**) wird getrennt mit **3,0 V bis 5,5 V** versorgt.
+
+BerryBase rates `VCC` at **3.0–5.5 V**. 3.3 V is in spec, not a
+workaround. The 5 V advice is Arduino heritage — on a 5 V
+microcontroller you would match logic levels — carried over to Pi
+tutorials because it usually works, not because it is needed.
+
+**Why it is the risky choice here.** I²C is open-drain: devices only
+pull the line *low*, and the HIGH level comes entirely from pull-up
+resistors. This board's pull-ups go to `VCC`; the Pi has its own 1.8 kΩ
+pull-ups to 3.3 V on GPIO 2/3. Put 5 V on `VCC` and the two fight:
+
+```
+(5 / 10k + 3.3 / 1.8k) / (1/10k + 1/1.8k)  ≈  3.56 V idle
+```
+
+About 0.26 V over the rail, forward-biasing the GPIO protection diodes
+and pushing current back into the Pi's 3.3 V supply. Usually survivable,
+still out of spec, and worse if the board is ever powered while the Pi
+is off.
+
+**The one real tradeoff.** The PWM output high level equals `VCC`, so at
+3.3 V the servos get 3.3 V pulses rather than 5 V. SG92R-class servos
+trigger well below that and are fine. If a servo ever behaves
+erratically while the wiring is otherwise proven, this is the thing to
+revisit — the fix is a proper bidirectional level shifter on SDA/SCL
+plus 5 V on `VCC`, not simply moving the `VCC` wire.
+
+Current is a non-issue: the chip draws about 10 mA.
+
+</details>
+
 **2. Never connect the battery to any Pi 5 V pin.**
 
 The Pi's 5 V pins are an *output* from its own regulator. Feeding them
