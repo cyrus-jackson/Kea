@@ -20,26 +20,38 @@ is a five minute walk: it is one minute away, and it is about to become
 a sprint. So the big number is LEAVE IN, it counts the walk, and it goes
 amber then red as it runs out.
 
-Everything else on the board is deliberately small: the following two
-departures, the delay, the platform. Reference, not the headline.
+The line number sits in that same box, as a signage pill in its mode's
+colour — green for S-Bahn, blue for Stadtbahn, violet for a bus. "LEAVE
+IN 5 MIN" is only half an answer; you also have to know what you are
+running for, and putting that in a different panel means reading the
+screen twice.
 
-    ENCODER turn    switch between your configured routes
+Everything else is deliberately small: the following departures, the
+delay, the platform. Reference, not the headline.
+
+    ENCODER turn    switch between your routes
     ENCODER press   back to Nexus
     GREEN           refresh now
-    TOGGLE          ALL LINES — ignore the line filter and show
-                    everything leaving this stop
+    TOGGLE          SHOW LEGS on a journey; ALL LINES on a stop board
 
 CONFIGURATION
+
+Kea ships with three journeys from Universität — Hauptbahnhof, Vaihingen
+and Max-Planck-Institute — and needs no configuration to be useful. To
+change or extend them:
+
+    KEA_VVS_ROUTES='de:08111:6008>de:08111:6118|HAUPTBAHNHOF|5'
+                    origin > destination   label       walk minutes
 
     KEA_VVS_ROUTES='de:08111:6118|Hbf|U6,U7|Flughafen|7'
                     stop id      label lines direction  walk minutes
 
-Find the ids, the exact line names and the destination spellings with:
+Find ids, exact line names and destination spellings with:
 
     python3 tools/find_stop.py "your stop" --departures
 
-Unconfigured, the screen says so and tells you that command rather than
-sitting blank — see UI_GUIDELINES §8.
+With an empty board the screen says so and prints that command rather
+than sitting blank — see UI_GUIDELINES §8.
 """
 
 import datetime
@@ -70,6 +82,22 @@ AMBER = (250, 186, 60)
 GREEN_OK = (120, 214, 132)
 RED_GO = (232, 88, 72)
 BRASS = (168, 138, 74)
+
+# Line badges, coloured the way the network colours them, so "which
+# thing am I running for" is answered by shape and colour before you
+# have read the number.
+PRODUCT_COLOUR = {
+    "S":    (62, 158, 92),       # S-Bahn green
+    "U":    (72, 132, 210),      # Stadtbahn blue
+    "TRAM": (202, 122, 62),
+    "BUS":  (188, 92, 168),      # SSB bus violet
+    "RE":   (196, 66, 66),
+    "IC":   (196, 66, 66),
+    "ICE":  (196, 66, 66),
+    "ZUG":  (196, 66, 66),
+    "WALK": (110, 114, 124),
+}
+BADGE_INK = (16, 16, 20)
 
 REFRESH = 60.0          # seconds between fetches
 FLAP_TIME = 0.42        # how long a character tumbles when it changes
@@ -164,6 +192,7 @@ class TransitState(State):
         self.font_small = pygame.font.Font(None, s(14))
         self.font_tiny = pygame.font.Font(None, s(12))
         self.font_flap = pygame.font.Font(None, s(20))
+        self.font_badge = pygame.font.Font(None, s(26))
 
         self.routes = vvs.routes_from_env()
         self.idx = 0
@@ -332,13 +361,20 @@ class TransitState(State):
             self._headline(surface, box, "·", "NOTHING RUNNING", INK_DIM,
                            "no departures on this route right now")
         elif catch is None:
-            live = [d for d in deps if not d.cancelled]
+            # Name the next one you *can't quite* make, not one that left
+            # ten minutes ago — "the S1 at 15:32" is the useful sentence.
+            live = [d for d in deps
+                    if not d.cancelled and d.in_min(now) >= 0] \
+                or [d for d in deps if not d.cancelled]
             if not live:
                 self._headline(surface, box, "!", "ALL CANCELLED", RED_GO,
                                "every service ahead is cancelled")
             else:
+                nxt = live[0]
                 self._headline(surface, box, "!", "ALL MISSED", RED_GO,
-                               "next one is closer than your walk")
+                               f"the {nxt.line} at {nxt.estimated:%H:%M} "
+                               f"is closer than your walk",
+                               line=nxt.line, product=nxt.product)
         else:
             left = catch.leave_in(now)
             if left < 1:
@@ -348,7 +384,8 @@ class TransitState(State):
             else:
                 col, word, note = GREEN_OK, "LEAVE IN", "no rush"
             self._headline(surface, box, str(int(left)), word, col, note,
-                           unit="MIN")
+                           unit="MIN", line=catch.line,
+                           product=catch.product)
 
         # ── the split-flap rows: what you are catching, and where to ────
         fy = box.bottom + s(10)
@@ -425,10 +462,40 @@ class TransitState(State):
 
         self._draw_footer(surface, now)
 
-    def _headline(self, surface, box, big, word, colour, note, unit=""):
+    def _line_badge(self, surface, x, y, line, product):
+        """A signage pill: the line number, in its mode's colour.
+
+        This lives inside the headline box on purpose. "LEAVE IN 5 MIN"
+        is only half an answer — you also have to know what you are
+        running for, and having that in a different panel means reading
+        the screen twice.
+        """
+        col = PRODUCT_COLOUR.get(product, BRASS)
+        txt = self.font_badge.render(line[:5].upper(), True, BADGE_INK)
+        pad = s(7)
+        rect = pygame.Rect(x, y, txt.get_width() + pad * 2,
+                           txt.get_height() + s(5))
+        pygame.draw.rect(surface, col, rect, border_radius=s(4))
+        surface.blit(txt, (rect.x + pad, rect.y + s(2)))
+        # "S1 · S" and "U6 · U" say the same thing twice; only spell the
+        # mode out when the line name does not already imply it, which in
+        # practice means buses.
+        if (product and product not in ("WALK", "")
+                and not line.upper().startswith(product)):
+            g = self.font_tiny.render(product, True, INK_DIM)
+            surface.blit(g, (rect.right + s(6),
+                             rect.centery - g.get_height() // 2))
+            return rect.width + s(6) + g.get_width()
+        return rect.width
+
+    def _headline(self, surface, box, big, word, colour, note, unit="",
+                  line=None, product=""):
         cx = box.centerx
+        if line:
+            self._line_badge(surface, box.x + s(10), box.y + s(8),
+                             line, product)
         lab = self.font_small.render(word, True, colour)
-        surface.blit(lab, (cx - lab.get_width() // 2, box.y + s(10)))
+        surface.blit(lab, (cx - lab.get_width() // 2, box.y + s(12)))
         num = self.font_huge.render(big, True, colour)
         nx = cx - num.get_width() // 2
         if unit:
