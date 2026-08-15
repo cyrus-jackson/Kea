@@ -5,9 +5,23 @@ Two servos today: channel 0 rotates the monitor, channel 1 raises the
 semaphore arm. Fourteen channels spare.
 
     from backend import servo
-    servo.monitor().move_to(90)      # degrees, clamped to real limits
-    servo.flag().raise_()            # the arm goes up
+    servo.monitor().go("centre")     # to the calibrated centre
+    servo.monitor().go("left")       # to the calibrated left stop
+    servo.flag().go("up")            # the arm goes up
     servo.relax_all()                # stop holding, stop drawing current
+
+CALIBRATION
+
+Left, centre and right are *measured*, not computed, and live in
+~/.kea_servos.json. Capture them by hand:
+
+    python3 tools/test_servo.py --calibrate --channel 0
+
+**Centre is not the midpoint.** A servo horn mounts on splines, so it
+lands at whatever angle the teeth allow — "monitor facing you" might be
+92 deg in a 35-148 deg range. Anything that computes centre as
+(lo + hi) / 2 will be wrong by however far the horn happened to sit,
+which is why the centre is stored as its own number.
 
 NO DEPENDENCY STACK
 
@@ -25,8 +39,8 @@ command is clamped to them. A servo driven into its mechanical end stop
 does not stop — it stalls, drawing full stall current continuously,
 heating up and flattening a 4×AA pack in minutes. The limits are the
 difference between a servo that lasts and one that cooks. Find them with
-`tools/test_servo.py --jog` and set them in the environment; see
-hardware/SERVO_WIRING.md stage 5.
+`tools/test_servo.py --calibrate`, which measures them and saves them;
+see hardware/SERVO_WIRING.md stage 5.
 
 **Idle relax.** A servo holding position still draws current, and a
 cheap one hunts audibly around its target forever. After RELAX_AFTER
@@ -43,6 +57,7 @@ See hardware/SERVO_WIRING.md. The short version: VCC to Pi 3.3 V (never
 battery, and the grounds joined.
 """
 
+import json
 import os
 import threading
 import time
@@ -77,15 +92,43 @@ TICK = 0.02
 ADDR = int(os.getenv("KEA_PCA9685_ADDR", "0x40"), 0)
 BUS_N = int(os.getenv("KEA_I2C_BUS", "1"))
 
+# Where the measured positions live. Written by tools/test_servo.py
+# --calibrate; a property of this chassis, so it does not belong in code.
+CALIB_PATH = os.path.join(os.path.expanduser("~"), ".kea_servos.json")
+
+
+def load_calibration():
+    """Everything measured so far. Never raises — no file is normal."""
+    try:
+        with open(CALIB_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:                             # noqa: BLE001
+        return {}
+
+
+def save_calibration(name, channel, positions):
+    """Merge one servo's measured positions into the file.
+
+    Merged rather than overwritten so calibrating the monitor never wipes
+    the flag — the two are done in separate sittings, hours apart, and
+    losing the first one to the second would be a nasty surprise.
+    """
+    data = load_calibration()
+    entry = dict(data.get(name, {}))
+    entry["channel"] = channel
+    entry.update({k: round(float(v), 1) for k, v in positions.items()
+                  if v is not None})
+    data[name] = entry
+    tmp = CALIB_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, sort_keys=True)
+    os.replace(tmp, CALIB_PATH)                   # atomic: no half-written file
+    return data[name]
+
 
 def _spec(env, default_ch, default_lo, default_hi):
-    """Parse 'channel:min:max' from the environment.
-
-    Limits live in the environment rather than in code because they are a
-    property of *your* chassis, not of the software — the angle at which
-    the monitor bracket fouls its case is something only the assembled
-    machine knows.
-    """
+    """Parse 'channel:min:max' from the environment."""
     raw = os.getenv(env, "")
     ch, lo, hi = default_ch, default_lo, default_hi
     if raw:
@@ -100,6 +143,35 @@ def _spec(env, default_ch, default_lo, default_hi):
     if lo > hi:
         lo, hi = hi, lo
     return ch, max(0.0, lo), min(SPAN_DEG, hi)
+
+
+def resolve(name, env, default_ch, default_lo, default_hi, labels):
+    """Where one servo's numbers come from, and in what order.
+
+    ENV BEATS THE CALIBRATION FILE. That is the same rule as everywhere
+    else in Kea (KEA_CAM_AUTO_SECS beats the Console dial, KEA_IDLE_MINS
+    beats the IDLE dial), and a consistent rule you can state in one
+    sentence is worth more than a cleverer one you cannot.
+
+    The trap it creates — you calibrate, an old env var in the service
+    file silently wins, and the servo does not go where you just told it
+    — is handled by tools/test_servo.py, which refuses to save quietly
+    into that situation and says exactly which variable to unset.
+    """
+    cal = load_calibration().get(name, {})
+    ch = int(cal.get("channel", default_ch))
+    pos = {k: float(cal[k]) for k in labels if k in cal}
+
+    lo = min(pos.values()) if pos else default_lo
+    hi = max(pos.values()) if pos else default_hi
+    centre = pos.get(labels[1], (lo + hi) / 2.0)
+    source = "calibration" if pos else "default"
+
+    if os.getenv(env):
+        ch, lo, hi = _spec(env, ch, lo, hi)
+        centre = max(lo, min(hi, centre))
+        source = "env"
+    return ch, lo, hi, centre, pos, source
 
 
 class _Synthetic:
@@ -208,17 +280,32 @@ class Servo:
     """One channel, clamped to what your chassis can actually do."""
 
     def __init__(self, channel, lo, hi, name="servo", relax=True,
-                 invert=False):
+                 invert=False, centre_deg=None, positions=None,
+                 labels=("left", "centre", "right"), source="default"):
         self.channel = channel
         self.lo = lo
         self.hi = hi
         self.name = name
         self.relax_when_idle = relax
         self.invert = invert
+        self.labels = labels
+        self.source = source          # default / calibration / env
+        # Measured positions. centre is stored, never derived: a horn
+        # mounts on splines and lands where the teeth allow, so the real
+        # centre is rarely halfway between the ends.
+        self.positions = dict(positions or {})
+        self.centre_deg = (centre_deg if centre_deg is not None
+                           else (lo + hi) / 2.0)
+        self.positions.setdefault(labels[1], self.centre_deg)
         self.angle = None            # unknown until first commanded
         self._target = None
         self._last_cmd = 0.0
         self._relaxed = True
+
+    @property
+    def calibrated(self):
+        """True once all three positions have actually been measured."""
+        return all(k in self.positions for k in self.labels)
 
     # ── the guard rail ─────────────────────────────────────────────────
     def clamp(self, deg):
@@ -262,8 +349,37 @@ class Servo:
             time.sleep(TICK)
         return self.write(deg)
 
-    def centre(self):
-        return self.move_to((self.lo + self.hi) / 2.0)
+    def go(self, where, speed=STEP_DEG):
+        """Move to a named position: "left" / "centre" / "right"
+        (or "down" / "rest" / "up" on the flag)."""
+        if where not in self.positions:
+            raise KeyError(f"{self.name} has no position {where!r}; "
+                           f"known: {sorted(self.positions)}")
+        return self.move_to(self.positions[where], speed=speed)
+
+    def centre(self, speed=STEP_DEG):
+        """The measured centre, not the midpoint of the range."""
+        return self.move_to(self.centre_deg, speed=speed)
+
+    def set_position(self, where, deg):
+        """Record a measured position and widen the limits to include it.
+
+        Calibration is the one time the limits are allowed to grow: they
+        exist to stop *later* commands exceeding what you measured, not
+        to stop you measuring it.
+        """
+        deg = max(0.0, min(SPAN_DEG, float(deg)))
+        self.positions[where] = deg
+        self.lo = min(self.lo, deg)
+        self.hi = max(self.hi, deg)
+        if where == self.labels[1]:
+            self.centre_deg = deg
+        return deg
+
+    def save(self):
+        """Persist the measured positions to ~/.kea_servos.json."""
+        return save_calibration(self.name, self.channel,
+                                {k: self.positions.get(k) for k in self.labels})
 
     def relax(self):
         """Cut the pulse. The servo goes limp and stops drawing current.
@@ -293,12 +409,15 @@ class Servo:
 
     def __repr__(self):
         return (f"<Servo {self.name} ch{self.channel} "
-                f"{self.lo:.0f}-{self.hi:.0f}deg at {self.angle}>")
+                f"{self.lo:.0f}-{self.hi:.0f}deg centre {self.centre_deg:.0f} "
+                f"[{self.source}] at {self.angle}>")
 
 
 # ── Kea's two ───────────────────────────────────────────────────────────────
-_MON_CH, _MON_LO, _MON_HI = _spec("KEA_SERVO_MONITOR", 0, 30.0, 150.0)
-_FLAG_CH, _FLAG_LO, _FLAG_HI = _spec("KEA_SERVO_FLAG", 1, 10.0, 100.0)
+# The flag's three positions are the same idea under different names: a
+# semaphore arm has down / rest / up rather than left / centre / right.
+MONITOR_LABELS = ("left", "centre", "right")
+FLAG_LABELS = ("down", "rest", "up")
 
 _monitor = None
 _flag = None
@@ -308,7 +427,10 @@ def monitor():
     """Rotates the monitor. Relaxes when idle — the bracket holds itself."""
     global _monitor
     if _monitor is None:
-        _monitor = Servo(_MON_CH, _MON_LO, _MON_HI, "monitor", relax=True)
+        ch, lo, hi, c, pos, src = resolve(
+            "monitor", "KEA_SERVO_MONITOR", 0, 30.0, 150.0, MONITOR_LABELS)
+        _monitor = Servo(ch, lo, hi, "monitor", relax=True, centre_deg=c,
+                         positions=pos, labels=MONITOR_LABELS, source=src)
     return _monitor
 
 
@@ -316,16 +438,27 @@ def flag():
     """The semaphore arm: up when something is overdue, down when clear."""
     global _flag
     if _flag is None:
-        _flag = Servo(_FLAG_CH, _FLAG_LO, _FLAG_HI, "flag", relax=True)
+        ch, lo, hi, c, pos, src = resolve(
+            "flag", "KEA_SERVO_FLAG", 1, 10.0, 100.0, FLAG_LABELS)
+        _flag = Servo(ch, lo, hi, "flag", relax=True, centre_deg=c,
+                      positions=pos, labels=FLAG_LABELS, source=src)
     return _flag
 
 
+def reload():
+    """Drop the cached servos so a fresh calibration takes effect."""
+    global _monitor, _flag
+    _monitor = _flag = None
+
+
 def raise_flag():
-    return flag().move_to(_FLAG_HI)
+    f = flag()
+    return f.go("up") if "up" in f.positions else f.move_to(f.hi)
 
 
 def lower_flag():
-    return flag().move_to(_FLAG_LO)
+    f = flag()
+    return f.go("down") if "down" in f.positions else f.move_to(f.lo)
 
 
 def all_servos():

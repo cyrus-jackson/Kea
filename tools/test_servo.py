@@ -5,10 +5,20 @@ test_servo.py — bring a servo up safely, one step at a time.
 Follows hardware/SERVO_WIRING.md. Nothing here moves a servo unless you
 ask it to, and nothing can drive one past its configured limits.
 
-    python3 tools/test_servo.py --detect            # read only, moves nothing
+    python3 tools/test_servo.py --detect              # read only, moves nothing
+    python3 tools/test_servo.py --show                # current calibration
+    python3 tools/test_servo.py --channel 0 --calibrate   # SET left/centre/right
     python3 tools/test_servo.py --channel 0 --centre
     python3 tools/test_servo.py --channel 0 --sweep 60
-    python3 tools/test_servo.py --channel 0 --jog   # find the real limits
+    python3 tools/test_servo.py --channel 0 --go left
+
+CALIBRATION IS THE POINT
+
+--calibrate walks the servo by hand and lets you *mark* each position
+where it actually is, then saves to ~/.kea_servos.json. Centre is stored
+as its own number rather than computed as the midpoint, because a horn
+mounts on splines and lands wherever the teeth allow: "monitor facing
+you" is rarely halfway between the two stops.
 
 THE ONE RULE WHILE TESTING
 
@@ -42,18 +52,136 @@ def detect():
         print("    1. sudo raspi-config -> Interface Options -> I2C -> Yes")
         print("    2. sudo apt install -y python3-smbus i2c-tools")
         print("    3. i2cdetect -y 1        (expect 40 in the grid)")
-        print("    4. VCC on Pi pin 1 (3.3 V) — a board with no VCC is")
+        print("    4. VCC on Pi pin 17 (3.3 V) — a board with no VCC is")
         print("       invisible on the bus. NEVER pin 2 or 4, those are 5 V.")
         print("    5. SDA on pin 3, SCL on pin 5")
     print("\nConfigured channels")
     for sv in servo.all_servos():
+        state = "calibrated" if sv.calibrated else "NOT CALIBRATED"
         print(f"  {sv.name:<8} channel {sv.channel}   "
-              f"limits {sv.lo:.0f}-{sv.hi:.0f} deg")
-    print("\n  Set limits once you know them (SERVO_WIRING.md stage 5):")
-    print("    KEA_SERVO_MONITOR='0:35:145'     channel:min:max")
-    print("    KEA_SERVO_FLAG='1:10:100'")
+              f"{sv.lo:.0f}-{sv.hi:.0f} deg, centre {sv.centre_deg:.0f}   "
+              f"{state} ({sv.source})")
+    if not all(sv.calibrated for sv in servo.all_servos()):
+        print("\n  Measure left / centre / right and save them:")
+        print("      python3 tools/test_servo.py --channel 0 --calibrate")
     print()
     return 0 if servo.available() else 1
+
+
+KEYS = """
+    a / d   -5 / +5 deg          j / l   -1 / +1 deg
+    1       mark {0:<10}      2   mark {1:<10}   3   mark {2}
+    s       save and quit        q   quit WITHOUT saving
+"""
+
+
+def _getch():
+    """One keypress, raw if the terminal allows it."""
+    try:
+        import termios
+        import tty
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setcbreak(fd)
+            return sys.stdin.read(1).lower()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    except Exception:                                       # noqa: BLE001
+        return (input("  key: ").strip().lower() or " ")[0]
+
+
+def show_calibration():
+    cal = servo.load_calibration()
+    print(f"\n  {servo.CALIB_PATH}")
+    if not cal:
+        print("    nothing measured yet — run --calibrate\n")
+    for sv in servo.all_servos():
+        print(f"\n  {sv.name}  (channel {sv.channel})   source: {sv.source}")
+        for lab in sv.labels:
+            v = sv.positions.get(lab)
+            mark = f"{v:6.1f} deg" if v is not None else "  not set"
+            star = "  <- stored, not computed" if lab == sv.labels[1] else ""
+            print(f"    {lab:<8} {mark}{star}")
+        print(f"    limits   {sv.lo:.1f} - {sv.hi:.1f} deg"
+              f"   {'CALIBRATED' if sv.calibrated else 'incomplete'}")
+        env = "KEA_SERVO_" + sv.name.upper()
+        if os.getenv(env):
+            print(f"    WARNING  {env}={os.getenv(env)} is set and OVERRIDES")
+            print(f"             the saved calibration. unset it to use what")
+            print(f"             you measured.")
+    print()
+    return 0
+
+
+def calibrate(sv):
+    """Walk the servo by hand and mark left / centre / right."""
+    env = "KEA_SERVO_" + sv.name.upper()
+    if os.getenv(env):
+        # Refuse to save quietly into a situation where the result is
+        # ignored. Env beats the file everywhere in Kea; that is fine as a
+        # rule, but silently losing a calibration to it is not.
+        print(f"\n  {env} is set to {os.getenv(env)!r}.")
+        print("  It overrides the calibration file, so anything measured here")
+        print("  would be ignored. Unset it first:")
+        print(f"      unset {env}")
+        print("  ...and remove it from the service file if it lives there.\n")
+        return 1
+
+    lo_guard, hi_guard = 5.0, 175.0        # explore freely, stop short of the ends
+    print(f"\n  Calibrating {sv.name} on channel {sv.channel}")
+    print(f"  Labels: {' / '.join(sv.labels)}")
+    print("\n  Nudge until the servo is where you want that position, then")
+    print("  press 1, 2 or 3 to MARK it. Stop the moment you feel resistance —")
+    print("  a servo held against a stop is drawing stall current.")
+    print(KEYS.format(*sv.labels))
+
+    marked = {}
+    pos = sv.centre_deg
+    sv.write(pos)
+    try:
+        while True:
+            got = "  ".join(
+                f"{lab}={marked[lab]:.0f}" if lab in marked else f"{lab}=--"
+                for lab in sv.labels)
+            print(f"\r  {pos:6.1f} deg    {got}        ", end="", flush=True)
+            sv.update()                    # idle-relax still applies here
+            k = _getch()
+            if k == "q":
+                print("\n  quit — nothing saved")
+                return 1
+            if k == "s":
+                break
+            if k in "123":
+                lab = sv.labels[int(k) - 1]
+                marked[lab] = pos
+                sv.set_position(lab, pos)
+                print(f"\r  marked {lab} = {pos:.1f} deg" + " " * 30)
+                continue
+            step = {"a": -5, "d": 5, "j": -1, "l": 1}.get(k, 0)
+            if not step:
+                continue
+            pos = max(lo_guard, min(hi_guard, pos + step))
+            sv.write(pos)
+    finally:
+        sv.relax()
+
+    missing = [l for l in sv.labels if l not in marked]
+    if missing:
+        print(f"\n  not saved — still unmarked: {', '.join(missing)}")
+        print("  all three are needed; run it again.\n")
+        return 1
+
+    entry = sv.save()
+    print(f"\n  saved to {servo.CALIB_PATH}")
+    for lab in sv.labels:
+        print(f"    {lab:<8} {entry[lab]:6.1f} deg")
+    print(f"    limits   {min(entry[l] for l in sv.labels):.1f} - "
+          f"{max(entry[l] for l in sv.labels):.1f} deg")
+    print("\n  Verify it:")
+    print(f"      python3 tools/test_servo.py --channel {sv.channel} "
+          f"--go {sv.labels[1]}\n")
+    return 0
 
 
 def _pick(channel):
@@ -66,16 +194,29 @@ def _pick(channel):
 
 
 def centre(sv):
-    mid = (sv.lo + sv.hi) / 2.0
-    print(f"  {sv.name}: moving to centre ({mid:.0f} deg)...")
+    mid = sv.centre_deg
+    print(f"  {sv.name}: moving to the measured centre ({mid:.0f} deg)...")
     sv.move_to(mid)
     time.sleep(0.6)
     print("  done — the servo should now go limp and silent (that is correct)")
     sv.relax()
 
 
+def go_named(sv, where):
+    if where not in sv.positions:
+        print(f"  {sv.name} has no position {where!r}. "
+              f"Known: {', '.join(sorted(sv.positions))}")
+        print("  Run --calibrate to measure them.")
+        return 2
+    print(f"  {sv.name}: -> {where} ({sv.positions[where]:.0f} deg)")
+    sv.go(where)
+    time.sleep(0.5)
+    sv.relax()
+    return 0
+
+
 def sweep(sv, span):
-    mid = (sv.lo + sv.hi) / 2.0
+    mid = sv.centre_deg
     half = min(span / 2.0, (sv.hi - sv.lo) / 2.0)
     print(f"  {sv.name}: centring, then sweeping +/-{half:.0f} deg "
           f"within {sv.lo:.0f}-{sv.hi:.0f}")
@@ -150,9 +291,17 @@ def main():
     ap.add_argument("--sweep", type=float, metavar="DEG",
                     help="sweep this many degrees total, slowly")
     ap.add_argument("--jog", action="store_true",
-                    help="nudge by hand to find the real travel limits")
+                    help="nudge by hand, without saving anything")
+    ap.add_argument("--calibrate", action="store_true",
+                    help="measure and SAVE left / centre / right")
+    ap.add_argument("--show", action="store_true",
+                    help="print the saved calibration")
+    ap.add_argument("--go", metavar="NAME",
+                    help="move to a saved position (left/centre/right)")
     args = ap.parse_args()
 
+    if args.show:
+        return show_calibration()
     if args.detect or args.channel is None:
         return detect()
 
@@ -164,14 +313,19 @@ def main():
 
     sv = _pick(args.channel)
     try:
-        if args.centre:
+        if args.calibrate:
+            return calibrate(sv)
+        elif args.go:
+            return go_named(sv, args.go)
+        elif args.centre:
             centre(sv)
         elif args.sweep:
             sweep(sv, args.sweep)
         elif args.jog:
             jog(sv)
         else:
-            print("nothing to do — pass --centre, --sweep or --jog")
+            print("nothing to do — pass --calibrate, --centre, --sweep, "
+                  "--go or --jog")
             return 2
     except KeyboardInterrupt:
         # The important exit path: a stalled servo must not be left driven.
