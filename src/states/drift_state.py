@@ -11,20 +11,25 @@ and forced a scroll, and became one destination: this one.
 
 The circuit follows the sun, and it is an arc, not a shuffle:
 
-    05  THE GLASSHOUSE    first light, wet soil          (conservatory)
-    08  THE ORRERY        brass, the day being wound     (orrery)
-    11  ORBITAL CONTROL   high noon upstairs             (orbital)
-    14  BAY 94            dust and two setting suns      (starport)
-    17  THE AERODROME     golden hour, last departure    (aerodrome)
-    20  NEON SPRAWL       the city takes over            (ambient)
-    22  THE BIO-VAT LAB   everyone's gone, vats awake    (biolab)
-    01  ABYSSAL STATION   the small hours, deepest point (abyssal)
+    THE GLASSHOUSE    first light, wet soil          dawn - 30m
+    THE ORRERY        brass, the day being wound     dawn + 2.5h
+    ORBITAL CONTROL   high noon upstairs             solar noon - 1h
+    BAY 94            dust and two setting suns      solar noon + 2h
+    THE AERODROME     golden hour, last departure    sunset - 1.5h
+    NEON SPRAWL       the city takes over            sunset + 25m
+    THE BIO-VAT LAB   everyone's gone, vats awake    22:30
+    ABYSSAL STATION   the small hours, deepest point 01:00
 
 Garden to clockwork to orbit to desert to dusk to city to lab to the
-deep, and back up into the garden at dawn. Leave Kea alone at 6am and
-it is in the glasshouse; leave it alone at 3am and it is at the bottom
-of the ocean. It resumes wherever the hour says it should be, so the
-rounds carry on whether or not anyone is watching.
+deep, and back up into the garden at dawn. Those are *real* solar times,
+computed locally (backend/sun.py) — so the glasshouse opens at 07:43 in
+December and 04:50 in June, and golden hour at the aerodrome is actually
+golden hour. The whole circuit breathes with the year.
+
+Leave Kea alone at dawn and it is in the glasshouse; leave it alone at
+3am and it is at the bottom of the ocean. It resumes wherever the sun
+says it should be, so the rounds carry on whether or not anyone is
+watching.
 
 Passages are not cuts, and deliberately not dissolves either: these
 scenes all carry big header text, and cross-fading two of them gives
@@ -62,19 +67,38 @@ def s(v):
 
 
 # ── the circuit ─────────────────────────────────────────────────────────────
-# (state name, board label, hour it takes over, accent)
+# (state name, board label, anchor, accent)
+#
+# An anchor says when a station takes over, and the daylight half of the
+# round is pinned to the actual sun rather than to the clock:
+#
+#   ("sunrise", h)  h hours from real first light
+#   ("noon",    h)  from real solar noon
+#   ("sunset",  h)  from real sunset
+#   ("clock",   h)  a plain wall-clock hour
+#
+# This is the difference between a circuit that *claims* to follow the sun
+# and one that does. Fixed hours put "golden hour" at 17:00 in December,
+# by which time it has been dark in Stuttgart for half an hour. The night
+# stations stay on the clock, because nothing about 22:30 in a lab is
+# astronomical.
 CIRCUIT = [
-    ("conservatory", "THE GLASSHOUSE",  5, (110, 190,  90)),
-    ("orrery",       "THE ORRERY",      8, (196, 156,  80)),
-    ("orbital",      "ORBITAL CONTROL", 11, (92, 240, 150)),
-    ("starport",     "BAY 94",          14, (130, 200, 255)),
-    ("aerodrome",    "THE AERODROME",   17, (216, 150,  70)),
-    ("ambient",      "NEON SPRAWL",     20, (255,  70, 170)),
-    ("biolab",       "THE BIO-VAT LAB", 22, (120, 230, 100)),
-    ("abyssal",      "ABYSSAL STATION",  1, (110, 220, 210)),
+    ("conservatory", "THE GLASSHOUSE",  ("sunrise", -0.5), (110, 190,  90)),
+    ("orrery",       "THE ORRERY",      ("sunrise",  2.5), (196, 156,  80)),
+    ("orbital",      "ORBITAL CONTROL", ("noon",    -1.0), ( 92, 240, 150)),
+    ("starport",     "BAY 94",          ("noon",     2.0), (130, 200, 255)),
+    ("aerodrome",    "THE AERODROME",   ("sunset",  -1.5), (216, 150,  70)),
+    ("ambient",      "NEON SPRAWL",     ("sunset",   0.4), (255,  70, 170)),
+    ("biolab",       "THE BIO-VAT LAB", ("clock",   22.5), (120, 230, 100)),
+    ("abyssal",      "ABYSSAL STATION", ("clock",    1.0), (110, 220, 210)),
 ]
 
 WORLD_NAMES = [c[0] for c in CIRCUIT]
+
+# Used when the sun cannot be computed at all — a polar latitude, or a
+# clock so wrong the maths degenerates. The old fixed schedule: never
+# beautiful, always valid.
+FALLBACK = [5.0, 8.0, 11.0, 14.0, 17.0, 20.0, 22.5, 1.0]
 
 # How long a station is held before the rounds move on. Long by design:
 # these scenes have slow events in them (the leviathan, the recultured
@@ -93,17 +117,83 @@ INK = (232, 234, 240)
 INK_DIM = (128, 132, 146)
 SHADOW = (8, 8, 12)
 
+_sched_cache = {}
 
-def station_for(hour):
-    """Index of the station that owns a given hour."""
-    best, best_start = 0, -1
-    for i, (_n, _l, start, _a) in enumerate(CIRCUIT):
-        # the abyss starts at 01 and runs backwards into the previous night
-        if start <= hour and start > best_start:
-            best, best_start = i, start
-    if best_start < 0:                       # before the first start today
-        return len(CIRCUIT) - 1              # still last night's station
-    return best
+
+def schedule(date=None):
+    """[(start_hour, name, label, accent)] for one day, in circuit order.
+
+    Solar anchors drift through the year, and on a short enough day they
+    can cross: "golden hour" falls before "early afternoon" once daylight
+    drops under about seven hours. Stuttgart only gets to 8.3 h at the
+    solstice, so it never quite happens here — but if it did, a naive
+    implementation would silently drop a station for the day.
+
+    So the computed moments are sorted and handed back out *in circuit
+    order*. The narrative sequence — garden, clockwork, orbit, desert,
+    dusk, city, lab, deep — is preserved by construction no matter what
+    the sun is doing, and every station always gets its slot.
+    """
+    date = date or datetime.date.today()
+    if date in _sched_cache:
+        return _sched_cache[date]
+
+    sr = nn = ss = None
+    try:
+        from backend import sun
+        h = sun.hours(date)
+        if h:
+            sr, nn, ss = h
+    except Exception:
+        pass                     # no sun module, or polar: fall back below
+
+    raw = []
+    for i, (_n, _l, (kind, off), _a) in enumerate(CIRCUIT):
+        if kind == "clock":
+            raw.append(off % 24.0)
+        elif sr is None:
+            raw.append(FALLBACK[i])
+        else:
+            raw.append(({"sunrise": sr, "noon": nn, "sunset": ss}[kind]
+                        + off) % 24.0)
+
+    # measure every start from the first station, so the day's frame
+    # begins at dawn and the small hours land at the end where they belong
+    base = raw[0]
+    offsets = sorted((r - base) % 24.0 for r in raw)
+    out = [((base + o) % 24.0, CIRCUIT[i][0], CIRCUIT[i][1], CIRCUIT[i][3])
+           for i, o in enumerate(offsets)]
+
+    if len(_sched_cache) > 4:
+        _sched_cache.clear()
+    _sched_cache[date] = out
+    return out
+
+
+def station_for(when=None):
+    """Index of the station that owns a given moment."""
+    when = when or datetime.datetime.now()
+    if isinstance(when, (int, float)):          # a bare hour still works
+        hour, date = float(when), datetime.date.today()
+    elif isinstance(when, datetime.datetime):
+        hour, date = when.hour + when.minute / 60.0, when.date()
+    else:                                        # a date: assume midday
+        hour, date = 12.0, when
+
+    sched = schedule(date)
+    idx, best = len(sched) - 1, -1.0
+    for i, (start, _n, _l, _a) in enumerate(sched):
+        if start <= hour and start > best:
+            idx, best = i, start
+    if best < 0:
+        return len(sched) - 1        # before the first start: last night's
+    return idx
+
+
+def hhmm(hour):
+    """A float hour as HH:MM, for the transit board."""
+    m = int(round(hour * 60)) % 1440
+    return f"{m // 60:02d}:{m % 60:02d}"
 
 
 # ── field notes ─────────────────────────────────────────────────────────────

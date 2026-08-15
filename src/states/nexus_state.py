@@ -38,8 +38,8 @@ from backend import lifebook
 from system_protocol import SystemProtocol
 from ui.glow_text import GlowText
 from ui import pixel_art
-from states.drift_state import (CIRCUIT as DRIFT_CIRCUIT, WORLD_NAMES,
-                                station_for as _station_for)
+from states.drift_state import (WORLD_NAMES, schedule as drift_schedule,
+                                station_for as _station_for, hhmm)
 
 SCALE = SCREEN_HEIGHT / 480.0
 
@@ -69,11 +69,13 @@ TEXT_DIM   = (120, 124, 140)
 CARD_BG    = (18, 18, 28)
 CARD_EDGE  = (52, 52, 72)
 
-# The rounds. Kea's day-phase table now IS the drift circuit — one source
-# of truth, so the NOW / NEXT board on this screen describes exactly where
-# the machine will be when you leave it alone. See states/drift_state.py.
-PHASES = [(start, name, label) for name, label, start, _a in
-          sorted(DRIFT_CIRCUIT, key=lambda c: c[2])]
+# The rounds. Kea's day phases ARE the drift circuit — one source of
+# truth, so the NOW / NEXT board describes exactly where the machine will
+# be when you leave it alone. The times are solar and therefore change
+# daily, so this is a function rather than a table: see drift_state.py.
+def phases(date=None):
+    return [(start, name, label) for start, name, label, _a
+            in drift_schedule(date)]
 
 # The rail: instruments only — the things you press for a reason. It used
 # to carry all sixteen screens at 5 across, which is four rows and a
@@ -112,7 +114,7 @@ def cycle_worlds():
 def station_index_now():
     """Which of the eight stations the rounds are at right now — the DRIFT
     card lights that dot, so the hub shows where Kea would go."""
-    return _station_for(datetime.datetime.now().hour)
+    return _station_for(datetime.datetime.now())
 
 
 AUTO_DWELL = 15.0     # fallback; the live value is the CONSOLE's "dwell" dial
@@ -127,15 +129,9 @@ def _dwell():
         return AUTO_DWELL
 
 
-def phase_for(hour):
-    """Return (index into PHASES) for a given hour."""
-    idx = len(PHASES) - 1
-    for i, (start, _, _) in enumerate(PHASES):
-        if hour >= start:
-            idx = i
-    if hour < PHASES[0][0]:
-        idx = len(PHASES) - 1          # small hours belong to the abyss
-    return idx
+def phase_for(when=None):
+    """Index of the phase that owns a moment. Delegates to the circuit."""
+    return _station_for(when)
 
 
 class NexusState(State):
@@ -378,10 +374,16 @@ class NexusState(State):
                 self.dwell = 0.0
 
     def _recommended(self, now):
-        """(state_name, label, until_str, next_label) for the current hour."""
-        idx = phase_for(now.hour)
-        nxt = PHASES[(idx + 1) % len(PHASES)]
-        cur = PHASES[idx]
+        """(state_name, label, until_str, next_label) for right now.
+
+        The times come from the live solar schedule, so NEXT shows the
+        real moment the rounds move on — 20:40 tonight, 16:29 in
+        December — not a rounded-off fixed hour.
+        """
+        sched = drift_schedule(now.date())
+        idx = _station_for(now)
+        cur = sched[idx]
+        nxt = sched[(idx + 1) % len(sched)]
         # docket override beats everything: overdue reminders demand the board
         if self.reminders.overdue():
             return "docket", f"DOCKET  ·  {len(self.reminders.overdue())} OVERDUE", \
@@ -390,7 +392,7 @@ class NexusState(State):
         if self.weather and not self.weather.get("error") and \
            self.weather.get("needs_umbrella") and cur[1] != "climate":
             return "climate", "WX.SYS  ·  RAIN OVERRIDE", "AFTER RAIN", cur[2]
-        return cur[1], cur[2], f"{nxt[0]:02d}:00", nxt[2]
+        return cur[1], cur[2], hhmm(nxt[0]), nxt[2]
 
     def update(self, dt):
         self.time_alive += dt

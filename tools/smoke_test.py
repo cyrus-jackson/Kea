@@ -42,14 +42,15 @@ from states.aerodrome_state import AerodromeState          # noqa: E402
 from states.orrery_state import OrreryState                # noqa: E402
 from states.starport_state import StarportState            # noqa: E402
 from states.docket_state import DocketState                # noqa: E402
-from states.nexus_state import NexusState, PHASES, WORLDS  # noqa: E402
+from states.nexus_state import NexusState, phases, WORLDS  # noqa: E402
 from states.logbook_state import LogbookState                # noqa: E402
 from states.pomodoro_state import PomodoroState            # noqa: E402
 from states.notification_state import NotificationState    # noqa: E402
 from states.console_state import ConsoleState              # noqa: E402
 from states.camera_state import CameraState                # noqa: E402
 from states.drift_state import (DriftState, CIRCUIT, WORLD_NAMES,   # noqa: E402
-                                ARRIVALS, PASSAGES, station_for)
+                                ARRIVALS, PASSAGES, station_for,
+                                schedule)
 
 STATES = [AmbientState, ClimateState, TelegraphState, GreetingsState,
           ConservatoryState, OrbitalState, BiolabState, AbyssalState,
@@ -135,7 +136,7 @@ for a, b in PASSAGES:
         print(f"[FAIL] passage -> {a} -> {b}")
 
 # every hour of the day must land on exactly one station
-_covered = {station_for(h) for h in range(24)}
+_covered = {station_for(float(h)) for h in range(24)}
 if len(_covered) != len(CIRCUIT):
     missing = [CIRCUIT[i][0] for i in range(len(CIRCUIT)) if i not in _covered]
     failures.append(f"stations never reached by the clock: {missing}")
@@ -152,6 +153,7 @@ for name in sorted({w[0] for w in WORLDS}):
     if name not in registered:
         failures.append(f"Nexus card '{name}' is not registered in main.py")
         print(f"[FAIL] card -> {name}")
+PHASES = phases()
 for name in sorted({p[1] for p in PHASES}):
     if name not in registered:
         failures.append(f"Day phase '{name}' is not registered in main.py")
