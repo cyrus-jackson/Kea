@@ -88,11 +88,29 @@ for fb in fbs:
         print(f"    {fb}: {name}  ({size})")
     except OSError:
         pass
+fb_names = {}
+for fb in fbs:
+    n = os.path.basename(fb).replace("fb", "")
+    try:
+        fb_names[fb] = open(f"/sys/class/graphics/fb{n}/name").read().strip()
+    except OSError:
+        fb_names[fb] = "?"
+spi_panel = [f for f, nm in fb_names.items() if nm.startswith("fb_")]
 if not fbs:
     bad("no framebuffer at all", "check the display overlay in config.txt")
-elif len(fbs) == 1:
-    note("only one framebuffer — if your TFT is an SPI panel it usually adds")
-    note("fb1; a single fb0 can mean the panel overlay didn't load")
+elif len(fbs) == 1 and spi_panel:
+    bad(f"the ONLY framebuffer is the SPI panel itself ({fb_names[fbs[0]]}) — "
+        "the HDMI framebuffer is gone",
+        "This is the whole problem. Under full KMS (vc4-kms-v3d) the legacy\n"
+        "    HDMI framebuffer is never created, so:\n"
+        "      * fbcp has no fb0->fb1 to copy (which is why it isn't running)\n"
+        "      * X renders to the vc4 DRM device, which has no monitor attached\n"
+        "      * your panel is left showing only the text console\n"
+        "    Fix: in /boot/config.txt change\n"
+        "        dtoverlay=vc4-kms-v3d   ->   dtoverlay=vc4-fkms-v3d\n"
+        "    then reboot. fkms keeps the legacy framebuffer, so HDMI comes back\n"
+        "    as fb0 (forced to 480x320 by your hdmi_cvt line), the panel becomes\n"
+        "    fb1, and fbcp can mirror one onto the other again.")
 
 # ── 4. is anything copying the desktop onto the SPI panel? ─────────────────
 print("\n4. fbcp (copies fb0 -> fb1 for SPI panels)")
@@ -144,9 +162,11 @@ else:
 
 # ── 6. can SDL open a screen at all? ───────────────────────────────────────
 print("\n6. Can Kea's toolkit open a display?")
-for drv, desc in (("x11", "the desktop"), ("kmsdrm", "direct KMS/DRM"),
-                  ("fbcon", "the raw framebuffer")):
+# NB: SDL2 has no "fbcon" driver (that was SDL1), and the x11 test is a
+# false negative over SSH unless DISPLAY is set.
+for drv, desc in (("x11", "the desktop"), ("kmsdrm", "direct KMS/DRM")):
     env = dict(os.environ, SDL_VIDEODRIVER=drv)
+    env.setdefault("DISPLAY", ":0")
     code = ("import pygame,sys;pygame.init();"
             "pygame.display.set_mode((64,64));sys.exit(0)")
     rc, out = 1, ""
