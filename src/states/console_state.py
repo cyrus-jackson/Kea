@@ -14,6 +14,8 @@ you Kea.
     DIAL 3  AUTO SHOOT     2-60 s   camera interval when AUTO SHOOT is on
     DIAL 4  IDLE          1-60 min  untouched time before the drift rounds
                                     take the screen back
+    DIAL 5  AIM           -60..60   swings the monitor either side of its
+                                    calibrated centre, live
 
 Controls:
     encoder turn    move the selected dial up / down
@@ -59,6 +61,7 @@ DIALS = [
     ("dwell", "DWELL", "s", "AUTO-PILOT HOLD"),
     ("shoot_every", "AUTO SHOOT", "s", "CAMERA INTERVAL"),
     ("idle_mins", "IDLE", "m", "BEFORE DRIFT"),
+    ("aim", "AIM", "d", "MONITOR ANGLE"),
 ]
 
 
@@ -74,6 +77,12 @@ class ConsoleState(State):
         self.font_val = pygame.font.Font(None, s(44))
         self.font_small = pygame.font.Font(None, s(14))
         self.font_tiny = pygame.font.Font(None, s(12))
+
+        # The value font is sized from the row height at draw time, not
+        # fixed here. Adding the AIM dial took the rows from 79 px to 61
+        # and a 44 px number then ran straight through the track — the
+        # same class of bug as dividing the height by a hardcoded 2.
+        self._val_fonts = {}
 
         self.sel = 0                 # which dial the encoder drives
         self.fine = False            # toggle: single-step mode
@@ -190,6 +199,17 @@ class ConsoleState(State):
                              (cx + s(3), cy + s(2)), 1)
         return bg
 
+    def _val_font(self, dial_h):
+        """Biggest number that still clears the track, cached per height."""
+        f = self._val_fonts.get(dial_h)
+        if f is None:
+            # track starts at dial_h - s(24); the number starts at s(10)
+            room = max(s(14), dial_h - s(24) - s(12))
+            size = max(s(16), min(s(44), int(room * 1.35)))
+            f = pygame.font.Font(None, size)
+            self._val_fonts[dial_h] = f
+        return f
+
     def _draw_dial(self, surf, x, y, w, h, idx, label, unit, sub):
         name = DIALS[idx][0]
         active = (idx == self.sel)
@@ -208,10 +228,13 @@ class ConsoleState(State):
         # label + reading
         col = AMBER_LIT if active else ENGRAVE_LO
         surf.blit(self.font_dial.render(label, True, col), (x + s(10), y + s(8)))
-        surf.blit(self.font_tiny.render(sub, True, ENGRAVE_LO), (x + s(10), y + s(30)))
+        if h >= s(70):               # no room for the caption on a short row
+            surf.blit(self.font_tiny.render(sub, True, ENGRAVE_LO),
+                      (x + s(10), y + s(30)))
 
-        vs = (pal.glow_text(self.font_val, str(val), AMBER_LIT, radius=3)
-              if active else self.font_val.render(str(val), True, ENGRAVE))
+        fv = self._val_font(h)
+        vs = (pal.glow_text(fv, str(val), AMBER_LIT, radius=3)
+              if active else fv.render(str(val), True, ENGRAVE))
         surf.blit(vs, (x + w - vs.get_width() - s(26), y + s(10)))
         surf.blit(self.font_small.render(unit, True, ENGRAVE_LO),
                   (x + w - s(22), y + s(24)))

@@ -46,6 +46,7 @@ from states.console_state import ConsoleState
 from states.camera_state import CameraState
 from states.drift_state import DriftState
 from states.transit_state import TransitState
+from backend import gestures
 from backend import voice
 from backend import lifebook
 from backend import settings
@@ -323,6 +324,7 @@ def main():
     
     # Initialize hardware button poller
     hw_buttons = HardwareButtons()
+    _gestures = gestures.instance(manager)
     
     idle_t = 0.0          # seconds since anyone last touched Kea
     drift_return = None   # where to put you back when you do
@@ -503,6 +505,7 @@ def main():
         # Update
         manager.update(dt)
         manager.chip_age += dt
+        _gestures.update(dt)          # the two servos, driven from app state
         
         # Ensure Pomodoro updates in the background if it's active but not the current state
         if manager.current_state_name != 'pomodoro':
@@ -551,6 +554,11 @@ def main():
         pygame.display.flip()
         
     hw_buttons.cleanup()
+    try:
+        from backend import servo
+        servo.relax_all()      # never leave a servo powered and holding
+    except Exception:                                       # noqa: BLE001
+        pass
     pygame.quit()
     sys.exit()
 

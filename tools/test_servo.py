@@ -11,6 +11,7 @@ ask it to, and nothing can drive one past its configured limits.
     python3 tools/test_servo.py --channel 0 --centre
     python3 tools/test_servo.py --channel 0 --sweep 60
     python3 tools/test_servo.py --channel 0 --go left
+    python3 tools/test_servo.py --channel 0 --sagtest  # does it hold when limp?
 
 CALIBRATION IS THE POINT
 
@@ -226,6 +227,65 @@ def calibrate(sv):
     return 0
 
 
+def sagtest(sv, hold=8.0):
+    """Does the mechanism hold its angle once the servo lets go?
+
+    idle-relax cuts the pulse after a second or so, which is what keeps a
+    servo from drawing current and hunting all night. That only works if
+    friction holds the load. The monitor carries the screen AND the Pi on
+    an SG92R, so this is a real question and not a theoretical one — if it
+    back-drives, that channel needs relax=False and its power story
+    changes completely.
+
+    Answering it takes thirty seconds and costs nothing. Guessing it wrong
+    means a drooping monitor and a confusing power bug later.
+    """
+    if not sv.calibrated:
+        print(f"\n  {sv.name} is not calibrated — run --calibrate first.\n")
+        return 2
+    off = sv.clamp(sv.centre_deg + max(15.0, sv.span * 0.3))
+    print(f"\n  Sag test — {sv.name}\n")
+    print(f"  Moving to {off:.0f} deg (off-centre, so gravity has a lever).")
+    sv.move_to(off)
+    time.sleep(0.4)
+    print("  Look at it now, and remember exactly where it is.")
+    input("  Press Enter when you have.")
+    sv.relax()
+    print(f"\n  Pulse cut. The servo is limp. Waiting {hold:.0f} s...")
+    for i in range(int(hold), 0, -1):
+        print(f"\r    {i:>2} ", end="", flush=True)
+        time.sleep(1)
+    print("\r      ")
+    ans = input("  Did it move, sag or droop at all?  [y/N] ").strip().lower()
+    sv.relax()
+
+    if ans.startswith("y"):
+        print(f"""
+  IT SAGS. {sv.name} cannot be left relaxed.
+
+  Set it to hold position instead — in src/backend/servo.py, the
+  {sv.name}() factory, pass relax=False:
+
+      Servo(ch, lo, hi, "{sv.name}", relax=False, ...)
+
+  Consequences, so they are not a surprise:
+    - it draws current continuously whenever it is not at rest
+    - a cheap servo will hunt audibly around its target
+    - the 4xAA pack now matters: budget hours, not months
+
+  Better still, fix it mechanically — a counterweight, a friction washer,
+  or moving the pivot closer to the centre of mass. Holding with the
+  motor is the expensive way to solve a balance problem.
+""")
+        return 1
+
+    print(f"""
+  HOLDS. {sv.name} keeps its angle with the pulse cut, so idle-relax is
+  safe here and the servo costs nothing at rest. This is the good case.
+""")
+    return 0
+
+
 def _pick(channel):
     for sv in servo.all_servos():
         if sv.channel == channel:
@@ -338,6 +398,8 @@ def main():
                     help="measure and SAVE left / centre / right")
     ap.add_argument("--show", action="store_true",
                     help="print the saved calibration")
+    ap.add_argument("--sagtest", action="store_true",
+                    help="does the mechanism hold its angle when relaxed?")
     ap.add_argument("--go", metavar="NAME",
                     help="move to a saved position (left/centre/right)")
     args = ap.parse_args()
@@ -357,6 +419,8 @@ def main():
     try:
         if args.calibrate:
             return calibrate(sv)
+        elif args.sagtest:
+            return sagtest(sv)
         elif args.go:
             return go_named(sv, args.go)
         elif args.centre:
@@ -366,8 +430,8 @@ def main():
         elif args.jog:
             jog(sv)
         else:
-            print("nothing to do — pass --calibrate, --centre, --sweep, "
-                  "--go or --jog")
+            print("nothing to do — pass --calibrate, --sagtest, --centre, "
+                  "--sweep, --go or --jog")
             return 2
     except KeyboardInterrupt:
         # The important exit path: a stalled servo must not be left driven.

@@ -11,6 +11,8 @@ encoder and persisted to ~/.kea_settings.json so they survive a reboot:
                             AUTO SHOOT mode
     idle_mins    1-60 min   how long Kea sits untouched before it goes
                             back to walking the drift circuit
+    aim          -60..60    degrees to swing the monitor either side of
+                            its calibrated centre
 
 Nothing here raises: a missing backlight, an unwritable home directory
 or a corrupt file all degrade to sane defaults.
@@ -34,6 +36,9 @@ SPEC = {
     "shoot_every": [6, 2, 60, 1],
     # minutes untouched before Kea resumes the drift rounds
     "idle_mins": [5, 1, 60, 1],
+    # monitor aim, as degrees either side of the calibrated centre. An
+    # offset rather than an absolute angle, so it survives recalibration.
+    "aim": [0, -60, 60, 5],
 }
 
 # Where the Pi exposes the panel backlight. The official DSI panel and most
