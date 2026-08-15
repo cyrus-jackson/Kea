@@ -34,6 +34,7 @@ lies is worse than one that admits it is blind.
 
 import datetime
 import json
+import os
 import threading
 import urllib.parse
 import urllib.request
@@ -266,6 +267,42 @@ def fetch(routes, callback, limit=12):
             pass                                   # a bad callback is not our problem
 
     threading.Thread(target=_work, daemon=True).start()
+
+
+def routes_from_env(raw=None):
+    """Parse KEA_VVS_ROUTES into Route objects.
+
+        stop_id | label | lines | towards | walk_min
+
+    separated by ';', e.g.
+
+        de:08111:6118|Hbf|U6,U7|Flughafen|7 ; de:08111:1234|Home|42||5
+
+    Only the stop id is required. Empty `lines` means every line at the
+    stop; empty `towards` means both directions. Anything unparseable is
+    skipped rather than crashing the screen — a typo in an env var should
+    cost you one route, not the whole board.
+    """
+    raw = os.getenv("KEA_VVS_ROUTES", "") if raw is None else raw
+    out = []
+    for chunk in raw.split(";"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        parts = [p.strip() for p in chunk.split("|")]
+        stop = parts[0]
+        if not stop:
+            continue
+        label = parts[1] if len(parts) > 1 and parts[1] else stop
+        lines = [l for l in (parts[2].split(",") if len(parts) > 2 else []) if l]
+        towards = parts[3] if len(parts) > 3 else ""
+        try:
+            walk = int(parts[4]) if len(parts) > 4 and parts[4] else 5
+        except ValueError:
+            walk = 5
+        out.append(Route(stop, label=label, lines=lines,
+                         towards=towards, walk_min=max(0, walk)))
+    return out
 
 
 def find_stop(query, limit=8):

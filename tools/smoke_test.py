@@ -48,6 +48,7 @@ from states.pomodoro_state import PomodoroState            # noqa: E402
 from states.notification_state import NotificationState    # noqa: E402
 from states.console_state import ConsoleState              # noqa: E402
 from states.camera_state import CameraState                # noqa: E402
+from states.transit_state import TransitState              # noqa: E402
 from states.drift_state import (DriftState, CIRCUIT, WORLD_NAMES,   # noqa: E402
                                 ARRIVALS, PASSAGES, station_for,
                                 schedule)
@@ -56,7 +57,7 @@ STATES = [AmbientState, ClimateState, TelegraphState, GreetingsState,
           ConservatoryState, OrbitalState, BiolabState, AbyssalState,
           AerodromeState, OrreryState, StarportState, DocketState, LogbookState,
           NexusState, PomodoroState, NotificationState, ConsoleState,
-          CameraState]
+          CameraState, TransitState]
 
 failures = []
 
@@ -83,6 +84,7 @@ NAME_OF = {
     "LogbookState": "logbook", "NexusState": "nexus",
     "PomodoroState": "pomodoro", "NotificationState": "notification",
     "ConsoleState": "console", "CameraState": "camera",
+    "TransitState": "transit",
 }
 
 for cls in STATES:

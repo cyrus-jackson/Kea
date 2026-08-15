@@ -45,6 +45,7 @@ from states.logbook_state import LogbookState
 from states.console_state import ConsoleState
 from states.camera_state import CameraState
 from states.drift_state import DriftState
+from states.transit_state import TransitState
 from backend import voice
 from backend import lifebook
 from backend import settings
@@ -74,8 +75,10 @@ from states.nexus_state import WORLDS, NO_CYCLE, cycle_worlds
 #   pomodoro — you are watching a timer run
 #   camera   — the sensor is live, and AUTO SHOOT may be capturing
 #   console  — you are in the middle of changing a setting
+#   transit  — you left it there because you are waiting for a tram;
+#              wandering off to look at a fish tank is how you miss it
 #   drift    — already there
-NO_IDLE = {"pomodoro", "camera", "console", "drift"}
+NO_IDLE = {"pomodoro", "camera", "console", "transit", "drift"}
 
 
 def _idle_secs():
@@ -307,6 +310,7 @@ def main():
     manager.add_state('console', ConsoleState(manager))
     manager.add_state('camera', CameraState(manager))
     manager.add_state('drift', DriftState(manager))
+    manager.add_state('transit', TransitState(manager))
     settings.init()             # restore the saved brightness
     lifebook.bump('boots')
 
@@ -461,6 +465,8 @@ def main():
                     manager.change_state('logbook')
                 elif event.key == pygame.K_w:
                     manager.change_state('drift')
+                elif event.key == pygame.K_v:
+                    manager.change_state('transit')
                 elif event.key == pygame.K_m:
                     voice.toggle_mute()
                 # desktop stand-ins for the deck hardware

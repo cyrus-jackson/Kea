@@ -86,6 +86,7 @@ WORLDS = [
     ("drift",     "DRIFT",   "W", (150, 170, 255)),
     ("pomodoro",  "FOCUS",   "2", (228, 174, 86)),
     ("docket",    "DOCKET",  "R", (200, 60, 45)),
+    ("transit",   "TRANSIT", "V", (250, 186, 60)),
     ("climate",   "WX.SYS",  "8", AMBER),
     ("greetings", "PROTOCL", "9", (255, 160, 60)),
     ("telegraph", "TELEGRF", "6", BRASS),
@@ -228,6 +229,13 @@ class NexusState(State):
                 pygame.draw.rect(card, dim, (cx + s(bx) - s(3), cy + s(14) - s(bh),
                                              s(6), s(bh)))
             pygame.draw.circle(card, accent, (cx + s(11), cy - s(9)), s(4))
+        elif state == "transit":          # a split-flap cell mid-flip
+            pygame.draw.rect(card, dim, (cx - s(11), cy - s(8), s(22), s(16)),
+                             border_radius=s(2))
+            pygame.draw.rect(card, accent, (cx - s(11), cy - s(8), s(22), s(16)),
+                             1, border_radius=s(2))
+            pygame.draw.line(card, CARD_BG, (cx - s(11), cy), (cx + s(11), cy), 1)
+            pygame.draw.rect(card, accent, (cx - s(11), cy, s(22), s(4)))
         elif state == "drift":            # the circuit: eight stops, one lit
             import math as _m
             pygame.draw.circle(card, dim, (cx, cy), s(11), 1)

@@ -69,7 +69,7 @@ Instruments:
 - `2` pomodoro · `3` notification · `6` telegraph · `8` climate · `9` greetings
 - `R` dispatch docket (your phone reminders as aging paper cards)
 - `L` the logbook (the machine's own history, kept in ink)
-- `K` camera · `C` console
+- `K` camera · `C` console · `V` the board (departures)
 
 The rounds — these open **DRIFT** parked at that station, so the circuit carries on from there rather than stranding you in a world with no way out:
 - `W` drift (resumes at the current hour's station)
@@ -77,6 +77,37 @@ The rounds — these open **DRIFT** parked at that station, so the circuit carri
 - `4` orbital control (atompunk radar) · `S` starport bay 94 (twin-sun desert dock)
 - `D` aerodrome (dieselpunk airfield) · `1` neon sprawl (cyberpunk city)
 - `5` bio-vat lab (biopunk specimens) · `0` abyssal station (oceanpunk deep sea)
+
+## The Board (real departures)
+
+A split-flap departure board wired to the live VVS network. It answers one
+question in the largest type the panel can manage: **do I need to stand up?**
+
+Not "when is the next tram" — your phone does that better. The number that
+matters already counts the walk: a tram six minutes out is not six minutes
+away if the platform is a five minute walk, it is **one**. So the headline is
+LEAVE IN, and it goes green → amber → red as it runs out. Delays, cancelled
+trips and the platform are all there, small, underneath.
+
+Find your stop and the exact line/destination spellings:
+
+```bash
+python3 tools/find_stop.py "Vaihingen" --departures
+```
+
+Then configure any number of routes:
+
+```bash
+KEA_VVS_ROUTES='de:08111:6118|Hbf|U6,U7|Flughafen|7 ; de:08111:1234|Home|42||5'
+#               stop id      label lines direction  walk minutes
+```
+
+Only the stop id is required — no lines means every line at the stop, no
+direction means both platforms. The dial switches routes, GREEN refreshes,
+and the toggle drops your line filter to show everything leaving. No API key
+and no `pip install`: it is plain `urllib` against the public endpoint.
+
+Unset, the screen tells you the command to run rather than sitting blank.
 
 ## Reminders from your phone (the Dispatch Docket)
 
