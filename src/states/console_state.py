@@ -4,13 +4,14 @@ console_state.py
 THE CONSOLE — the one screen that adjusts the machine itself.
 
 A service panel from the back of a rack: brushed steel, engraved plate,
-a warning stripe, two big calibrated dials with travelling needles, and
+a warning stripe, calibrated dials with travelling needles, and
 a status lamp. Everything else in Kea shows you the world; this shows
 you Kea.
 
     DIAL 1  BRIGHTNESS   10-100 %   panel backlight
     DIAL 2  DWELL         3-120 s   how long each screen is held before
                                     auto-pilot moves on
+    DIAL 3  AUTO SHOOT     2-60 s   camera interval when AUTO SHOOT is on
 
 Controls:
     encoder turn    move the selected dial up / down
@@ -51,6 +52,7 @@ SHADOW     = (18, 20, 24)
 DIALS = [
     ("brightness", "BRIGHTNESS", "%", "PANEL BACKLIGHT"),
     ("dwell", "DWELL", "s", "AUTO-PILOT HOLD"),
+    ("shoot_every", "AUTO SHOOT", "s", "CAMERA INTERVAL"),
 ]
 
 
@@ -137,8 +139,9 @@ class ConsoleState(State):
 
         w, h = surface.get_size()
         top = s(74)
-        gap = s(14)
-        dial_h = (h - top - s(58) - gap) // 2
+        gap = s(10)
+        n = len(DIALS)                       # was hardcoded to 2 — a third
+        dial_h = (h - top - s(58) - gap * (n - 1)) // n   # dial overflowed
         for i, (name, label, unit, sub) in enumerate(DIALS):
             self._draw_dial(surface, s(14), top + i * (dial_h + gap),
                             w - s(28), dial_h, i, label, unit, sub)

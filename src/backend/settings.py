@@ -7,6 +7,8 @@ encoder and persisted to ~/.kea_settings.json so they survive a reboot:
     brightness   10-100 %   backlight (real on the Pi, simulated elsewhere)
     dwell        3-120 s    how long a screen is held before auto-pilot
                             dispatches the next one
+    shoot_every  2-60 s     interval between frames in the camera's
+                            AUTO SHOOT mode
 
 Nothing here raises: a missing backlight, an unwritable home directory
 or a corrupt file all degrade to sane defaults.
@@ -26,6 +28,8 @@ PATH = os.path.join(os.path.expanduser("~"), ".kea_settings.json")
 SPEC = {
     "brightness": [80, 10, 100, 5],
     "dwell": [15, 3, 120, 1],
+    # seconds between frames when the camera's AUTO SHOOT toggle is on
+    "shoot_every": [6, 2, 60, 1],
 }
 
 # Where the Pi exposes the panel backlight. The official DSI panel and most

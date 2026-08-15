@@ -11,7 +11,8 @@ exists purely to build a clean dataset.
     GREEN   shutter; then in review, APPROVE
     RED     discard the frame under review
     ENCODER turn to choose the tag, press to cycle it too
-    TOGGLE  auto-capture: a frame every few seconds, no approval needed
+    TOGGLE  auto-capture: a frame every N seconds, no approval needed
+            (N is the CONSOLE's AUTO SHOOT dial, 2-60 s)
 
 Tags come from ~/.kea_tags.json and are re-read every time you open this
 screen, so you can add classes as the task takes shape without touching
@@ -48,7 +49,21 @@ DIM = (140, 126, 104)
 GREEN_OK = (120, 210, 130)
 RED_NO = (206, 84, 70)
 
-AUTO_EVERY = float(os.getenv("KEA_CAM_AUTO_SECS", "6"))
+def auto_every():
+    """Seconds between auto-captures. Live from the Console's third dial,
+    so you can change it while shooting; KEA_CAM_AUTO_SECS still wins if
+    you'd rather pin it."""
+    env = os.getenv("KEA_CAM_AUTO_SECS")
+    if env:
+        try:
+            return max(1.0, float(env))
+        except ValueError:
+            pass
+    try:
+        from backend import settings
+        return float(settings.get("shoot_every"))
+    except Exception:
+        return 6.0
 
 
 class CameraState(State):
@@ -204,7 +219,7 @@ class CameraState(State):
             self.msg_t = max(0.0, self.msg_t - dt)
         if self.auto and self.mode == "idle":
             self.auto_t += dt
-            if self.auto_t >= AUTO_EVERY:
+            if self.auto_t >= auto_every():
                 self.auto_t = 0.0
                 self._shoot()
                 if self.pending_path:      # auto mode stores without asking
@@ -274,7 +289,7 @@ class CameraState(State):
             hint = "GREEN APPROVE   ·   RED DISCARD"
             col = GREEN_OK
         elif self.auto:
-            left = max(0, AUTO_EVERY - self.auto_t)
+            left = max(0, auto_every() - self.auto_t)
             hint = f"AUTO — NEXT IN {left:0.0f}s"
             col = BRASS_LIT
         else:
