@@ -189,6 +189,11 @@ class Gestures:
         now = time.time()
         try:
             self._tick_double_take(now)
+            # The AIM dial is a live control: turning it should move the
+            # screen while you watch, so it is checked every tick. The
+            # early-out in apply_aim() means that costs one float compare
+            # when the dial has not moved.
+            self.apply_aim()
 
             # a dispatch just arrived -> the monitor notices
             try:
