@@ -17,11 +17,12 @@ THREE JOBS, ONE ARM
     THE MAST     down = nothing owed, half = something pending, up =
                  overdue. Ambient, slow, the state of your obligations.
 
-Priority is gauge > focus > mast, and the reasoning is about what is
-recoverable. Missing a tram cannot be undone and you deliberately armed
-it, so it wins. A Pomodoro quarter is worth knowing but nothing breaks
-if you learn it thirty seconds late. The mast will still be true in an
-hour, so it yields to both.
+Priority is FOCUS > GAUGE > MAST. A running Pomodoro owns the arm
+outright: you started it deliberately, it is the thing you are doing
+right now, and an arm that abandons your session to report a tram is an
+arm interrupting exactly what the session exists to protect. When no
+session is running the arm is free for a tracked departure, and when
+neither wants it the mast has it.
 
 Every handover is announced by a distinct double-tap, because otherwise
 "half raised" means three different things with no way to tell which.
@@ -286,20 +287,12 @@ class Gestures:
             self._mast_t += dt
             self._focus_t += dt
 
-            # Who owns the arm right now? gauge > focus > mast, decided
-            # by what cannot be recovered if you miss it.
+            # focus > gauge > mast. A running session owns the arm: it is
+            # the thing you are doing, and an arm that abandons it to
+            # report a tram interrupts exactly what the session protects.
             focus = self._focus()
 
-            if self._gauge_t >= GAUGE_POLL:
-                self._gauge_t = 0.0
-                g = self._gauge_fraction()
-                if g is not None:
-                    self._claim("gauge")
-                    self._point_arm(g, "gauge")
-                elif self._owner == "gauge":
-                    self._owner = None     # tram gone: release
-
-            if self._owner != "gauge" and focus is not None:
+            if focus is not None:
                 done, quarter = focus
                 if self._owner != "focus":
                     self._claim("focus")
@@ -311,9 +304,18 @@ class Gestures:
                 if self._focus_t >= FOCUS_POLL:
                     self._focus_t = 0.0
                     self._point_arm(done, "focus")
-            elif self._owner == "focus" and focus is None:
-                self._owner = None
-                self._focus_quarter = None
+            else:
+                if self._owner == "focus":
+                    self._owner = None
+                    self._focus_quarter = None
+                if self._gauge_t >= GAUGE_POLL:
+                    self._gauge_t = 0.0
+                    g = self._gauge_fraction()
+                    if g is not None:
+                        self._claim("gauge")
+                        self._point_arm(g, "gauge")
+                    elif self._owner == "gauge":
+                        self._owner = None     # tram gone: release
 
             if self._owner is None and self._mast_t >= MAST_POLL:
                 self._mast_t = 0.0

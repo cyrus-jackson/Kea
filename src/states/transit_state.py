@@ -29,20 +29,31 @@ screen twice.
 Everything else is deliberately small: the following departures, the
 delay, the platform. Reference, not the headline.
 
-    ENCODER turn    switch between your routes
-    ENCODER press   back to Nexus
+    ENCODER turn    pick a departure — across every route, in one list
+    ENCODER press   TRACK / untrack the one you picked
     GREEN           refresh now
-    RED             TRACK / untrack the headline departure
     TOGGLE          SHOW LEGS on a journey; ALL LINES on a stop board
+    HOME button     back to Nexus
+
+The dial walks one flat list of every departure on every route, so
+choosing "that 15:32 to Vaihingen" is turn-turn-click rather than
+switching route and then hoping the right one is at the top. Turning
+past the last departure of one route moves into the next, which is how
+route switching still happens without a second control.
+
+Press is free for tracking because there is a dedicated HOME button;
+nothing was displaced.
 
 TRACKING
 
-The semaphore arm can point at a countdown, but only at one you have
-explicitly armed with RED. It used to gauge whatever the soonest
-catchable departure happened to be, which meant the arm was telling you
-about a tram you had no intention of taking and you could not tell which
-one it meant. Now the arm only moves for a departure you chose, and the
-screen says which — the arm and the display never disagree.
+The semaphore arm can point at a countdown, but only at a departure you
+picked with the dial and armed with a press. It used to gauge whatever
+was soonest, which meant the arm reported a tram you had no intention of
+catching and you could not tell which one it meant. Now the arm only
+moves for a departure you chose, and the screen says which — the arm and
+the display never disagree.
+
+The arm yields to a running Pomodoro: see backend/gestures.py.
 
 A tracked departure is remembered by route and *planned* time, so it
 survives a refresh, a delay, and switching routes. It clears itself when
@@ -232,6 +243,7 @@ class TransitState(State):
         # survives a refetch, since Journey objects are rebuilt each time
         # and a delay moves the estimated time but never the planned one.
         self.tracked = None
+        self.sel = 0                 # index into the flat departure list
 
         # Cells are counted from the real panel width rather than picked
         # by eye: hardcoding 16 ran the destination off the edge of a
@@ -253,42 +265,72 @@ class TransitState(State):
             self._refresh()
 
     # ── controls ───────────────────────────────────────────────────────────
+    def picks(self):
+        """Every departure on every route, flat and in board order.
+
+        One list rather than route-then-departure means the dial can
+        reach any specific tram with turns alone. Returns
+        [(route, departure), ...].
+        """
+        out = []
+        for r in self.routes:
+            deps, _err = self.rows.get(r.label, ([], None))
+            for d in deps[:4]:
+                out.append((r, d))
+        return out
+
+    def selected(self):
+        """(route, departure) under the cursor, or (route, None)."""
+        p = self.picks()
+        if not p:
+            return (self._route(), None)
+        self.sel = max(0, min(len(p) - 1, self.sel))
+        return p[self.sel]
+
     def move_cursor(self, direction):
-        if len(self.routes) > 1:
-            self.idx = (self.idx + (1 if direction > 0 else -1)) % len(self.routes)
-            self._flash(self._route().label.upper())
+        p = self.picks()
+        if not p:
+            return True
+        self.sel = (self.sel + (1 if direction > 0 else -1)) % len(p)
+        r, d = p[self.sel]
+        # keep the header and the background refresh on the route you are
+        # actually looking at
+        if r in self.routes:
+            self.idx = self.routes.index(r)
+        if d is not None:
+            self._flash(f"{r.label[:10]} {d.line} {d.planned:%H:%M}")
         return True
 
     def activate(self):
-        return False                # press = home
-
-    def on_green_button(self):
-        self._refresh()
-        self._flash("REFRESHING")
-        return True
-
-    def on_red_button(self):
-        """Arm or disarm the semaphore for the headline departure."""
-        d = self.headline()
+        """Press: track or untrack whatever the dial is pointing at."""
+        r, d = self.selected()
         if d is None:
             self._flash("NOTHING TO TRACK")
             return True
-        key = (self._route().label, d.planned.isoformat())
+        key = (r.label, d.planned.isoformat())
         if self.tracked == key:
             self.tracked = None
             self._flash("TRACKING OFF")
         else:
             self.tracked = key
             self._flash(f"TRACKING {d.line} {d.planned:%H:%M}")
+        return True                 # stay here; HOME button goes home
+
+    def on_green_button(self):
+        self._refresh()
+        self._flash("REFRESHING")
         return True
 
     def headline(self):
-        """The departure the big number is about — the one RED arms."""
+        """The departure the big number is about: whatever the dial is on."""
+        _r, d = self.selected()
+        if d is not None:
+            return d
         deps, _err = self._current()
         if not deps:
             return None
         now = vvs._now()
-        return next((d for d in deps if d.catchable(now)), deps[0])
+        return next((d2 for d2 in deps if d2.catchable(now)), deps[0])
 
     def tracked_departure(self):
         """The armed departure, or None. Read by backend/gestures.py.
@@ -310,10 +352,11 @@ class TransitState(State):
                 return d
         return None                    # dropped off the board entirely
 
-    def is_tracked(self, d):
-        return (self.tracked is not None and d is not None
-                and self.tracked == (self._route().label,
-                                     d.planned.isoformat()))
+    def is_tracked(self, d, route=None):
+        if self.tracked is None or d is None:
+            return False
+        label = (route or self._route()).label
+        return self.tracked == (label, d.planned.isoformat())
 
     def on_toggle(self, on):
         self.all_lines = on
@@ -448,7 +491,9 @@ class TransitState(State):
         pal.glow_rect(surface, box, pal.mix(pal.CYAN, pal.VOID, 0.45), 1,
                       radius=s(6), spread=2, alpha=45)
 
-        catch = next((d for d in deps if d.catchable(now)), None)
+        catch = self.headline()
+        if catch is not None and not catch.catchable(now):
+            catch = None if not deps else catch
         if err:
             self._headline(surface, box, "?", "NO SIGNAL", INK_DIM,
                            f"{err} — blind, not guessing")
@@ -641,7 +686,8 @@ class TransitState(State):
         else:
             age = "NO DATA YET"
         surface.blit(self.font_tiny.render(age, True, INK_DIM), (s(14), y + s(8)))
-        hint = ("RED UNTRACK" if self.tracked else "RED TRACK") + "  ·  GREEN REFRESH"
+        hint = ("PRESS UNTRACK" if self.tracked else "PRESS TRACK") \
+            + "  ·  DIAL PICKS"
         g = self.font_tiny.render(hint, True, INK_DIM)
         surface.blit(g, (w - g.get_width() - s(14), y + s(8)))
         if self.msg_t > 0:

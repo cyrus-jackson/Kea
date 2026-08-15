@@ -92,10 +92,13 @@ STOPS = {
 # a dozen different terminus names. Filtering on those strings would be
 # guesswork. Asking the journey planner "how do I get from here to there"
 # is the question actually being asked.
+# The walk time is per route, not per person, because it is the walk to
+# THAT platform: the S-Bahn into town leaves from the far end of the
+# station, the bus stops are next to the door. Measured by Cyrus.
 DEFAULT_ROUTES = [
-    (STOPS["universitaet"], STOPS["hauptbahnhof"], "HAUPTBAHNHOF", 5),
-    (STOPS["universitaet"], STOPS["vaihingen"],    "VAIHINGEN",    5),
-    (STOPS["universitaet"], STOPS["max-planck"],   "MAX-PLANCK",   5),
+    (STOPS["universitaet"], STOPS["hauptbahnhof"], "HAUPTBAHNHOF", 13),
+    (STOPS["universitaet"], STOPS["vaihingen"],    "VAIHINGEN",     5),
+    (STOPS["universitaet"], STOPS["max-planck"],   "MAX-PLANCK",    5),
 ]
 
 

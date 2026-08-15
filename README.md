@@ -115,6 +115,9 @@ Out of the box it tracks three journeys from **Universität**:
 | VAIHINGEN | Universität → Vaihingen Bahnhof | S-Bahn |
 | MAX-PLANCK | Universität → Max-Planck-Institute | Bus 748, ~4 min |
 
+Walk times are per route — 13 min to the Hauptbahnhof platform, 5 to the
+others — because it is the walk to *that* platform, not a property of you.
+
 These are **journeys**, not stop departures, and they have to be. Two of the
 three can't be expressed as "departures from Universität filtered by
 destination": the 748 to Max-Planck says *Ostelsheim* on the front, and the
@@ -123,8 +126,15 @@ Filtering on those strings is guesswork, so Kea asks the journey planner the
 question you're actually asking. You get arrival time, duration and change
 count, which a platform board can't tell you.
 
-The dial switches routes, GREEN refreshes, and the toggle unfolds the legs of
-the journey you're about to take (`15:32 S1 → Vaihingen, walk, 15:40 bus 84`).
+The **dial walks one flat list of every departure on every route**, and
+**pressing it tracks** the one you picked — the semaphore arm then points at
+that countdown and the screen shows `ARM TRACKING` so the two can never
+disagree. GREEN refreshes; the toggle unfolds the legs of the journey. HOME
+goes back to Nexus, which is why the press is free for tracking.
+
+A running Pomodoro outranks the arm's tram tracking: the session is what you
+started deliberately, and an arm abandoning it to report a tram interrupts
+exactly what the session exists to protect.
 
 ### Tracking more
 
