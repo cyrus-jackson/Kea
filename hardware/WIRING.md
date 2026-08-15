@@ -16,6 +16,23 @@ python3 tools/gen_wiring.py
 
 ---
 
+## 0. Check the pin is free before you wire to it
+
+```bash
+python3 tools/pinmap.py            # the whole header
+python3 tools/pinmap.py --power    # just 3.3 V / 5 V / GND
+```
+
+GPIO assignments are parsed from `src/hardware_input.py`, so the map
+cannot drift from the code. **Power and ground users are a table inside
+`tools/pinmap.py` — if you wire something to a power pin, add it there**,
+because nothing else records it.
+
+That gap is not hypothetical: SERVO_WIRING.md first said to put the
+PCA9685's `VCC` on pin 1, which already had the encoder's `+` on it.
+
+---
+
 ## 1. Fit the extender — and prove it's the right way round
 
 **Why this matters:** a 2×20 socket seats perfectly well rotated 180° —
@@ -286,17 +303,18 @@ No servo code exists yet, but the wiring is decided. **Signal** comes from
 the Pi; **current** never does.
 
 ```
-Pi pin 1  3.3 V ────────────────────────► PCA9685 VCC   ← NEVER 5 V
+Pi pin 17 3.3 V ────────────────────────► PCA9685 VCC   ← NEVER 5 V
+          (pin 1 is the encoder's `+`; 1 and 17 are the same rail)
 Pi pin 3  SDA (BCM 2) ──────────────────► PCA9685 SDA
 Pi pin 5  SCL (BCM 3) ──────────────────► PCA9685 SCL
-Pi pin 6  GND ──────────┬───────────────► PCA9685 GND
+Pi pin 9  GND ──────────┬───────────────► PCA9685 GND
 4×AA +  ────────────────┼───────────────► PCA9685 V+
 4×AA −  ────────────────┘   ← the two grounds MUST be joined
 ```
 
 **Full procedure, with the staged bring-up: [SERVO_WIRING.md](SERVO_WIRING.md).**
 
-- `VCC` to **3.3 V**, never 5 V. The board's I²C pull-ups go to `VCC`, so
+- `VCC` to **3.3 V (pin 17)**, never 5 V. The board's I²C pull-ups go to `VCC`, so
   5 V there puts 5 V on GPIO 2/3, which are 3.3 V-only. This is the one
   that actually kills Pis.
 - `V+` is a separate rail feeding only the servo plugs. It never touches

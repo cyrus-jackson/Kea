@@ -9,6 +9,30 @@ caught at a stage where it is still harmless.
 
 ---
 
+## Before wiring anything to a pin, check the pin is free
+
+```bash
+python3 tools/pinmap.py --power
+```
+
+The GPIO assignments in that map are parsed out of
+`src/hardware_input.py`, so they cannot drift from the code. Power-pin
+users are a table inside `tools/pinmap.py` — **if you wire something to a
+power or ground pin, add it there**, because nothing else in the repo
+records it and the next person to pick a pin will not know.
+
+This page originally said pin 1 for `VCC`. Pin 1 already had the rotary
+encoder's `+` on it (WIRING.md §3), and nothing could have caught that:
+GPIO assignments lived in Python, power-pin assignments lived in prose,
+and the display's pins lived in `config.txt`. Three places, no map. Now
+there is one.
+
+**Pins 1 and 17 are the same 3.3 V rail** — two holes into one regulator
+output, not two supplies. Same for 5 V (pins 2, 4) and for all eight
+grounds. "Pin 1 is taken" only ever means that hole is full.
+
+---
+
 ## The one thing to understand first
 
 **The PCA9685 has two completely separate power domains.** This is the
@@ -31,7 +55,7 @@ this burn my Pi".**
 
 ## The three rules
 
-**1. `VCC` goes to Pi 3.3 V — pin 1. Never 5 V.**
+**1. `VCC` goes to Pi 3.3 V — use pin 17. Never 5 V.**
 
 This is the one that actually kills Pis, and it is not obvious. The board
 has pull-up resistors on SDA and SCL **to whatever `VCC` is**. Put 5 V on
@@ -99,10 +123,10 @@ people forget, so check it exists.
 ```
                     ┌─────────────── Pi (via the GPIO extender) ─────────┐
                     │                                                     │
-   pin 1   3.3 V ───┼──────────────────────────────► PCA9685  VCC        │
+   pin 17  3.3 V ───┼──────────────────────────────► PCA9685  VCC        │
    pin 3   SDA  ────┼──────────────────────────────► PCA9685  SDA        │
    pin 5   SCL  ────┼──────────────────────────────► PCA9685  SCL        │
-   pin 6   GND  ────┼───────────┬──────────────────► PCA9685  GND        │
+   pin 9   GND  ────┼───────────┬──────────────────► PCA9685  GND        │
                     └───────────┼───────────────────────────────────────-┘
                                 │
    4×AA  +  (red) ──────────────┼──────────────────► PCA9685  V+
@@ -114,10 +138,10 @@ people forget, so check it exists.
 
 | From | To | Note |
 |---|---|---|
-| Pi **pin 1** (3.3 V) | PCA9685 `VCC` | **not pin 2, not pin 4** — those are 5 V |
+| Pi **pin 17** (3.3 V) | PCA9685 `VCC` | pin 1 is the encoder's `+` — same rail, other hole. **Not pin 2 or 4**, those are 5 V |
 | Pi **pin 3** (BCM 2) | PCA9685 `SDA` | |
 | Pi **pin 5** (BCM 3) | PCA9685 `SCL` | |
-| Pi **pin 6** (GND) | PCA9685 `GND` (header) | any GND pin works: 6, 9, 14, 20, 25, 30, 34, 39 |
+| Pi **pin 9** (GND) | PCA9685 `GND` (header) | any free GND works: 6, 9, 14, 20, 25, 30, 34 (39 is the switch rail) |
 | Battery **+** | PCA9685 `V+` (green terminal block) | |
 | Battery **−** | PCA9685 `GND` (green terminal block) | |
 | `OE` | **leave unconnected** | see below |
