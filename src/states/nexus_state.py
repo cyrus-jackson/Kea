@@ -94,9 +94,13 @@ WORLDS = [
 ]
 
 # Screens that stay OFF the cycle: reachable from this hub (and by their
-# key / button), but never landed on by the blue button, the encoder dial
-# or auto-pilot. Settings screens shouldn't interrupt you at random.
-NO_CYCLE = {"console"}
+# key / dedicated button), but never landed on by the blue button, the
+# encoder dial or auto-pilot.
+#   console — settings shouldn't interrupt you at random
+#   camera  — entering it powers up the sensor (~1 s) and exiting stops it
+#             again, so cycling through would spin the camera all day. It
+#             has button 5 (pin 7) to itself.
+NO_CYCLE = {"console", "camera"}
 
 # The dial/button cycle: every world except those.
 def cycle_worlds():
