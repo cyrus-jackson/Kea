@@ -126,6 +126,7 @@ PRODUCT_COLOUR = {
     "WALK": pal.INK_FAINT,
 }
 BADGE_INK = pal.VOID
+INK_FAINT_ = pal.INK_FAINT
 
 REFRESH = 60.0          # seconds between fetches while you are looking
 # ...and while you are NOT. The arm's countdown gauge reads what this
@@ -592,7 +593,7 @@ class TransitState(State):
         # ── the following departures ────────────────────────────────────
         ly = fy + s(60)
         legs_mode = route.is_trip and self.all_lines and head is not None
-        heading = "THIS JOURNEY" if legs_mode else "THEN"
+        heading = "THIS JOURNEY" if legs_mode else "DEPARTURES"
         surface.blit(self.font_tiny.render(heading, True, INK_DIM), (s(14), ly))
         pygame.draw.line(surface, CASE_HI, (s(14) + s(74), ly + s(5)),
                          (w - s(14), ly + s(5)))
@@ -613,35 +614,65 @@ class TransitState(State):
                 surface.blit(g, (w - g.get_width() - s(14), ly + s(3)))
                 ly += s(22)
         else:
-            shown = [d for d in deps[:6] if d is not catch][:3]
-            if not shown:
-                surface.blit(self.font_small.render("—", True, INK_DIM),
-                             (s(14), ly))
-            for d in shown:
-                col = INK_DIM if d.cancelled else INK
-                surface.blit(self.font_row.render(f"{d.estimated:%H:%M}", True, col),
-                             (s(14), ly))
-                surface.blit(self.font_row.render(d.line[:4], True, BRASS),
-                             (s(62), ly))
+            # Show EVERY departure including the one in the headline, with
+            # the selected row highlighted. Excluding the headline meant
+            # the list silently started at the second departure, so you
+            # could not see where the big number sat among the others —
+            # "is this the next one or the one after?" had no answer on
+            # screen. Position is the whole point of a list.
+            _r_sel, d_sel = self.selected()
+            for d in deps[:4]:
+                sel = (d is d_sel)
+                row = pygame.Rect(s(6), ly - s(3), w - s(12), s(21))
+                if sel:
+                    pygame.draw.rect(surface, pal.mix(pal.CYAN, pal.VOID, 0.82),
+                                     row, border_radius=s(3))
+                    pygame.draw.rect(surface, pal.mix(pal.CYAN, pal.VOID, 0.45),
+                                     row, 1, border_radius=s(3))
+                    pygame.draw.polygon(surface, pal.CYAN,
+                                        [(s(9), ly + s(2)), (s(9), ly + s(12)),
+                                         (s(14), ly + s(7))])
+                if self.is_tracked(d):
+                    # A bar down the row's left edge, not a dot in the
+                    # corner: a dot at the right edge clipped on a 320 px
+                    # panel, and anywhere else it collided with either the
+                    # selection caret or the delay tag.
+                    pygame.draw.rect(surface, pal.ACID,
+                                     (row.x, row.y, s(3), row.h),
+                                     border_radius=s(2))
+
+                col = INK_DIM if d.cancelled else (INK if sel else INK_DIM)
+                surface.blit(self.font_row.render(f"{d.estimated:%H:%M}", True,
+                                                  col), (s(18), ly))
+                surface.blit(self.font_row.render(d.line[:4], True,
+                                                  BRASS if sel else
+                                                  pal.mix(BRASS, pal.VOID, 0.3)),
+                             (s(64), ly))
                 if route.is_trip:
                     mid = (f">{d.arrival:%H:%M}  "
                            + ("direct" if d.changes == 0 else f"{d.changes} ch"))
                 else:
-                    mid = d.towards[:18]
+                    mid = d.towards[:16]
                 surface.blit(self.font_small.render(mid, True, INK_DIM),
-                             (s(102), ly + s(3)))
-                if self.is_tracked(d):
-                    pygame.draw.circle(surface, pal.ACID,
-                                       (s(8), ly + s(9)), s(3))
+                             (s(104), ly + s(3)))
+
                 if d.cancelled:
                     tag, tc = "CANCELLED", RED_GO
                 elif d.delay_min > 0:
                     tag, tc = f"+{d.delay_min}", AMBER
                 else:
-                    tag, tc = f"{d.leave_in(now):+.0f}", INK_DIM
+                    # Signed minutes either way. "gone" hid the useful
+                    # part: -7 says you are seven short, which tells you
+                    # whether a faster walk would have made it.
+                    left = d.leave_in(now)
+                    tag = f"{left:+.0f}"
+                    tc = GREEN_OK if left >= 0 else pal.mix(RED_GO, pal.VOID, 0.35)
                 g = self.font_small.render(tag, True, tc)
                 surface.blit(g, (w - g.get_width() - s(14), ly + s(3)))
                 ly += s(22)
+            if not deps:
+                surface.blit(self.font_small.render("—", True, INK_DIM),
+                             (s(18), ly))
 
         self._draw_footer(surface, now)
 
