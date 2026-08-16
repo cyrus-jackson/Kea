@@ -48,6 +48,7 @@ from states.drift_state import DriftState
 from states.transit_state import TransitState
 from backend import gestures, alerts
 from states.alert_state import AlertState
+from states.alerts_state import AlertsState
 from backend import voice
 from backend import lifebook
 from backend import settings
@@ -80,7 +81,8 @@ from states.nexus_state import WORLDS, NO_CYCLE, cycle_worlds
 #   transit  — you left it there because you are waiting for a tram;
 #              wandering off to look at a fish tank is how you miss it
 #   drift    — already there
-NO_IDLE = {"pomodoro", "camera", "console", "transit", "drift", "alert"}
+NO_IDLE = {"pomodoro", "camera", "console", "transit", "drift",
+           "dispatch", "alerts"}
 
 
 def _idle_secs():
@@ -313,7 +315,12 @@ def main():
     manager.add_state('camera', CameraState(manager))
     manager.add_state('drift', DriftState(manager))
     manager.add_state('transit', TransitState(manager))
-    manager.add_state('alert', AlertState(manager))
+    manager.add_state('alerts', AlertsState(manager))
+    # The INTERRUPT is registered as 'dispatch', not 'alert'.
+    # 'alert' and 'alerts' one letter apart is a typo that
+    # silently changes behaviour; 'dispatch' is what its own
+    # header already says.
+    manager.add_state('dispatch', AlertState(manager))
     settings.init()             # restore the saved brightness
     lifebook.bump('boots')
 
@@ -469,6 +476,8 @@ def main():
                     _drift_to(manager, 'aerodrome')
                 elif event.key == pygame.K_r:
                     manager.change_state('docket')
+                elif event.key == pygame.K_a:
+                    manager.change_state('alerts')
                 elif event.key == pygame.K_o:
                     _drift_to(manager, 'orrery')
                 elif event.key == pygame.K_s:
@@ -521,15 +530,15 @@ def main():
         # in which case backend/alerts.py holds it and drains the queue
         # the moment the session ends. Never interrupts an alert with the
         # next alert, and never interrupts itself.
-        if manager.current_state_name != 'alert':
+        if manager.current_state_name != 'dispatch':
             _alerts.poll()
             _due = _alerts.next_alert()
             if _due is not None:
                 manager.alert_return = manager.current_state_name
-                _al = manager.states.get('alert')
+                _al = manager.states.get('dispatch')
                 if _al is not None:
                     _al.show(_due)
-                    manager.change_state('alert')
+                    manager.change_state('dispatch')
                     idle_t = 0.0
 
         # Untouched for long enough: hand the screen back to the rounds.

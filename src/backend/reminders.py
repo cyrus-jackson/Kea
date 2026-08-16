@@ -17,7 +17,9 @@ the default includes the user name but you should pick your own.
 Disable with KEA_FEEDS=0.
 """
 
+import datetime
 import json
+import re
 import os
 import threading
 import time
@@ -29,7 +31,8 @@ ENABLED = os.getenv("KEA_FEEDS", "1").strip().lower() not in {"0", "false", "off
 PATH = os.path.join(os.path.expanduser("~"), ".kea_reminders.json")
 POLL_EVERY = 30.0
 
-# urgency stages by age (seconds -> label); the board colors these
+# Urgency by AGE, for reminders with no deadline. A thing you were told
+# about four hours ago and have not done is probably slipping.
 STAGES = [
     (0,          "POSTED"),
     (3600,       "BOARDING"),
@@ -37,13 +40,80 @@ STAGES = [
     (24 * 3600,  "OVERDUE"),
 ]
 
+# Urgency by DEADLINE, for reminders that have one. Seconds REMAINING —
+# so the list runs from most to least time, and past the deadline goes
+# negative. Age and deadline are different questions: a reminder posted
+# a week ago that is due next month is not urgent, and one posted a
+# minute ago that is due in five is.
+DUE_STAGES = [
+    (24 * 3600,  "SCHEDULED"),
+    (2 * 3600,   "TODAY"),
+    (15 * 60,    "DUE SOON"),
+    (0,          "DUE NOW"),
+    (-1,         "OVERDUE"),
+]
 
-def stage_for(age_s):
+
+def stage_for(age_s, due_ts=None, now=None):
+    """The urgency label. Deadline wins over age when there is one."""
+    if due_ts:
+        left = float(due_ts) - (now if now is not None else time.time())
+        label = DUE_STAGES[-1][1]
+        for threshold, name in DUE_STAGES:
+            if left >= threshold:
+                return name
+        return label
     label = STAGES[0][1]
     for threshold, name in STAGES:
         if age_s >= threshold:
             label = name
     return label
+
+
+# ── deadlines written into the message ──────────────────────────────────────
+# You set a reminder from your phone, so the deadline has to be settable
+# from your phone. These are the forms that survive being typed one-handed:
+#
+#     Call the landlord @18:00        today at 18:00 (tomorrow if past)
+#     Bins out @tomorrow 07:30        explicit tomorrow
+#     Take pill in 45m                relative
+#     Renew insurance in 3d
+#
+# The marker is stripped from the text, so the card shows the reminder and
+# the deadline shows as a deadline rather than as noise in the sentence.
+_REL = re.compile(r"\bin\s+(\d{1,3})\s*(m|min|mins|minutes|h|hr|hrs|hours|d|days?)\b",
+                  re.I)
+_AT = re.compile(r"@\s*(tomorrow\s+)?(\d{1,2})[:.](\d{2})", re.I)
+_UNIT = {"m": 60, "min": 60, "mins": 60, "minutes": 60,
+         "h": 3600, "hr": 3600, "hrs": 3600, "hours": 3600,
+         "d": 86400, "day": 86400, "days": 86400}
+
+
+def parse_due(text, now=None):
+    """(cleaned_text, due_ts or None). Never raises on odd input."""
+    now = now if now is not None else time.time()
+    try:
+        m = _AT.search(text)
+        if m:
+            hh, mm = int(m.group(2)), int(m.group(3))
+            if 0 <= hh < 24 and 0 <= mm < 60:
+                base = datetime.datetime.fromtimestamp(now)
+                due = base.replace(hour=hh, minute=mm, second=0, microsecond=0)
+                if m.group(1):                       # "@tomorrow 07:30"
+                    due += datetime.timedelta(days=1)
+                elif due.timestamp() <= now:         # already gone: mean tomorrow
+                    due += datetime.timedelta(days=1)
+                cleaned = " ".join((text[:m.start()] + text[m.end():]).split())
+                return cleaned or text, due.timestamp()
+        m = _REL.search(text)
+        if m:
+            n = int(m.group(1))
+            unit = _UNIT.get(m.group(2).lower(), 60)
+            cleaned = " ".join((text[:m.start()] + text[m.end():]).split())
+            return cleaned or text, now + n * unit
+    except Exception:                                # noqa: BLE001
+        pass
+    return text, None
 
 
 class ReminderService:
@@ -138,8 +208,10 @@ class ReminderService:
                     if not mid or not text or mid in known:
                         continue
                     ts = int(msg.get("time", time.time()))
+                    text, due = parse_due(text, ts)
                     self.reminders.append(
-                        {"id": mid, "text": text, "ts": ts, "done_ts": None})
+                        {"id": mid, "text": text, "ts": ts,
+                         "due_ts": due, "done_ts": None})
                     self.since = max(self.since, ts)
                     new.append(text)
                 if new:
@@ -167,7 +239,23 @@ class ReminderService:
     def overdue(self):
         now = time.time()
         return [r for r in self.active()
-                if stage_for(now - r["ts"]) in ("FINAL CALL", "OVERDUE")]
+                if stage_for(now - r["ts"], r.get("due_ts"), now)
+                in ("FINAL CALL", "OVERDUE", "DUE NOW")]
+
+    def set_due(self, rid, due_ts):
+        """Set or clear a deadline on the device."""
+        with ReminderService._lock:
+            for r in self.reminders:
+                if r["id"] == rid:
+                    r["due_ts"] = due_ts
+                    self._save()
+                    return r.get("due_ts")
+        return None
+
+    def next_due(self):
+        """The soonest deadline among open reminders, or None."""
+        due = [r["due_ts"] for r in self.active() if r.get("due_ts")]
+        return min(due) if due else None
 
     def complete(self, rid):
         """Stamp a reminder DONE. Returns its text, or None."""

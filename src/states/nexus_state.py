@@ -85,6 +85,10 @@ def phases(date=None):
 WORLDS = [
     ("drift",     "DRIFT",   "W", (150, 170, 255)),
     ("pomodoro",  "FOCUS",   "2", (228, 174, 86)),
+    # ALERTS is deliberately NOT on the rail: it is reached by pressing
+    # on the DOCKET. Overview then detail is the right hierarchy, and an
+    # eleventh card would push the rail to three rows and reintroduce the
+    # scroll the whole cut was about.
     ("docket",    "DOCKET",  "R", (200, 60, 45)),
     ("transit",   "TRANSIT", "V", (250, 186, 60)),
     ("climate",   "WX.SYS",  "8", AMBER),

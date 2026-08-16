@@ -157,15 +157,35 @@ turns a departure time into "leave now".
 
 No API key and no `pip install`: plain `urllib` against the public endpoint.
 
-## Reminders from your phone (the Dispatch Docket)
+## Reminders from your phone
 
-Kea polls a free [ntfy.sh](https://ntfy.sh) topic every 30 s — set `KEA_NTFY_TOPIC` to something unguessable. Post from anywhere:
+Post to your ntfy topic and it arrives on Kea. Three screens, because
+"is there anything?" and "what is it?" are different questions:
 
-```bash
-curl -d "water the plants" https://ntfy.sh/<your-topic>
+| | |
+|---|---|
+| **DOCKET** | the overview. One word — ALL CLEAR, DUE SOON, OVERDUE — a count, and the most urgent item. Answerable from across the desk without reading. GREEN clears the top one; press opens ALERTS. |
+| **ALERTS** | one reminder at a time, filling the screen. Dial pages, press completes, RED skips. |
+| the interrupt | takes the screen when something arrives — unless you are in a focus session, in which case it is held and the queue drains the moment the session ends. Hands back after 20 s and re-nags, backing off 5 → 10 → 20 → 40 → 60 min. |
+
+### Deadlines
+
+Write the deadline into the message and Kea strips it out:
+
+```
+Call the landlord @18:00        today at 18:00 (tomorrow if that has passed)
+Bins out @tomorrow 07:30        explicit
+Take pill in 45m                relative — m / h / d
+Renew insurance in 3d
 ```
 
-On iOS, a Shortcuts automation ("When my Reminder is due → Get Contents of URL, POST, body = reminder name") forwards your phone reminders automatically; on Android the ntfy app's share sheet or Tasker does it. Cards age through POSTED → BOARDING → FINAL CALL → OVERDUE; the **green button stamps the oldest one DONE**. Overdue dockets nag you from every world's ticker and take over the Nexus NOW slot until handled.
+With a deadline the urgency comes from the deadline (SCHEDULED → TODAY →
+DUE SOON → DUE NOW → OVERDUE) rather than from how long ago you were
+told. Without one it ages exactly as before (POSTED → BOARDING → FINAL
+CALL → OVERDUE), so old reminders behave unchanged.
+
+To change a deadline on the device: on ALERTS, flip the toggle to **SET
+DUE** and the dial moves it in 15-minute steps instead of paging.
 
 ## Living worlds
 
