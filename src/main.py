@@ -46,7 +46,8 @@ from states.console_state import ConsoleState
 from states.camera_state import CameraState
 from states.drift_state import DriftState
 from states.transit_state import TransitState
-from backend import gestures
+from backend import gestures, alerts
+from states.alert_state import AlertState
 from backend import voice
 from backend import lifebook
 from backend import settings
@@ -79,7 +80,7 @@ from states.nexus_state import WORLDS, NO_CYCLE, cycle_worlds
 #   transit  — you left it there because you are waiting for a tram;
 #              wandering off to look at a fish tank is how you miss it
 #   drift    — already there
-NO_IDLE = {"pomodoro", "camera", "console", "transit", "drift"}
+NO_IDLE = {"pomodoro", "camera", "console", "transit", "drift", "alert"}
 
 
 def _idle_secs():
@@ -312,6 +313,7 @@ def main():
     manager.add_state('camera', CameraState(manager))
     manager.add_state('drift', DriftState(manager))
     manager.add_state('transit', TransitState(manager))
+    manager.add_state('alert', AlertState(manager))
     settings.init()             # restore the saved brightness
     lifebook.bump('boots')
 
@@ -325,6 +327,8 @@ def main():
     # Initialize hardware button poller
     hw_buttons = HardwareButtons()
     _gestures = gestures.instance(manager)
+    _alerts = alerts.instance(manager)
+    manager.alert_return = None
     
     idle_t = 0.0          # seconds since anyone last touched Kea
     drift_return = None   # where to put you back when you do
@@ -363,7 +367,13 @@ def main():
             elif event.type == BUTTON_AMBIENT_EVENT:
                 manager.next_state()  # Cycle to the next state
             elif event.type == BUTTON_POMODORO_EVENT:
-                if manager.current_state_name != 'pomodoro':
+                # RED. Screens get first refusal — the alert uses it for
+                # LATER and the docket for SKIP — before it means Pomodoro.
+                cur = manager.current_state
+                if cur is not None and hasattr(cur, 'on_red_button') \
+                        and cur.on_red_button():
+                    pass
+                elif manager.current_state_name != 'pomodoro':
                     manager.change_state('pomodoro')
             elif event.type == BUTTON_NOTIFICATION_EVENT:
                 # states may consume the green button (e.g. the Docket
@@ -492,8 +502,35 @@ def main():
                 elif event.key == pygame.K_9:
                     manager.change_state('greetings')
         
-        # State-specific event handling
-        manager.handle_events(events)
+        # State-specific event handling.
+        #
+        # The GREEN and RED hardware events are dispatched ABOVE, straight
+        # to the state's on_green_button() / on_red_button(). They must not
+        # also be handed to handle_events(), because camera_state listens
+        # for the same two events there — so a single GREEN press on the
+        # camera screen fired the shutter twice. That bug predates the RED
+        # routing; adding RED would simply have doubled it.
+        #
+        # The rule now: main.py owns hardware buttons, handle_events() owns
+        # the keyboard.
+        manager.handle_events([e for e in events
+                               if e.type not in (BUTTON_NOTIFICATION_EVENT,
+                                                 BUTTON_POMODORO_EVENT)])
+
+        # A dispatch takes the screen — unless a focus session is running,
+        # in which case backend/alerts.py holds it and drains the queue
+        # the moment the session ends. Never interrupts an alert with the
+        # next alert, and never interrupts itself.
+        if manager.current_state_name != 'alert':
+            _alerts.poll()
+            _due = _alerts.next_alert()
+            if _due is not None:
+                manager.alert_return = manager.current_state_name
+                _al = manager.states.get('alert')
+                if _al is not None:
+                    _al.show(_due)
+                    manager.change_state('alert')
+                    idle_t = 0.0
 
         # Untouched for long enough: hand the screen back to the rounds.
         idle_t += dt

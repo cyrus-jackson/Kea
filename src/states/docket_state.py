@@ -1,24 +1,47 @@
 """
 docket_state.py
 ---------------
-THE DISPATCH DOCKET — reminders as paper, guilt as patina.
+THE DISPATCH DOCKET — one reminder at a time, big enough to read.
 
 Reminders posted from your phone (via ntfy, see backend/reminders.py)
-arrive down a pneumatic tube as paper docket cards. Cards age through
-urgency stamps — POSTED, BOARDING, FINAL CALL, OVERDUE (blinking) —
-and the oldest waits in the NOW SERVING slot. The GREEN hardware
-button slams a DELIVERED stamp onto it. Done is satisfying; undone
-is visible. That's the whole trick.
+land here. One fills the screen; the dial pages through them; a press
+marks the one you are looking at as done.
 
-When the docket is empty, the office sleeps and shows the ntfy
-address to post to.
+    ENCODER turn    page through open reminders
+    ENCODER press   DONE — completes the one on screen
+    GREEN           DONE — the same thing, on the button that always did
+    RED             skip to the next without completing
+    TOGGLE          include completed ones, newest first
+    HOME button     back to Nexus
+
+WHY IT WAS REBUILT
+
+It was a board: several cards at once, aged with urgency stamps, drawn
+with Font(None, 22) — which is 15 px of actual glyph on a 480 px panel,
+the same type scale the transit board uses for *numbers*. Numbers you glance at. Words you read. The result was a
+screen made entirely of text that could not comfortably be read, which
+is a strange thing for the screen whose whole content is sentences from
+your phone.
+
+So: one card, and the message gets as much of the screen as it needs.
+Fewer things visible at once is the price, and the counter (2 OF 5) plus
+the pip strip pays most of it back.
+
+AND IT LET GO OF THE DIAL
+
+It never implemented move_cursor, so main.py fell through to _tune() and
+turning the knob walked you out of the screen into another world —
+UI_GUIDELINES 5 says implementing move_cursor is how a screen claims the
+dial, and this one never claimed it. It does now, and press acts here
+rather than going home; the HOME button still goes home.
+
+Alerts are separate: states/alert_state.py is what interrupts you when
+something arrives, and backend/alerts.py decides when it is allowed to.
 """
 
-import pygame
-import random
-import math
 import time
-import datetime
+
+import pygame
 
 from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
@@ -32,331 +55,317 @@ def s(v):
     return max(1, int(v * SCALE))
 
 
-def lerp_color(a, b, t):
-    return tuple(max(0, min(255, int(a[i] + (b[i] - a[i]) * t))) for i in range(3))
-
-
-BG        = (17, 13, 10)
-# Palette from ui/palette.py — see UI_GUIDELINES §1c. The dockets were
-# paper on a wooden desk; they are now holo-tickets shot down a tube.
-# The urgency stamps keep their meaning: magenta shouts, acid means done.
-WOOD         = pal.VOID
-WOOD_DARK    = pal.SHADOW
-BRASS        = pal.CYAN
-PAPER        = pal.PANEL
-PAPER_OLD    = pal.PANEL_HI
-INK          = pal.INK
-INK_FAINT    = pal.INK_DIM
-STAMP_RED    = pal.MAGENTA
-DONE_GRN     = pal.ACID
-STAGE_COLORS = {
-    "POSTED":     (110, 150, 120),
-    "BOARDING":   (170, 140, 70),
-    "FINAL CALL": (216, 140, 40),
-    "OVERDUE":    (200, 60, 45),
+# Stage -> colour. Urgency is the accent, not a stamp graphic.
+STAGE_COLOUR = {
+    "POSTED": pal.CYAN,
+    "BOARDING": pal.AMBER,
+    "FINAL CALL": pal.MAGENTA,
+    "OVERDUE": pal.BLOOD,
 }
 
-
-def age_str(age_s):
-    if age_s < 3600:
-        return f"{int(age_s // 60)}M AGO"
-    if age_s < 86400:
-        return f"{int(age_s // 3600)}H AGO"
-    return f"{int(age_s // 86400)}D AGO"
+# Pygame's font size argument is NOT pixel height: Font(None, 40) renders
+# only 27 px tall. The old card used Font(None, 22) — 15 px of actual
+# glyph, which is what "I can hardly read it" meant. This ladder is set
+# from measured heights, not from nominal numbers, and starts high enough
+# to use the card: 80 gives 55 px, twice the old screen's title.
+MSG_SIZES = (80, 68, 58, 48, 40, 32, 26)
+MAX_LINES = 6
 
 
 class DocketState(State):
-    """Dispatch-office reminder board with a stampable NOW SERVING slot."""
+    """One reminder, readable, with the dial paging through them."""
 
     def __init__(self, state_manager):
         super().__init__(state_manager)
         pygame.font.init()
+        self.font_title = pygame.font.Font(None, s(24))
+        self.font_stage = pygame.font.Font(None, s(19))
+        self.font_meta = pygame.font.Font(None, s(17))
+        self.font_count = pygame.font.Font(None, s(30))
+        self.font_hint = pygame.font.Font(None, s(15))
+        self._msg_fonts = {n: pygame.font.Font(None, s(n)) for n in MSG_SIZES}
 
         self.service = ReminderService.instance()
+        self.sel = 0
+        self.show_done = False
+        self.t = 0.0
+        self.flash = ""
+        self.flash_t = 0.0
+        self._laid_for = None
+        self._lines = []
+        self._font = self._msg_fonts[MSG_SIZES[-1]]
+        self._bg = None
 
-        self.font_title = pygame.font.Font(None, s(26))
-        self.font_card  = pygame.font.Font(None, s(22))
-        self.font_small = pygame.font.Font(None, s(16))
-        self.font_stamp = pygame.font.Font(None, s(34))
+    # ── data ───────────────────────────────────────────────────────────
+    def items(self):
+        try:
+            if self.show_done:
+                with ReminderService._lock:
+                    all_r = [dict(r) for r in self.service.reminders]
+                return sorted(all_r, key=lambda r: -r["ts"])
+            return self.service.active()
+        except Exception:                                   # noqa: BLE001
+            return []
 
-        self.time_alive = 0.0
-        self._last_count = self.service.count()
-        self.show_done = False        # toggle flips to the completed pile
+    def current(self):
+        it = self.items()
+        if not it:
+            return None
+        self.sel = max(0, min(len(it) - 1, self.sel))
+        return it[self.sel]
 
-        # animations
-        self.capsule = None          # y progress of arriving tube capsule
-        self.stamp_anim = None       # {"t": 0.., "text": card text}
-        self._stamp_surf = None
+    # ── lifecycle ──────────────────────────────────────────────────────
+    def enter(self):
+        self.t = 0.0
+        self.show_done = bool(getattr(self.manager, "toggle_on", False))
+        self.sel = 0
+        self._laid_for = None
 
-        self._bg = self._build_bg()
+    # ── controls ───────────────────────────────────────────────────────
+    def move_cursor(self, direction):
+        """Claims the dial. Without this main.py tunes to another world."""
+        it = self.items()
+        if not it:
+            return True
+        self.sel = (self.sel + (1 if direction > 0 else -1)) % len(it)
+        self._laid_for = None
+        return True
 
-    # ══════════════════════════════════════════════════════════════════════
-    def _build_bg(self):
-        surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        surf.fill(BG)
-        rng = random.Random(21)
-        # wood paneling with grain
-        pygame.draw.rect(surf, WOOD, (0, 0, SCREEN_WIDTH, SCREEN_HEIGHT))
-        for _ in range(60):
-            x = rng.randint(0, SCREEN_WIDTH - 1)
-            pygame.draw.line(surf, WOOD_DARK, (x, 0), (x, SCREEN_HEIGHT), 1)
-        for gy in range(0, SCREEN_HEIGHT, s(96)):        # plank seams
-            pygame.draw.line(surf, (20, 15, 10), (0, gy), (SCREEN_WIDTH, gy), 2)
+    def activate(self):
+        """Press = done. Stays on the screen; HOME goes home."""
+        self._complete()
+        return True
 
-        # header plate
-        plate = pygame.Rect(s(10), s(8), SCREEN_WIDTH - s(20), s(40))
-        pygame.draw.rect(surf, WOOD_DARK, plate, border_radius=s(6))
-        pygame.draw.rect(surf, BRASS, plate, 2, border_radius=s(6))
-        pal.blit_glow(surf, self.font_title, "DISPATCH DOCKET", pal.CYAN,
-                      (plate.x + s(12), plate.y + s(6)))
+    def on_green_button(self):
+        self._complete()
+        return True
 
-        # pneumatic tube along the right edge
-        tx = SCREEN_WIDTH - s(13)
-        pygame.draw.line(surf, BRASS, (tx - s(5), s(52)), (tx - s(5), SCREEN_HEIGHT - s(30)), 2)
-        pygame.draw.line(surf, BRASS, (tx + s(5), s(52)), (tx + s(5), SCREEN_HEIGHT - s(30)), 2)
-        for ty in range(s(70), SCREEN_HEIGHT - s(40), s(50)):   # tube collars
-            pygame.draw.rect(surf, BRASS, (tx - s(7), ty, s(14), s(5)), border_radius=2)
-        return surf
+    def on_red_button(self):
+        """Skip without completing — look at the next one."""
+        self.move_cursor(1)
+        self._flash("NEXT")
+        return True
 
-    def _wrap(self, text, font, max_w, max_lines):
-        words, lines, cur = text.split(), [], ""
-        for w in words:
-            test = (cur + " " + w).strip()
-            if font.size(test)[0] <= max_w:
-                cur = test
-            else:
-                lines.append(cur)
-                cur = w
-                if len(lines) == max_lines:
-                    break
-        if cur and len(lines) < max_lines:
-            lines.append(cur)
-        if len(lines) == max_lines and len(" ".join(lines)) < len(text):
-            lines[-1] = lines[-1][: max(1, len(lines[-1]) - 1)] + "…"
-        return lines
-
-    # ══════════════════════════════════════════════════════════════════════
-    # ── toggle: flip the board over to what you've already done ─────────
     def on_toggle(self, on):
         self.show_done = on
+        self.sel = 0
+        self._laid_for = None
 
     def toggle_label(self):
         return "SHOW DONE"
 
-    def on_green_button(self):
-        """Main routes the green hardware button here. True = consumed."""
-        if self.stamp_anim is None and self.service.count() > 0:
-            text = self.service.complete_oldest()
-            if text:
-                self.stamp_anim = {"t": 0.0, "text": text}
-                self._stamp_surf = None
-            return True
-        return False
-
     def handle_events(self, events):
-        for event in events:
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_g:
-                self.on_green_button()          # desktop stand-in for green
+        for e in events:
+            if e.type == pygame.KEYDOWN:
+                if e.key in (pygame.K_g, pygame.K_RETURN, pygame.K_SPACE):
+                    self._complete()
+                elif e.key in (pygame.K_RIGHT, pygame.K_DOWN):
+                    self.move_cursor(1)
+                elif e.key in (pygame.K_LEFT, pygame.K_UP):
+                    self.move_cursor(-1)
 
-    def update(self, dt):
-        self.time_alive += dt
-        self.service.update(dt)
+    def _complete(self):
+        rec = self.current()
+        if rec is None or rec.get("done_ts") is not None:
+            self._flash("NOTHING TO STAMP")
+            return
+        try:
+            self.service.complete(rec["id"])
+            from backend import alerts
+            alerts.instance().completed(rec["id"])
+        except Exception:                                   # noqa: BLE001
+            pass
+        self._flash("DELIVERED")
+        self.sel = max(0, self.sel - 1)
+        self._laid_for = None
 
-        count = self.service.count()
-        if count > self._last_count:            # new dispatch -> capsule drop
-            self.capsule = 0.0
-        self._last_count = count
+    def _flash(self, text):
+        self.flash, self.flash_t = text, 1.4
 
-        if self.capsule is not None:
-            self.capsule += dt * 1.4
-            if self.capsule >= 1.2:
-                self.capsule = None
+    # ── text fitting ───────────────────────────────────────────────────
+    def _wrap(self, font, text, width):
+        """Word wrap, breaking inside a word when a word is too wide.
 
-        if self.stamp_anim is not None:
-            self.stamp_anim["t"] += dt
-            if self.stamp_anim["t"] > 1.1:
-                self.stamp_anim = None
+        German compounds and URLs do not have spaces in them.
+        "Kraftfahrzeughaftpflichtversicherung" is 314 px at the smallest
+        size on a 280 px card, so no choice of font size can save it and a
+        wrapper that only splits on spaces will always overflow. Falling
+        back to a character break is ugly for one line and correct for
+        every line after it.
+        """
+        lines, cur = [], ""
+        for w in text.split():
+            trial = (cur + " " + w).strip()
+            if font.size(trial)[0] <= width:
+                cur = trial
+                continue
+            if cur:
+                lines.append(cur)
+                cur = ""
+            if font.size(w)[0] <= width:
+                cur = w
+                continue
+            for ch in w:                    # the word alone is too wide
+                if font.size(cur + ch)[0] > width and cur:
+                    lines.append(cur)
+                    cur = ch
+                else:
+                    cur += ch
+        if cur:
+            lines.append(cur)
+        return lines
 
-    # ══════════════════════════════════════════════════════════════════════
-    def draw(self, surface):
-        surface.blit(self._bg, (0, 0))
-        t = self.time_alive
-        now = time.time()
-        active = self.service.active()
+    def _layout(self, text):
+        """Start at 40 px and only step down when the wrap will not fit.
 
-        # header count line (under the title, inside the plate)
-        info = self.font_small.render(
-            f"{len(active)} OPEN  ·  {self.service.done_today()} DONE TODAY",
-            True, BRASS)
-        surface.blit(info, (s(24), s(32)))
-
-        # capsule arriving down the tube
-        if self.capsule is not None:
-            cy = s(56) + min(1.0, self.capsule) * (SCREEN_HEIGHT - s(120))
-            tx = SCREEN_WIDTH - s(13)
-            pygame.draw.rect(surface, PAPER,
-                             (tx - s(4), int(cy), s(8), s(18)), border_radius=s(4))
-            pygame.draw.rect(surface, BRASS,
-                             (tx - s(4), int(cy), s(8), s(18)), 1, border_radius=s(4))
-
-        card_w = SCREEN_WIDTH - s(44)
-
-        # ── toggle view: the completed pile, newest first ───────────────
-        if self.show_done:
-            done = sorted([r for r in self.service.reminders if r["done_ts"]],
-                          key=lambda r: r["done_ts"], reverse=True)
-            lbl = self.font_small.render(
-                f"DELIVERED · {len(done)} TOTAL", True, DONE_GRN)
-            surface.blit(lbl, (s(14), s(64)))
-            if not done:
-                none = self.font_card.render("NOTHING STAMPED YET.", True, PAPER_OLD)
-                surface.blit(none, ((SCREEN_WIDTH - none.get_width()) // 2,
-                                    int(SCREEN_HEIGHT * 0.42)))
+        The old screen picked one size and truncated. Fitting the size to
+        the message means a short reminder is enormous and a long one is
+        still readable, rather than everything being small so the worst
+        case fits.
+        """
+        if self._laid_for == text:
+            return
+        self._laid_for = text
+        width = SCREEN_WIDTH - s(40)
+        room = int(SCREEN_HEIGHT * 0.40)
+        for n in MSG_SIZES:
+            f = self._msg_fonts[n]
+            lines = self._wrap(f, text, width)
+            # Width matters as much as height. _wrap() lets a single word
+            # overflow rather than dropping it, so a long one ("Anmeldung"
+            # at 55 px) ran clean off the card while the line count and
+            # total height both said it fitted. Check the widest line.
+            widest = max((f.size(l)[0] for l in lines), default=0)
+            if (len(lines) <= MAX_LINES
+                    and len(lines) * f.get_height() <= room
+                    and widest <= width):
+                self._font, self._lines = f, lines
                 return
-            for i, r in enumerate(done[:6]):
-                card = pygame.Rect(s(12), s(82) + i * s(52), card_w, s(44))
-                self._draw_card(surface, card, r["text"], None, now, big=False)
-                # struck through, with the time it was cleared
-                pygame.draw.line(surface, INK_FAINT,
-                                 (card.x + s(16), card.centery - s(4)),
-                                 (card.right - s(52), card.centery - s(4)), 1)
-                when = datetime.datetime.fromtimestamp(r["done_ts"]).strftime("%H:%M")
-                ts = self.font_small.render(when, True, DONE_GRN)
-                surface.blit(ts, (card.right - ts.get_width() - s(8),
-                                  card.bottom - s(16)))
+        f = self._msg_fonts[MSG_SIZES[-1]]
+        self._font = f
+        self._lines = self._wrap(f, text, width)[:MAX_LINES]
+
+    # ── update ─────────────────────────────────────────────────────────
+    def update(self, dt):
+        self.t += dt
+        self.service.update(dt)
+        if self.flash_t > 0:
+            self.flash_t = max(0.0, self.flash_t - dt)
+
+    # ── drawing ────────────────────────────────────────────────────────
+    def draw(self, surface):
+        w, h = surface.get_size()
+        if self._bg is None or self._bg.get_size() != (w, h):
+            self._bg = self._make_bg((w, h))
+        surface.blit(self._bg, (0, 0))
+
+        items = self.items()
+        rec = self.current()
+        if rec is None:
+            self._draw_empty(surface)
             return
 
-        if not active and self.stamp_anim is None:
-            self._draw_empty(surface, t)
+        text = rec.get("text", "") or "(no text)"
+        self._layout(text)
+        done = rec.get("done_ts") is not None
+        age = max(0.0, time.time() - rec.get("ts", time.time()))
+        stage = "DELIVERED" if done else stage_for(age)
+        accent = pal.ACID if done else STAGE_COLOUR.get(stage, pal.CYAN)
+
+        # stage + position
+        pal.blit_glow(surface, self.font_stage, stage, accent, (s(16), s(46)))
+        cnt = self.font_count.render(f"{self.sel + 1}/{len(items)}", True,
+                                     pal.INK_DIM)
+        surface.blit(cnt, (w - cnt.get_width() - s(16), s(42)))
+
+        card = pygame.Rect(s(10), s(70), w - s(20), int(h * 0.52))
+        pygame.draw.rect(surface, pal.VOID_HI, card, border_radius=s(6))
+        pal.glow_rect(surface, card, pal.mix(accent, pal.VOID, 0.5), 1,
+                      radius=s(6), spread=2, alpha=50)
+        pygame.draw.rect(surface, accent, (card.x, card.y, s(4), card.h),
+                         border_radius=s(2))
+
+        y = card.y + (card.h - len(self._lines) * self._font.get_height()) // 2
+        for line in self._lines:
+            g = self._font.render(line, True,
+                                  pal.INK_DIM if done else pal.INK)
+            surface.blit(g, (card.x + s(16), y))
+            y += self._font.get_height()
+
+        m = self.font_meta.render(self._age_text(age), True, pal.INK_DIM)
+        surface.blit(m, (card.x + s(16), card.bottom - s(22)))
+
+        self._draw_pips(surface, items, card.bottom + s(12))
+
+        if self.flash_t > 0:
+            f = self.font_stage.render(self.flash, True, pal.ACID)
+            surface.blit(f, ((w - f.get_width()) // 2, card.bottom + s(30)))
+
+        hint = "PRESS DONE  ·  DIAL PAGES  ·  RED SKIP"
+        g = self.font_hint.render(hint, True, pal.INK_DIM)
+        surface.blit(g, ((w - g.get_width()) // 2, h - s(34)))
+
+    def _draw_pips(self, surface, items, y):
+        """One pip per reminder, so the card still says how many and where.
+
+        Position was the thing a single-card view loses; this is what buys
+        it back without spending the space that made the card readable.
+        """
+        n = len(items)
+        if n <= 1:
             return
+        gap = s(9)
+        total = n * gap
+        x = (surface.get_width() - total) // 2
+        for i, r in enumerate(items):
+            done = r.get("done_ts") is not None
+            st = stage_for(max(0.0, time.time() - r.get("ts", time.time())))
+            c = pal.ACID if done else STAGE_COLOUR.get(st, pal.CYAN)
+            if i == self.sel:
+                pygame.draw.circle(surface, c, (x + i * gap + s(3), y), s(4))
+            else:
+                pygame.draw.circle(surface, pal.mix(c, pal.VOID, 0.55),
+                                   (x + i * gap + s(3), y), s(2))
 
-        # ── NOW SERVING slot ─────────────────────────────────────────────
-        slot = pygame.Rect(s(12), s(64), card_w, s(126))
-        lbl = self.font_small.render("NOW SERVING", True, BRASS)
-        surface.blit(lbl, (slot.x + s(2), slot.y - s(14)))
+    def _age_text(self, secs):
+        secs = int(secs)
+        if secs < 90:
+            return "POSTED JUST NOW"
+        if secs < 3600:
+            return f"POSTED {secs // 60} MIN AGO"
+        if secs < 86400:
+            return f"POSTED {secs // 3600} HOURS AGO"
+        return f"POSTED {secs // 86400} DAYS AGO"
 
-        if self.stamp_anim is not None:
-            # keep showing the just-stamped card during the animation
-            self._draw_card(surface, slot, self.stamp_anim["text"], None, now, big=True)
-            self._draw_stamp(surface, slot)
-            rest = active
-        else:
-            self._draw_card(surface, slot, active[0]["text"], active[0], now, big=True)
-            hint = self.font_small.render("GREEN BTN · STAMP DONE", True, BRASS)
-            surface.blit(hint, (slot.right - hint.get_width() - s(4),
-                                slot.bottom + s(5)))
-            rest = active[1:]
+    def _draw_empty(self, surface):
+        w, h = surface.get_size()
+        cy = int(h * 0.40)
+        surface.blit(pal.halo(s(60), pal.ACID, 60), (w // 2 - s(60), cy - s(60)))
+        pygame.draw.circle(surface, pal.mix(pal.ACID, pal.VOID, 0.35),
+                           (w // 2, cy), s(34))
+        pygame.draw.circle(surface, pal.ACID, (w // 2, cy), s(34), 2)
+        g = pal.glow_text(self._msg_fonts[MSG_SIZES[1]], "ALL CLEAR", pal.ACID)
+        surface.blit(g, ((w - g.get_width()) // 2, cy + s(48)))
+        sub = self.font_meta.render("NOTHING OWED", True, pal.INK_DIM)
+        surface.blit(sub, ((w - sub.get_width()) // 2, cy + s(84)))
+        how = self.font_hint.render(f"POST TO  ntfy.sh/{TOPIC}", True, pal.CYAN)
+        surface.blit(how, ((w - how.get_width()) // 2, h - s(44)))
 
-        # ── the queue ────────────────────────────────────────────────────
-        qy = slot.bottom + s(22)
-        if rest:
-            lbl = self.font_small.render(f"IN THE RACK · {len(rest)}", True, BRASS)
-            surface.blit(lbl, (s(14), qy - s(14)))
-        for i, r in enumerate(rest[:4]):
-            card = pygame.Rect(s(12) + s(3) * (i % 2), qy + i * s(52), card_w - s(6), s(44))
-            self._draw_card(surface, card, r["text"], r, now, big=False)
-        if len(rest) > 4:
-            more = self.font_small.render(f"+ {len(rest) - 4} MORE BELOW THE RACK",
-                                          True, INK_FAINT)
-            surface.blit(more, (s(14), qy + 4 * s(52) + s(4)))
-
-        # footer
-        foot = self.font_small.render(
-            datetime.datetime.now().strftime("%H:%M  ·  THE OFFICE NEVER CLOSES"),
-            True, (110, 90, 66))
-        surface.blit(foot, ((SCREEN_WIDTH - foot.get_width()) // 2,
-                            SCREEN_HEIGHT - s(20)))
-
-    def _draw_card(self, surface, rect, text, reminder, now, big):
-        age = (now - reminder["ts"]) if reminder else 0
-        stage = stage_for(age) if reminder else "POSTED"
-        col = STAGE_COLORS[stage]
-        paper = PAPER if age < 4 * 3600 else PAPER_OLD   # old paper yellows
-
-        # drop shadow + paper
-        pygame.draw.rect(surface, (10, 8, 6), rect.move(s(3), s(3)), border_radius=s(4))
-        pygame.draw.rect(surface, paper, rect, border_radius=s(4))
-        pygame.draw.rect(surface, lerp_color(paper, INK, 0.35), rect, 1, border_radius=s(4))
-        # punched holes on the left edge (it's filed, after all)
-        for hy in range(rect.y + s(10), rect.bottom - s(6), s(14)):
-            pygame.draw.circle(surface, WOOD, (rect.x + s(7), hy), s(2))
-
-        if big:
-            # try the big font first; if the text wouldn't fit in 3 lines,
-            # drop to the small font with 4 lines — never truncate the
-            # reminder you're supposed to act on
-            font, max_lines = self.font_card, 3
-            lines = self._wrap(text, font, rect.w - s(92), max_lines)
-            if lines and lines[-1].endswith("…"):
-                font, max_lines = self.font_small, 4
-                lines = self._wrap(text, font, rect.w - s(92), max_lines)
-        else:
-            font, max_lines = self.font_small, 1
-            lines = self._wrap(text, font, rect.w - s(92), max_lines)
-        ty = rect.y + (s(12) if big else s(7))
-        for line in lines:
-            surface.blit(font.render(line, True, INK), (rect.x + s(16), ty))
-            ty += font.get_linesize()
-
-        if reminder:
-            # stage chip — OVERDUE blinks
-            blink = stage != "OVERDUE" or int(self.time_alive * 2) % 2 == 0
-            if blink:
-                chip = self.font_small.render(stage, True, (245, 240, 230))
-                cw = chip.get_width() + s(10)
-                crect = pygame.Rect(rect.right - cw - s(6), rect.y + s(5), cw, s(15))
-                pygame.draw.rect(surface, col, crect, border_radius=s(3))
-                surface.blit(chip, (crect.x + s(5), crect.y + s(2)))
-            if big:
-                filed = datetime.datetime.fromtimestamp(reminder["ts"]).strftime("%H:%M")
-                meta = self.font_small.render(
-                    f"FILED {filed}  ·  {age_str(age)}", True, INK_FAINT)
-                surface.blit(meta, (rect.x + s(16), rect.bottom - s(18)))
-
-    def _draw_stamp(self, surface, slot):
-        """DELIVERED slams onto the card: big -> settled, slight rotation."""
-        at = self.stamp_anim["t"]
-        if self._stamp_surf is None:
-            base = self.font_stamp.render("· DELIVERED ·", True, STAMP_RED)
-            pad = s(8)
-            boxed = pygame.Surface((base.get_width() + pad * 2,
-                                    base.get_height() + pad * 2), pygame.SRCALPHA)
-            pygame.draw.rect(boxed, STAMP_RED, boxed.get_rect(), s(3), border_radius=s(6))
-            boxed.blit(base, (pad, pad))
-            self._stamp_surf = boxed
-        # scale 2.4 -> 1.0 in the first 0.18 s (the slam), then rest
-        prog = min(1.0, at / 0.18)
-        scale = 2.4 - 1.4 * prog
-        stamped = pygame.transform.rotozoom(self._stamp_surf, -12, scale)
-        alpha = 255 if at < 0.7 else max(0, int(255 * (1 - (at - 0.7) / 0.4)))
-        stamped.set_alpha(alpha)
-        surface.blit(stamped, (slot.centerx - stamped.get_width() // 2,
-                               slot.centery - stamped.get_height() // 2))
-
-    def _draw_empty(self, surface, t):
-        cy = int(SCREEN_HEIGHT * 0.42)
-        # wax seal of a clear conscience
-        pulse = 0.5 + 0.5 * math.sin(t * 1.5)
-        surface.blit(pal.halo(int(s(56)), pal.ACID, 70),
-                     (SCREEN_WIDTH // 2 - s(56), cy - s(56)))
-        pygame.draw.circle(surface, lerp_color(DONE_GRN, WOOD, 0.25),
-                           (SCREEN_WIDTH // 2, cy), s(34))
-        pygame.draw.circle(surface, lerp_color(DONE_GRN, (255, 255, 255), 0.2 * pulse),
-                           (SCREEN_WIDTH // 2, cy), s(34), 2)
-        chk = pal.glow_text(self.font_stamp, "ALL CLEAR", pal.ACID)
-        surface.blit(chk, ((SCREEN_WIDTH - chk.get_width()) // 2,
-                           cy + s(48) - pal.glow_pad()))
-        sub = self.font_small.render("THE DOCKET SLEEPS. NOTHING OWED.", True, INK_FAINT)
-        surface.blit(sub, ((SCREEN_WIDTH - sub.get_width()) // 2, cy + s(74)))
-        how = self.font_small.render(f"POST TO  ntfy.sh/{TOPIC}", True, BRASS)
-        surface.blit(how, ((SCREEN_WIDTH - how.get_width()) // 2, cy + s(100)))
+    def _make_bg(self, size):
+        w, h = size
+        bg = pygame.Surface(size)
+        bg.fill(pal.VOID)
+        bg.blit(pal.grid((w, h), step=s(22), glow_every=4), (0, 0))
+        head = pygame.Rect(0, 0, w, s(34))
+        pygame.draw.rect(bg, pal.PANEL, head)
+        pygame.draw.line(bg, pal.CYAN, (0, s(34)), (w, s(34)), 2)
+        pal.blit_glow(bg, self.font_title, "DISPATCH DOCKET", pal.CYAN,
+                      (s(14), s(9)))
+        return bg
 
     def draw_pomodoro(self, surface, time_left, mode):
-        mins, secs = int(time_left) // 60, int(time_left) % 60
-        c = STAMP_RED if mode == "work" else DONE_GRN
-        txt = self.font_small.render(f"{mins:02d}:{secs:02d}", True, c)
-        rect = txt.get_rect(topright=(SCREEN_WIDTH - s(24), s(54)))
-        box = rect.inflate(s(10), s(6))
-        pygame.draw.rect(surface, WOOD_DARK, box, border_radius=s(4))
-        pygame.draw.rect(surface, c, box, 1, border_radius=s(4))
-        surface.blit(txt, rect)
+        m, sec = divmod(max(0, int(time_left)), 60)
+        col = pal.AMBER if mode == "work" else pal.ACID
+        g = self.font_meta.render(f"{m:02d}:{sec:02d}", True, col)
+        surface.blit(g, (surface.get_width() - g.get_width() - s(16),
+                         surface.get_height() - s(32)))
