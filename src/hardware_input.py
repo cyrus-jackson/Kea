@@ -4,7 +4,7 @@ hardware_input.py — the control deck.
 Three arcade buttons, a KY-040 rotary encoder and a mini ON-ON toggle,
 all read straight off the GPIO header and turned into pygame events.
 
-    Blue   BCM 21 (pin 40)   Nexus
+    Blue   BCM 21 (pin 40)   Back
     Red    BCM 20 (pin 38)   contextual secondary action
     Green  BCM 26 (pin 37)   annunciator / stamp DONE
     Encoder CLK/DT/SW  BCM 5 / 6 / 16  (pins 29 / 31 / 36)
@@ -74,7 +74,7 @@ BTN_HOME    = _pin("KEA_BTN_HOME", 13)     # pin 33  — exposed, the last free 
 BTN_CAMERA  = _pin("KEA_BTN_CAMERA", 4, "KEA_BTN_CONSOLE")   # pin 7 — extender
 
 BUTTON_CONFIG = {
-    BTN_BLUE:   (BUTTON_AMBIENT_EVENT, "Blue (Nexus)"),
+    BTN_BLUE:   (BUTTON_AMBIENT_EVENT, "Blue (Back)"),
     BTN_RED:    (BUTTON_RED_EVENT, "Red (Secondary action)"),
     BTN_GREEN:  (BUTTON_NOTIFICATION_EVENT, "Green (Annunciator)"),
     BTN_HOME:   (BUTTON_HOME_EVENT, "Home (Nexus)"),

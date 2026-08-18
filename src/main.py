@@ -223,6 +223,21 @@ class StateManager:
                 except Exception:
                     pass
 
+    def go_back(self):
+        """Return once to the screen that opened this one.
+
+        Blue is deliberately a Back control, while the separate Home button
+        always opens Nexus.  Clear the saved origin after returning so a
+        second Back press cannot bounce between two screens forever.
+        """
+        if self.current_state_name == 'nexus':
+            return
+        previous = self.previous_state_name
+        if previous not in self.states or previous == self.current_state_name:
+            previous = 'nexus'
+        self.change_state(previous)
+        self.previous_state_name = None
+
     def handle_events(self, events):
         if self.current_state:
             self.current_state.handle_events(events)
@@ -345,10 +360,7 @@ def main():
             
             # Handle Custom Hardware Button Events
             elif event.type == BUTTON_AMBIENT_EVENT:
-                # Navigation always starts at Nexus.  Cycling a private list
-                # of registered states made the deck feel unpredictable and
-                # could land on transient/ambient screens by accident.
-                manager.change_state('nexus')
+                manager.go_back()
             elif event.type == BUTTON_RED_EVENT:
                 # RED is an action button, never a shortcut into Focus.  The
                 # active screen decides whether it means reset, later, or

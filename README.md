@@ -83,8 +83,9 @@ Run `python3 tools/smoke_test.py` after changes: it renders every state headless
 
 **Keyboard:**
 
-Choose instruments from Nexus with the dial and press. Focus is the first
-card; it no longer has a dedicated button or keyboard shortcut.
+Choose instruments from Nexus with the dial and press. DRIFT is the first
+card; Focus stays on the rail and no longer has a dedicated button or
+keyboard shortcut.
 
 Desktop shortcuts (useful while developing):
 - `H` nexus (home hub)
@@ -211,7 +212,7 @@ Kea chirps. Every utterance is synthesised from scratch at startup — no sound 
 
 Press `M` to mute (there's a VOICE lamp on the Annunciator). `KEA_VOICE=0` disables it entirely, `KEA_VOICE_VOL=0.4` sets the level. Synthesis runs on a worker thread and adapts to the mixer's real sample rate; with no audio device every call becomes a silent no-op, so it can never take the display down. Utterances are rate-limited (0.35 s floor, 2.5 s per-phrase cooldown) so Kea stays charming rather than chatty.
 
-The **Pomodoro** is an hourglass: sand drains in real time, the stream stops when you pause, and the instrument flips between sessions. Find **FOCUS** first on Nexus. Amber for focus, green for rest; three brass studs count the cycle to the long rest. GREEN starts/holds, RED resets.
+The **Pomodoro** is an hourglass: sand drains in real time, the stream stops when you pause, and the instrument flips between sessions. Find **FOCUS** on Nexus. Amber for focus, green for rest; three brass studs count the cycle to the long rest. GREEN starts/holds, RED resets.
 - `Esc` quits
 
 **Rotary dial (KY-040) & toggle:**
@@ -222,8 +223,9 @@ The **Pomodoro** is an hourglass: sand drains in real time, the stream stops whe
 - Not wired yet? `KEA_ENCODER=0` / `KEA_TOGGLE=0` keeps floating pins quiet
 
 **Hardware Buttons:**
-- **Blue Button:** BCM GPIO 21 (returns to Nexus)
+- **Blue Button:** BCM GPIO 21 (back to the screen that opened this one)
 - **Red Button:** BCM GPIO 20 (the current screen's secondary action — reset in Focus)
 - **Green Button:** BCM GPIO 26 (Assigned to action `3` / notification)
+- **Home Button:** returns to Nexus
 
 *(Note: Hardware buttons are tied to ground with pull-up resistors enabled)*

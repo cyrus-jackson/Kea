@@ -165,7 +165,7 @@ wrong guess on a plain switch costs nothing — it just won't respond.
 
 | # | Signal | BCM | **Pin** | Wire to |
 |---|---|---|---|---|
-| 1 | Button — Blue (Nexus) | 21 | **40** | other leg → GND |
+| 1 | Button — Blue (Back) | 21 | **40** | other leg → GND |
 | 2 | Button — Red (secondary action) | 20 | **38** | other leg → GND |
 | 3 | Button — Green (annunciator) | 26 | **37** | other leg → GND |
 | 4 | Button — Home (to Nexus) | 13 | **33** | other leg → GND |
@@ -282,7 +282,7 @@ python3 src/main.py
 
 | Control | Action |
 |---|---|
-| Button 1 (Blue) | return to Nexus |
+| Button 1 (Blue) | back to the screen that opened this one |
 | Button 2 (Red) | current screen's secondary action (reset in Focus) |
 | Button 3 (Green) | annunciator / stamp DONE |
 | Button 4 | jump home to Nexus |

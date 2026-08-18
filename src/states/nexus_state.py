@@ -83,11 +83,11 @@ def phases(date=None):
 # them is a place you go: there is nothing to do in a city or a fish tank.
 # They live behind DRIFT now, one card, and mostly arrive by themselves.
 WORLDS = [
+    ("drift",     "DRIFT",   "W", (150, 170, 255)),
     # Focus is a first-class destination on the hub.  There is no dedicated
     # hardware shortcut for it: choose it the same deliberate way as every
     # other instrument.
     ("pomodoro",  "FOCUS",   "DIAL", (228, 174, 86)),
-    ("drift",     "DRIFT",   "W", (150, 170, 255)),
     # ALERTS is deliberately NOT on the rail: it is reached by pressing
     # on the DOCKET. Overview then detail is the right hierarchy, and an
     # eleventh card would push the rail to three rows and reintroduce the
