@@ -35,8 +35,8 @@ the pip strip pays most of it back.
 
 AND IT LET GO OF THE DIAL
 
-It never implemented move_cursor, so main.py fell through to _tune() and
-turning the knob walked you out of the screen into another world —
+It now implements move_cursor, so turning the dial stays on the list
+instead of walking you out of the screen into another world —
 UI_GUIDELINES 5 says implementing move_cursor is how a screen claims the
 dial, and this one never claimed it. It does now, and press acts here
 rather than going home; the HOME button still goes home.

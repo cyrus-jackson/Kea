@@ -12,7 +12,8 @@ for work, cool green for rest.
 
 Three brass studs on the base track the cycle to the long rest.
 
-Controls (unchanged): RED resets the session, GREEN starts/pauses.
+Controls: GREEN starts/pauses; RED resets the session. Enter Focus from the
+Nexus rail — RED never jumps here from another screen.
 """
 
 import pygame
@@ -23,7 +24,6 @@ from config import SCREEN_WIDTH, SCREEN_HEIGHT, WHITE
 from states.base_state import State
 from states import pomodoro_dials
 from ui import pixel_art
-from hardware_input import BUTTON_POMODORO_EVENT, BUTTON_NOTIFICATION_EVENT
 
 WORK_TIME = 20 * 60
 BREAK_TIME = 6 * 60
@@ -161,19 +161,23 @@ class PomodoroState(State):
         if self.manager.current_state_name != 'pomodoro':
             self.manager.change_state('pomodoro')
 
+    def on_green_button(self):
+        """GREEN starts or holds the session without leaving Focus."""
+        self.running = not self.running
+        return True
+
+    def on_red_button(self):
+        """RED resets the current session; it is not a global Focus shortcut."""
+        self.time_left = self.session_len
+        self.running = False
+        self.transition_timer = 0.0
+        self.transition_mode = None
+        return True
+
     def handle_events(self, events):
         for event in events:
-            if event.type == BUTTON_NOTIFICATION_EVENT:
-                self.running = not self.running
-            elif event.type == BUTTON_POMODORO_EVENT:
-                # reset the current session to its full length
-                self.time_left = self.session_len
-                self.running = False
-                self.transition_timer = 0.0
-                self.transition_mode = None
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    self.running = not self.running
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                self.on_green_button()
 
     def update(self, dt):
         self.t += dt

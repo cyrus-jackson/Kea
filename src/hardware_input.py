@@ -4,8 +4,8 @@ hardware_input.py — the control deck.
 Three arcade buttons, a KY-040 rotary encoder and a mini ON-ON toggle,
 all read straight off the GPIO header and turned into pygame events.
 
-    Blue   BCM 21 (pin 40)   cycle worlds
-    Red    BCM 20 (pin 38)   pomodoro
+    Blue   BCM 21 (pin 40)   Nexus
+    Red    BCM 20 (pin 38)   contextual secondary action
     Green  BCM 26 (pin 37)   annunciator / stamp DONE
     Encoder CLK/DT/SW  BCM 5 / 6 / 16  (pins 29 / 31 / 36)
     Toggle BCM 19 (pin 35)   auto-pilot (or mute — see KEA_TOGGLE_ROLE)
@@ -35,7 +35,7 @@ except ImportError:
 
 # ── events ──────────────────────────────────────────────────────────────────
 BUTTON_AMBIENT_EVENT = pygame.USEREVENT + 1
-BUTTON_POMODORO_EVENT = pygame.USEREVENT + 2
+BUTTON_RED_EVENT = pygame.USEREVENT + 2
 BUTTON_NOTIFICATION_EVENT = pygame.USEREVENT + 3
 ENCODER_TURN_EVENT = pygame.USEREVENT + 4     # .direction = +1 / -1
 ENCODER_PRESS_EVENT = pygame.USEREVENT + 5
@@ -44,7 +44,7 @@ BUTTON_HOME_EVENT = pygame.USEREVENT + 7      # 4th button: straight to Nexus
 BUTTON_CAMERA_EVENT = pygame.USEREVENT + 8    # 5th button: the Camera screen
 TOGGLE2_EVENT = pygame.USEREVENT + 9          # 2nd toggle, .on = True / False
 
-# kept so older imports/env keep working
+# Legacy name for the fifth physical button.
 BUTTON_CONSOLE_EVENT = BUTTON_CAMERA_EVENT
 
 
@@ -74,8 +74,8 @@ BTN_HOME    = _pin("KEA_BTN_HOME", 13)     # pin 33  — exposed, the last free 
 BTN_CAMERA  = _pin("KEA_BTN_CAMERA", 4, "KEA_BTN_CONSOLE")   # pin 7 — extender
 
 BUTTON_CONFIG = {
-    BTN_BLUE:   (BUTTON_AMBIENT_EVENT, "Blue (Cycle)"),
-    BTN_RED:    (BUTTON_POMODORO_EVENT, "Red (Pomodoro)"),
+    BTN_BLUE:   (BUTTON_AMBIENT_EVENT, "Blue (Nexus)"),
+    BTN_RED:    (BUTTON_RED_EVENT, "Red (Secondary action)"),
     BTN_GREEN:  (BUTTON_NOTIFICATION_EVENT, "Green (Annunciator)"),
     BTN_HOME:   (BUTTON_HOME_EVENT, "Home (Nexus)"),
     BTN_CAMERA: (BUTTON_CAMERA_EVENT, "Camera (Capture)"),

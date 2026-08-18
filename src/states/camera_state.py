@@ -28,7 +28,6 @@ from config import SCREEN_WIDTH, SCREEN_HEIGHT
 from states.base_state import State
 from backend import dataset
 from backend.camera import CameraService
-from hardware_input import BUTTON_NOTIFICATION_EVENT, BUTTON_POMODORO_EVENT
 
 SCALE = SCREEN_HEIGHT / 480.0
 
@@ -147,10 +146,6 @@ class CameraState(State):
                     self.on_red_button()
                 elif e.key in (pygame.K_LEFT, pygame.K_RIGHT):
                     self.move_cursor(1 if e.key == pygame.K_RIGHT else -1)
-            elif e.type == BUTTON_NOTIFICATION_EVENT:
-                self.on_green_button()
-            elif e.type == BUTTON_POMODORO_EVENT:
-                self.on_red_button()
 
     # ── the actual work ────────────────────────────────────────────────────
     def _cur_tag(self):

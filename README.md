@@ -83,9 +83,12 @@ Run `python3 tools/smoke_test.py` after changes: it renders every state headless
 
 **Keyboard:**
 
-Instruments:
+Choose instruments from Nexus with the dial and press. Focus is the first
+card; it no longer has a dedicated button or keyboard shortcut.
+
+Desktop shortcuts (useful while developing):
 - `H` nexus (home hub)
-- `2` pomodoro · `3` notification · `6` telegraph · `8` climate · `9` greetings
+- `3` notification · `6` telegraph · `8` climate · `9` greetings
 - `R` dispatch docket (your phone reminders as aging paper cards)
 - `L` the logbook (the machine's own history, kept in ink)
 - `K` camera · `C` console · `V` the board (departures)
@@ -208,19 +211,19 @@ Kea chirps. Every utterance is synthesised from scratch at startup — no sound 
 
 Press `M` to mute (there's a VOICE lamp on the Annunciator). `KEA_VOICE=0` disables it entirely, `KEA_VOICE_VOL=0.4` sets the level. Synthesis runs on a worker thread and adapts to the mixer's real sample rate; with no audio device every call becomes a silent no-op, so it can never take the display down. Utterances are rate-limited (0.35 s floor, 2.5 s per-phrase cooldown) so Kea stays charming rather than chatty.
 
-The **Pomodoro** (`2`) is an hourglass: sand drains in real time, the stream stops when you pause, and the instrument flips between sessions. Amber for focus, green for rest; three brass studs count the cycle to the long rest. GREEN starts/holds, RED resets.
+The **Pomodoro** is an hourglass: sand drains in real time, the stream stops when you pause, and the instrument flips between sessions. Find **FOCUS** first on Nexus. Amber for focus, green for rest; three brass studs count the cycle to the long rest. GREEN starts/holds, RED resets.
 - `Esc` quits
 
 **Rotary dial (KY-040) & toggle:**
-- **Turn** — on Nexus, browses the instrument rail; in DRIFT, walks the circuit by hand; anywhere else, tunes through the screens like a radio dial
-- **Press** — on Nexus, enters the highlighted world; anywhere else, returns home
+- **Turn** — on Nexus, browses the instrument rail; in DRIFT and instruments with their own dial, adjusts that screen. It never silently switches screens.
+- **Press** — on Nexus, enters the highlighted instrument; anywhere else, returns home
 - **Toggle** — auto-pilot on/off (or voice mute with `KEA_TOGGLE_ROLE=mute`)
 - Desktop stand-ins: `←`/`→` turn, `Enter` press, `T` toggle
 - Not wired yet? `KEA_ENCODER=0` / `KEA_TOGGLE=0` keeps floating pins quiet
 
 **Hardware Buttons:**
-- **Blue Button:** BCM GPIO 21 (Cycles through all available states)
-- **Red Button:** BCM GPIO 20 (Assigned to action `2` / pomodoro)
+- **Blue Button:** BCM GPIO 21 (returns to Nexus)
+- **Red Button:** BCM GPIO 20 (the current screen's secondary action — reset in Focus)
 - **Green Button:** BCM GPIO 26 (Assigned to action `3` / notification)
 
 *(Note: Hardware buttons are tied to ground with pull-up resistors enabled)*

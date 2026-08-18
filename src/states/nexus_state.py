@@ -83,8 +83,11 @@ def phases(date=None):
 # them is a place you go: there is nothing to do in a city or a fish tank.
 # They live behind DRIFT now, one card, and mostly arrive by themselves.
 WORLDS = [
+    # Focus is a first-class destination on the hub.  There is no dedicated
+    # hardware shortcut for it: choose it the same deliberate way as every
+    # other instrument.
+    ("pomodoro",  "FOCUS",   "DIAL", (228, 174, 86)),
     ("drift",     "DRIFT",   "W", (150, 170, 255)),
-    ("pomodoro",  "FOCUS",   "2", (228, 174, 86)),
     # ALERTS is deliberately NOT on the rail: it is reached by pressing
     # on the DOCKET. Overview then detail is the right hierarchy, and an
     # eleventh card would push the rail to three rows and reintroduce the
@@ -360,11 +363,24 @@ class NexusState(State):
     def toggle_label(self):
         return "AUTO-PILOT"
 
+    def _card_rect(self, index):
+        """The on-screen bounds of a rail card, shared by drawing and taps."""
+        row, col = divmod(index, self.cols)
+        row_n = min(self.cols, len(WORLDS) - row * self.cols)
+        gap = s(5)
+        x0 = (SCREEN_WIDTH - row_n * self.card_w - (row_n - 1) * gap) // 2
+        return pygame.Rect(x0 + col * (self.card_w + gap),
+                           self.rail_y + row * (self.card_h + s(8)),
+                           self.card_w, self.card_h)
+
     def move_cursor(self, delta):
         """Encoder turned: walk the world rail."""
         from backend import voice
         if self.cursor < 0:
-            self.cursor = 0                      # first touch selects card 1
+            # First turn honours its direction.  Previously a left turn
+            # inexplicably selected the first card, making wrap-around feel
+            # broken.
+            self.cursor = 0 if delta > 0 else len(WORLDS) - 1
         else:
             self.cursor = (self.cursor + delta) % len(WORLDS)
         self.cursor_seen = self.time_alive
@@ -384,6 +400,13 @@ class NexusState(State):
             if event.type == pygame.KEYDOWN and event.key == pygame.K_a:
                 self.auto_pilot = not self.auto_pilot
                 self.dwell = 0.0
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                for i in range(len(WORLDS)):
+                    if self._card_rect(i).collidepoint(event.pos):
+                        self.cursor = i
+                        self.cursor_seen = self.time_alive
+                        self.activate()
+                        break
 
     def _recommended(self, now):
         """(state_name, label, until_str, next_label) for right now.
@@ -526,13 +549,9 @@ class NexusState(State):
         rec_state = self._recommended(now)[0]
         if rec_state in WORLD_NAMES:
             rec_state = "drift"        # the rounds are the recommendation
-        gap = s(5)
         for i, (world, card) in enumerate(zip(WORLDS, self._cards)):
-            row, col = divmod(i, self.cols)
-            row_n = min(self.cols, len(WORLDS) - row * self.cols)
-            x0 = (SCREEN_WIDTH - row_n * self.card_w - (row_n - 1) * gap) // 2
-            x = x0 + col * (self.card_w + gap)
-            y = self.rail_y + row * (self.card_h + s(8))
+            card_rect = self._card_rect(i)
+            x, y = card_rect.topleft
             surface.blit(card, (x, y))
             if world[0] == rec_state:      # pulse ring on the recommended world
                 pulse = 0.5 + 0.5 * math.sin(t * 3.0)

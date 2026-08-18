@@ -55,7 +55,7 @@ from backend import settings
 from hardware_input import (
     HardwareButtons,
     BUTTON_AMBIENT_EVENT,
-    BUTTON_POMODORO_EVENT,
+    BUTTON_RED_EVENT,
     BUTTON_NOTIFICATION_EVENT,
     ENCODER_TURN_EVENT,
     ENCODER_PRESS_EVENT,
@@ -66,9 +66,6 @@ from hardware_input import (
     TOGGLE2_EVENT,
     TOGGLE2_ROLE,
 )
-from states.nexus_state import WORLDS, NO_CYCLE, cycle_worlds
-
-
 # ── idle → the rounds ───────────────────────────────────────────────────────
 # Leave Kea alone and it goes back to what it does when nobody is watching:
 # walking the eight ambient stations (states/drift_state.py). This is the
@@ -103,7 +100,7 @@ def _idle_secs():
 # Events that count as "someone is here". A hardware button, the knob, the
 # lever, or a key: anything deliberate.
 WAKE_EVENTS = (
-    BUTTON_AMBIENT_EVENT, BUTTON_POMODORO_EVENT, BUTTON_NOTIFICATION_EVENT,
+    BUTTON_AMBIENT_EVENT, BUTTON_RED_EVENT, BUTTON_NOTIFICATION_EVENT,
     BUTTON_HOME_EVENT, BUTTON_CAMERA_EVENT, ENCODER_TURN_EVENT,
     ENCODER_PRESS_EVENT, TOGGLE_EVENT, TOGGLE2_EVENT, pygame.KEYDOWN,
 )
@@ -186,19 +183,6 @@ def _drift_to(manager, world):
     manager.change_state('drift')
 
 
-def _tune(manager, direction):
-    """Encoder turned outside Nexus: tune through the worlds like a dial.
-    Skips NO_CYCLE screens (Console) — those are Nexus-only."""
-    names = [w[0] for w in cycle_worlds()]
-    try:
-        i = names.index(manager.current_state_name)
-    except ValueError:
-        i = 0 if direction > 0 else len(names) - 1
-        manager.change_state(names[i])
-        return
-    manager.change_state(names[(i + direction) % len(names)])
-
-
 # --- State Manager ---
 class StateManager:
     """Manages the active state and transitions between them."""
@@ -239,17 +223,6 @@ class StateManager:
                 except Exception:
                     pass
 
-    def next_state(self):
-        """Cycle to the next state, skipping the Nexus-only ones."""
-        names = [n for n in self.state_names if n not in NO_CYCLE]
-        if not names:
-            return
-        if self.current_state_name in names:
-            i = (names.index(self.current_state_name) + 1) % len(names)
-        else:
-            i = 0
-        self.change_state(names[i])
-            
     def handle_events(self, events):
         if self.current_state:
             self.current_state.handle_events(events)
@@ -372,16 +345,18 @@ def main():
             
             # Handle Custom Hardware Button Events
             elif event.type == BUTTON_AMBIENT_EVENT:
-                manager.next_state()  # Cycle to the next state
-            elif event.type == BUTTON_POMODORO_EVENT:
-                # RED. Screens get first refusal — the alert uses it for
-                # LATER and the docket for SKIP — before it means Pomodoro.
+                # Navigation always starts at Nexus.  Cycling a private list
+                # of registered states made the deck feel unpredictable and
+                # could land on transient/ambient screens by accident.
+                manager.change_state('nexus')
+            elif event.type == BUTTON_RED_EVENT:
+                # RED is an action button, never a shortcut into Focus.  The
+                # active screen decides whether it means reset, later, or
+                # discard; elsewhere it intentionally does nothing.
                 cur = manager.current_state
                 if cur is not None and hasattr(cur, 'on_red_button') \
                         and cur.on_red_button():
                     pass
-                elif manager.current_state_name != 'pomodoro':
-                    manager.change_state('pomodoro')
             elif event.type == BUTTON_NOTIFICATION_EVENT:
                 # states may consume the green button (e.g. the Docket
                 # stamps a reminder DONE); otherwise it opens notification
@@ -410,20 +385,15 @@ def main():
                         nx.auto_pilot = event.on
                         nx.dwell = 0.0
 
-            # --- Rotary encoder: browse on Nexus, tune elsewhere ---
+            # --- Rotary encoder: Nexus navigates; screens own their dials ---
             elif event.type == ENCODER_TURN_EVENT:
                 cur = manager.current_state
-                # Nexus browses its rail; the Console drives its dials;
-                # everywhere else the knob tunes through the worlds.
-                # A screen that implements move_cursor() owns the dial —
-                # Nexus browses, Console adjusts, Camera picks the tag.
-                # Anywhere else the knob tunes between worlds. (This used to
-                # be a hardcoded ('nexus','console') list, which silently
-                # stole the dial from the camera screen.)
+                # A screen that implements move_cursor() owns the dial.
+                # Other screens do not silently change into a different
+                # state: press the encoder (or Blue/Home) to return to Nexus
+                # and choose a destination deliberately.
                 if hasattr(cur, 'move_cursor'):
                     cur.move_cursor(event.direction)
-                else:
-                    _tune(manager, event.direction)
             elif event.type == ENCODER_PRESS_EVENT:
                 cur = manager.current_state
                 # Same for the press: the screen gets first refusal, and
@@ -454,11 +424,6 @@ def main():
                     running = False
                 elif event.key == pygame.K_1:
                     _drift_to(manager, 'ambient')
-                elif event.key == pygame.K_2:
-                    if manager.current_state_name != 'pomodoro':
-                        manager.change_state('pomodoro')
-                    else:
-                        pygame.event.post(pygame.event.Event(BUTTON_POMODORO_EVENT))
                 elif event.key == pygame.K_3:
                     if manager.current_state_name != 'pomodoro':
                         manager.change_state('notification')
@@ -476,8 +441,6 @@ def main():
                     _drift_to(manager, 'aerodrome')
                 elif event.key == pygame.K_r:
                     manager.change_state('docket')
-                elif event.key == pygame.K_a:
-                    manager.change_state('alerts')
                 elif event.key == pygame.K_o:
                     _drift_to(manager, 'orrery')
                 elif event.key == pygame.K_s:
@@ -524,7 +487,7 @@ def main():
         # the keyboard.
         manager.handle_events([e for e in events
                                if e.type not in (BUTTON_NOTIFICATION_EVENT,
-                                                 BUTTON_POMODORO_EVENT)])
+                                                 BUTTON_RED_EVENT)])
 
         # A dispatch takes the screen — unless a focus session is running,
         # in which case backend/alerts.py holds it and drains the queue

@@ -165,8 +165,8 @@ wrong guess on a plain switch costs nothing — it just won't respond.
 
 | # | Signal | BCM | **Pin** | Wire to |
 |---|---|---|---|---|
-| 1 | Button — Blue (cycle worlds) | 21 | **40** | other leg → GND |
-| 2 | Button — Red (Pomodoro) | 20 | **38** | other leg → GND |
+| 1 | Button — Blue (Nexus) | 21 | **40** | other leg → GND |
+| 2 | Button — Red (secondary action) | 20 | **38** | other leg → GND |
 | 3 | Button — Green (annunciator) | 26 | **37** | other leg → GND |
 | 4 | Button — Home (to Nexus) | 13 | **33** | other leg → GND |
 | 5 | Button — Camera (capture) | 4 | **7** | other leg → GND |
@@ -282,13 +282,13 @@ python3 src/main.py
 
 | Control | Action |
 |---|---|
-| Button 1 (Blue) | cycle worlds |
-| Button 2 (Red) | Pomodoro |
+| Button 1 (Blue) | return to Nexus |
+| Button 2 (Red) | current screen's secondary action (reset in Focus) |
 | Button 3 (Green) | annunciator / stamp DONE |
 | Button 4 | jump home to Nexus |
 | Button 5 | open the Camera screen (GREEN is then the shutter) |
-| Encoder turn | browse on Nexus, adjust on Console, tune elsewhere |
-| Encoder press | select / next dial / home |
+| Encoder turn | browse on Nexus; adjust a screen only when it owns the dial |
+| Encoder press | enter the selected Nexus card / screen-specific action / home |
 | Toggle A | per-screen role — each screen defines its own |
 | Toggle B | global voice mute (`KEA_TOGGLE2_ROLE=autopilot` to change) |
 
