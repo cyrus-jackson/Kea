@@ -132,6 +132,33 @@ def save(tmp_path, tag, extra=None):
         return None
 
 
+def save_bytes(jpeg, tag, extra=None):
+    """Store a JPEG that arrived as bytes rather than as a file.
+
+    The built-in camera hands us a temp file; a remote node hands us the
+    body of an HTTP POST. Same destination, same sidecar, same offload —
+    so a frame from the wireless watcher is indistinguishable downstream
+    from one Kea took itself, which is the point.
+
+    Written to a temp file first and then moved through save(), so the
+    "sidecar before image" ordering is not duplicated in two places.
+    """
+    if not jpeg:
+        return None
+    _ensure()
+    tmp = os.path.join(PENDING, f".incoming-{int(time.time() * 1000)}.part")
+    try:
+        with open(tmp, "wb") as f:
+            f.write(jpeg)
+    except Exception:                                    # noqa: BLE001
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return None
+    return save(tmp, tag, extra=extra)
+
+
 # ── stats (so the screen can show balance and backlog) ──────────────────────
 def counts():
     """{tag: n} for everything still pending locally."""

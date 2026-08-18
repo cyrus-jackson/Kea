@@ -160,6 +160,7 @@ class ReminderService:
     # -- polling -------------------------------------------------------------
     def update(self, dt):
         """Call from any state's update(); cheap, never blocks."""
+        self._expire(time.time())
         if ENABLED:                       # only fetching needs the network
             self._poll_timer -= dt
             if self._poll_timer <= 0 and not self._busy:
@@ -241,6 +242,39 @@ class ReminderService:
         return [r for r in self.active()
                 if stage_for(now - r["ts"], r.get("due_ts"), now)
                 in ("FINAL CALL", "OVERDUE", "DUE NOW")]
+
+    def add_local(self, text, ttl_s=None):
+        """A reminder Kea raised itself, not one that came from ntfy.
+
+        The watcher uses this to say something moved. Given a ttl it
+        self-completes rather than sitting on the Docket forever — "the
+        door opened an hour ago" is news that expires, unlike "call the
+        landlord", and a board full of stale motion events is a board you
+        stop reading.
+        """
+        now = time.time()
+        rid = f"local-{int(now * 1000)}"
+        with ReminderService._lock:
+            self.reminders.append({
+                "id": rid, "text": str(text)[:120], "ts": int(now),
+                "due_ts": None, "done_ts": None,
+                "expires_ts": (now + ttl_s) if ttl_s else None,
+            })
+            self._save()
+        return rid
+
+    def _expire(self, now):
+        """Quietly complete anything past its expiry."""
+        changed = False
+        with ReminderService._lock:
+            for r in self.reminders:
+                exp = r.get("expires_ts")
+                if exp and r["done_ts"] is None and now >= exp:
+                    r["done_ts"] = int(now)
+                    changed = True
+            if changed:
+                self._save()
+        return changed
 
     def set_due(self, rid, due_ts):
         """Set or clear a deadline on the device."""

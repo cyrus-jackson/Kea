@@ -46,7 +46,7 @@ from states.console_state import ConsoleState
 from states.camera_state import CameraState
 from states.drift_state import DriftState
 from states.transit_state import TransitState
-from backend import gestures, alerts
+from backend import gestures, alerts, watcher
 from states.alert_state import AlertState
 from states.alerts_state import AlertsState
 from backend import voice
@@ -323,6 +323,12 @@ def main():
     hw_buttons = HardwareButtons()
     _gestures = gestures.instance(manager)
     _alerts = alerts.instance(manager)
+    # The wireless watcher's listener. Off unless
+    # KEA_WATCHER_TOKEN is set — an image-upload endpoint
+    # with no auth is not something to enable by default.
+    _watch = watcher.instance()
+    if _watch.enabled and not _watch.start():
+        print(f'watcher: not listening — {_watch.error}')
     manager.alert_return = None
     
     idle_t = 0.0          # seconds since anyone last touched Kea

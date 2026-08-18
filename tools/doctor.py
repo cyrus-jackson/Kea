@@ -201,6 +201,35 @@ def check_controls():
             pass
 
 
+def check_watcher():
+    """The wireless camera node's listener, and whether it has been heard."""
+    try:
+        from backend import watcher
+    except Exception as exc:                                # noqa: BLE001
+        return record("watcher", "module", FAIL, str(exc)[:50])
+    w = watcher.instance()
+    if not w.enabled:
+        return record("watcher", "listener", SKIP,
+                      "KEA_WATCHER_TOKEN not set — disabled",
+                      "see hardware/WATCHER.md to enable")
+    record("watcher", "listener", PASS if w.start() else FAIL,
+           f"port {watcher.PORT}" if w.start() else (w.error or "failed"),
+           "another process may hold the port")
+    online, rows = w.summary()
+    if not rows:
+        return record("watcher", "nodes", WARN, "none has ever reported",
+                      "flash firmware/watcher/watcher.ino and check the token")
+    for name, age, count, batt in rows:
+        b = f", battery {batt} V" if batt else ""
+        if age < 3600:
+            record("watcher", name, PASS, f"seen {age / 60:.0f} min ago, "
+                                          f"{count} frames{b}")
+        else:
+            record("watcher", name, WARN,
+                   f"silent for {age / 3600:.1f} h{b}",
+                   "flat cell, out of wifi range, or it never woke")
+
+
 def check_system():
     if not on_pi():
         record("system", "host", SKIP, "not running on a Pi")
@@ -365,7 +394,8 @@ def main():
                     help="also press buttons and move servos")
     ap.add_argument("--only", default="",
                     help="comma-separated groups: code,display,camera,"
-                         "controls,servo,storage,startup,system,config")
+                         "controls,servo,storage,startup,watcher,system,"
+                         "config")
     args = ap.parse_args()
 
     want = {g.strip() for g in args.only.split(",") if g.strip()}
@@ -400,6 +430,8 @@ def main():
     elif run("storage"):
         record("storage", "encrypted offload", SKIP,
                "needs --slow (does a network round-trip)")
+    if run("watcher"):
+        check_watcher()
     if run("system"):
         check_system()
     if run("config"):
