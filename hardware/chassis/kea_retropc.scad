@@ -18,8 +18,9 @@
 // Servos want their OWN 5 V — never the Pi header.
 // ============================================================
 
-part = "case";  // "case" | "case_floor" | "turntable"
+part = "monitor_left";  // "case" | "case_floor" | "turntable"
                 // | "monitor_left" | "monitor_right" | "monitor" (preview)
+                // | "servo_pocket"
                 // | "monitor_door" | "wedge" | "cam_cradle" | "assembly"
                 //
                 // The monitor splits VERTICALLY into two halves and is BOLTED
@@ -82,7 +83,18 @@ gapP = 8;     // power side. NOT flush any more: the Pi's 3.5 mm headphone
               // jack shares this edge with the micro-USB and stands proud of
               // the board, so it needs clearance — and a plug needs more.
               // Flush (0) crushed it against the wall.
-gapG = 17;    // GPIO-side gap: header pins + dupont shells
+// THE one dial for monitor_right's width. Everything else about the
+// monitor is anchored to the power-side wall, so this pushes ONLY the
+// right wall outward and monitor_left is untouched — which matters,
+// because monitor_left is already printed.
+//
+// What has to fit, measured from the Pi's GPIO board edge:
+//     right-angle header pin      ~11
+//     dupont shell over that pin  ~15   (the shell butts the header body)
+//     wire bend before it turns   ~12   (24 AWG, without stressing a crimp)
+//     slack                        ~2
+// 17 was sized for bare pins and no cable, which is why it did not fit.
+gapG = 30;
 Wm   = wall + gapP + 56 + gapG + wall;   // = 86 (was 100)
 // Stack thickness reality check: Pi PCB + GPIO header + the Winkel-Adapter
 // + the display and its socket comes out far thicker than the 33 mm this was
@@ -92,6 +104,12 @@ Dm   = 86;      // monitor depth (was 72 — too tight for the stack)
 // Everything that must line up with the display — cradle, screen aperture,
 // bezel, hood — hangs off this, not off Wm/2.
 stack_cx = wall + gapP + 28;
+// FROZEN. The monitor's four foot bolts all sit inside the LEFT half, and
+// they used to be placed at Wm/2 — so widening gapG would have slid them
+// sideways and made the already-printed monitor_left useless, along with
+// the turntable they bolt to. 43 is the old Wm/2 (Wm was 86). Do not
+// re-derive this from Wm; that is exactly the bug.
+foot_cx = 43;
 recl = 8;     // slight fixed recline (pan is motorized, tilt is fixed)
 slen = 94;    // screen slope length (85.5 display + shelf)
 mcap = 8;
@@ -124,7 +142,7 @@ scr_cy  = 6.5 + 85.5/2;   // shelf top + half the display = true screen centre
 // Seam sits in the GPIO-side margin, just outside the bezel (which now spans
 // stack_cx +/- 34.5, i.e. 3.5..72.5) and inside the body edge.
 mcut_x   = 75;      // GPIO margin, just outside the bezel (ends 73)
-ear_len  = 11;      // right ear must stay inside Wm: 75+11 = 86 < 87
+ear_len  = 11;      // right ear must stay inside Wm
 ear_w    = 10;      // ear width
 ear_p    = 7;       // how far it stands off the surface
 join_d   = 3.4;     // clearance hole — M3 bolt straight through both ears
@@ -233,13 +251,65 @@ module turntable_socket() {
 // the case open. Now it's two ribs that only pinch the narrow (y) faces
 // and leave the x direction wide open, so the servo goes straight up from
 // the open bottom and its flanges land flat against the deck underside.
+// Set false when using the separate servo_pocket — see its note.
+case_ribs = true;
 module servo_collar() {
+  if (case_ribs)
   for (sy = [-1, 1])
     translate([W/2 - sv_flange_L/2,
                turn_y + sy*(sv_W/2 + 0.3) - (sy < 0 ? 2 : 0),
                Hc - wall - sv_guide_h])
       cube([sv_flange_L, 2, sv_guide_h]);
 }
+// ---------- Servo pocket: the servo mount as its own small part ----------
+// The servo used to be held by two ribs moulded into the case. That means a
+// servo that does not fit is a whole case reprint, which is how the T-shaped
+// flange problem cost a print last time. As a separate piece it is twenty
+// minutes and a few grams to try again.
+//
+// It uses the TWO M2 FLANGE HOLES THE DECK ALREADY HAS, so nothing about the
+// printed case changes: the pocket is a spacer-and-collar that sits between
+// the servo flanges and the deck underside, and one pair of longer M2 screws
+// passes flange -> pocket -> deck.
+//
+// Print it top-plate-down: every feature is then a vertical wall and there is
+// nothing to support.
+//
+// IT REPLACES THE TWO CASE RIBS, it does not sit beside them. Measured, they
+// overlap by 1.85 mm over the pocket's whole length — the ribs occupy
+// 7.05..9.05 mm either side of the servo centreline and the pocket walls want
+// 7.20..9.40. Trim the two fins out of the printed case (2 x 12 mm, flush
+// cutters) or set case_ribs=false before printing a new one.
+pk_plate = 2.6;     // top plate — thin, so stock M2 screws still reach
+pk_wall  = 2.2;     // skirt wall
+pk_cl    = 0.45;    // per-side clearance around the servo body
+pk_skirt = 14;      // how far the collar grips down the body (of 22.8)
+module servo_pocket() {
+  bx = sv_L + 2*pk_cl;            // body pocket
+  by = sv_W + 2*pk_cl;
+  ox = sv_flange_L + 2*pk_wall;   // plate must span the T flanges
+  oy = by + 2*pk_wall;
+  difference() {
+    union() {
+      translate([-ox/2, -oy/2, 0]) cube([ox, oy, pk_plate]);
+      // skirt: only on the long faces. The flanges stick out along x, so
+      // that direction stays open or the servo cannot go in — the same
+      // mistake the original closed collar made.
+      for (sy=[-1,1])
+        translate([-bx/2 - pk_wall, sy*(by/2) - (sy<0 ? pk_wall : 0), -pk_skirt])
+          cube([bx + 2*pk_wall, pk_wall, pk_skirt + pk_plate]);
+    }
+    // body cavity
+    translate([-bx/2, -by/2, -pk_skirt-1]) cube([bx, by, pk_skirt + pk_plate + 2]);
+    // output shaft + horn + cable
+    translate([0, 0, -1]) cylinder(d=15, h=pk_plate+2);
+    // the deck's existing flange holes, straight through
+    for (s=[-1,1]) translate([s*sv_screw/2, 0, -1]) cylinder(d=2.4, h=pk_plate+2);
+    // a notch so the servo lead exits sideways instead of being pinched
+    translate([bx/2 - 1, -3, -pk_skirt-1]) cube([pk_wall + 2, 6, pk_skirt]);
+  }
+}
+
 module case_back_access() {                     // wiring access on the back
   translate([20, Dc-wall-1, 8]) cube([W-40, wall+2, Hc-16]);
 }
@@ -462,9 +532,8 @@ module monitor_door() {
 }
 module mon_bottom_open() { translate([wall,wall,-1]) cube([Wm-2*wall, Dm-2*wall, mfoot+1]); }
 module mon_foot_bolts() {
-  for (a=[0:90:270]) rotate([0,0,a]) translate([turn_bolt/2 + (Wm/2-turn_bolt/2)*0, 0, -1]) {}
-  // bolt holes matching the turntable bolt circle, centered under the monitor
-  translate([Wm/2, Dm/2, 0])
+  // Anchored to foot_cx, NOT Wm/2 — see the note by foot_cx.
+  translate([foot_cx, Dm/2, 0])
     for (a=[0:90:270]) rotate([0,0,a]) translate([turn_bolt/2,0,-1]) cylinder(d=2.6, h=mfoot+2);
 }
 // Roof opening for the turret. Only a camera ribbon (~16 x 0.3) and the
@@ -531,9 +600,12 @@ if (part=="monitor_right")
 if (part=="monitor_door") monitor_door();
 if (part=="wedge")      wedge();
 if (part=="cam_cradle") cam_cradle();
+if (part=="servo_pocket") servo_pocket();
 if (part=="assembly") {
   color("Gainsboro") case();
   color("gray") translate([0,0,0]) case_floor();
   color("tan") translate([W/2, turn_y, Hc]) turntable();
-  color("Gainsboro") translate([W/2-Wm/2, turn_y-Dm/2, Hc+4]) monitor();
+  // Placed so the FOOT BOLTS land on the turntable, not so the body is
+  // centred: with gapG widened the monitor is asymmetric about its bolts.
+  color("Gainsboro") translate([W/2-foot_cx, turn_y-Dm/2, Hc+4]) monitor();
 }

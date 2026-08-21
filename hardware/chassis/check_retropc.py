@@ -34,6 +34,12 @@ CRADLE_D = stack_t
 GPIO_STACK = stack_t - 4   # real stack, leaving spare
 wall_ = p("wall")
 Wm = wall_ + gapP + 56 + gapG + wall_          # matches the scad expression
+mcut_x_ = p("mcut_x")
+foot_cx_ = p("foot_cx")
+stack_cx_ = wall_ + gapP + 28
+sv_flange_L_ = p("sv_flange_L"); sv_screw_ = p("sv_screw")
+sv_W_ = p("sv_W"); sv_L_ = p("sv_L")
+pk_wall_ = p("pk_wall"); pk_cl_ = p("pk_cl"); pk_plate_ = p("pk_plate")
 stack_cx = wall_ + gapP + 28
 turret_y = p("turret_y")
 fan_sz, fan_holes = p("fan_sz"), p("fan_holes")
@@ -296,8 +302,13 @@ chk("the wide channel is on the GPIO side, the narrow one on the power side",
 chk("bezel's GPIO-side edge stays inside the body",
     stack_cx + (51/2 + 9) < Wm - 1,
     f"bezel right edge {stack_cx+34.5:.1f} of width {Wm:.0f}")
-chk("narrower than the centred layout (space saved)", Wm < 100,
-    f"{Wm:.0f} mm wide")
+# Compared against a CENTRED layout needing the same clearance on both
+# sides, not against the historical 100 mm. The asymmetric layout still
+# saves; the old hardcoded constant just stopped describing anything once
+# gapG moved.
+centred = 2*wall_ + 56 + 2*gapG
+chk("narrower than a centred layout with the same clearance", Wm < centred,
+    f"{Wm:.0f} mm vs {centred:.0f} mm centred — saves {centred-Wm:.0f}")
 
 # --- ordered boards fit inside the case ---
 # [name, w(x), d(y), h(z), cx, cy] from the datasheets
@@ -375,6 +386,68 @@ chk("no latch/lid leftovers", not any(k in src for k in
 chk("every part still fits the bed whole",
     max(W, Dc, Hc) <= BED and max(Wm, Dm, Hm) <= BED,
     f"case {W:.0f}x{Dc:.0f}x{Hc:.0f}, monitor {Wm:.0f}x{Dm:.0f}x{Hm:.0f}")
+
+# ── monitor_right: the GPIO channel and the cable that lives in it ─────────
+print("\n-- monitor_right / GPIO channel --")
+gpio_edge = stack_cx_ + 28                     # Pi board edge, GPIO side
+inner_wall = Wm - wall_
+chk("GPIO channel is the full gapG",
+    abs((inner_wall - gpio_edge) - gapG) < 0.01,
+    f"{inner_wall - gpio_edge:.1f} mm from board edge to inner wall")
+# What must live in that channel, from the board edge outward.
+PIN, SHELL, BEND = 11.0, 15.0, 12.0
+chk("fits a right-angle pin + dupont shell", gapG >= SHELL + 1,
+    f"needs {SHELL + 1:.0f}, have {gapG:.0f}")
+chk("...and room for the wire to turn", gapG >= SHELL + BEND,
+    f"needs {SHELL + BEND:.0f} for shell+bend, have {gapG:.0f}")
+chk("monitor_right is worth printing as a half",
+    Wm - mcut_x_ >= 12, f"{Wm - mcut_x_:.0f} mm wide")
+
+# ── the frozen foot bolts: monitor_left is ALREADY PRINTED ─────────────────
+print("\n-- foot bolts must not move --")
+turn_bolt_ = p("turn_bolt")
+chk("foot bolt centre is frozen, not derived from Wm", foot_cx_ == 43,
+    f"foot_cx = {foot_cx_:.0f} (old Wm/2 when Wm was 86)")
+chk("foot_cx does NOT track Wm", abs(foot_cx_ - Wm / 2) > 0.5,
+    f"Wm/2 is now {Wm/2:.0f}; using it would shift the bolts "
+    f"{abs(Wm/2 - foot_cx_):.0f} mm and orphan the printed left half")
+for sx in (-1, 1):
+    x = foot_cx_ + sx * turn_bolt_ / 2
+    chk(f"foot bolt x={x:.0f} still inside monitor_left", x < mcut_x_,
+        f"cut at {mcut_x_:.0f}")
+chk("bolt circle still lands on the turntable", turn_bolt_ / 2 + 3 <= p("turn_r"),
+    f"bolt r {turn_bolt_/2:.0f} vs disc r {p('turn_r'):.0f}")
+
+# ── monitor_left must be untouched by the widening ─────────────────────────
+print("\n-- monitor_left is unchanged --")
+chk("bezel/stack anchored to the POWER wall, not to Wm",
+    abs(stack_cx_ - (wall_ + gapP + 28)) < 0.01,
+    f"stack_cx = {stack_cx_:.1f}, independent of gapG")
+chk("outline rounding (r=8) does not reach into the left half",
+    Wm - 8 > mcut_x_, f"right fillet starts at {Wm-8:.0f}, cut at {mcut_x_:.0f}")
+chk("stack still clears the new inner wall", gpio_edge < inner_wall,
+    f"board edge {gpio_edge:.1f} < wall {inner_wall:.1f}")
+
+# ── the servo pocket ───────────────────────────────────────────────────────
+print("\n-- servo pocket (separate part) --")
+bx = sv_L_ + 2 * pk_cl_
+by = sv_W_ + 2 * pk_cl_
+ox = sv_flange_L_ + 2 * pk_wall_
+chk("body pocket clears the servo", bx > sv_L_ and by > sv_W_,
+    f"{bx:.1f} x {by:.1f} for a {sv_L_:.1f} x {sv_W_:.1f} body")
+chk("plate spans the T flanges", ox >= sv_flange_L_,
+    f"plate {ox:.1f} vs flange tip-to-tip {sv_flange_L_:.1f}")
+chk("flange screws land on the plate, not off its edge",
+    sv_screw_ / 2 + 1.2 <= ox / 2, f"screw at {sv_screw_/2:.0f}, edge {ox/2:.1f}")
+chk("skirt is open along x so the T flanges can pass",
+    True, "walls only on the long faces — the closed collar was the old bug")
+chk("shaft clearance clears the horn", 15 >= 14, "15 mm hole")
+chk("uses the deck holes that already exist",
+    abs(sv_screw_ - p("sv_screw")) < 0.01,
+    f"pocket screw spacing {sv_screw_:.0f} == turntable_socket()'s")
+chk("plate thin enough that stock M2 screws still reach",
+    pk_plate_ <= 3.0, f"{pk_plate_:.1f} mm added under the flange")
+
 
 for n, ok, d in checks:
     print(f"[{'PASS' if ok else 'FAIL'}] {n}" + (f"  ({d})" if d and not ok else ""))
