@@ -49,6 +49,8 @@ from states.transit_state import TransitState
 from backend import gestures, alerts, watcher
 from states.alert_state import AlertState
 from states.alerts_state import AlertsState
+from states.face_state import FaceState
+from states.cyberdeck_state import CyberdeckState
 from backend import voice
 from backend import lifebook
 from backend import settings
@@ -304,6 +306,8 @@ def main():
     manager.add_state('drift', DriftState(manager))
     manager.add_state('transit', TransitState(manager))
     manager.add_state('alerts', AlertsState(manager))
+    manager.add_state('face', FaceState(manager))
+    manager.add_state('cyberdeck', CyberdeckState(manager))
     # The INTERRUPT is registered as 'dispatch', not 'alert'.
     # 'alert' and 'alerts' one letter apart is a typo that
     # silently changes behaviour; 'dispatch' is what its own
@@ -491,6 +495,10 @@ def main():
                     manager.change_state('climate')
                 elif event.key == pygame.K_9:
                     manager.change_state('greetings')
+                elif event.key in (pygame.K_f, pygame.K_2):
+                    manager.change_state('face')
+                elif event.key == pygame.K_x:
+                    manager.change_state('cyberdeck')
         
         # State-specific event handling.
         #

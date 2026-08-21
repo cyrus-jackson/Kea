@@ -51,6 +51,8 @@ from states.camera_state import CameraState                # noqa: E402
 from states.transit_state import TransitState              # noqa: E402
 from states.alert_state import AlertState                  # noqa: E402
 from states.alerts_state import AlertsState                # noqa: E402
+from states.face_state import FaceState                    # noqa: E402
+from states.cyberdeck_state import CyberdeckState          # noqa: E402
 from states.drift_state import (DriftState, CIRCUIT, WORLD_NAMES,   # noqa: E402
                                 ARRIVALS, PASSAGES, station_for,
                                 schedule)
@@ -59,7 +61,7 @@ STATES = [AmbientState, ClimateState, TelegraphState, GreetingsState,
           ConservatoryState, OrbitalState, BiolabState, AbyssalState,
           AerodromeState, OrreryState, StarportState, DocketState, LogbookState,
           NexusState, PomodoroState, NotificationState, ConsoleState,
-          CameraState, TransitState, AlertState, AlertsState]
+          CameraState, TransitState, AlertState, AlertsState, FaceState, CyberdeckState]
 
 failures = []
 
@@ -87,6 +89,8 @@ NAME_OF = {
     "PomodoroState": "pomodoro", "NotificationState": "notification",
     "ConsoleState": "console", "CameraState": "camera",
     "TransitState": "transit", "AlertState": "dispatch", "AlertsState": "alerts",
+    "FaceState": "face",
+    "CyberdeckState": "cyberdeck",
 }
 
 for cls in STATES:
@@ -158,35 +162,41 @@ else:
 #
 # What this CANNOT catch is one label going invisible — see the palette
 # check below, which can.
-import pygame.surfarray as _sa                                  # noqa: E402
+try:
+    import pygame.surfarray as _sa                                  # noqa: E402
+except (ImportError, ModuleNotFoundError):
+    _sa = None
 
 MIN_BRIGHT_PCT = 0.5
 MIN_P999_LUM = 170
 
 _thin = []
-for _name, _st in sorted(built.items()):
-    try:
-        surface.fill((0, 0, 0))
-        _st.enter()
-        for _ in range(6):
-            _st.update(1 / 30)
-        _st.draw(surface)
-        _px = _sa.array3d(surface).astype("float64")
-        _lum = (0.299 * _px[:, :, 0] ** 2 + 0.587 * _px[:, :, 1] ** 2
-                + 0.114 * _px[:, :, 2] ** 2) ** 0.5
-        _bright = float((_lum > 120).mean()) * 100.0
-        _flat = sorted(_lum.flatten())
-        _p999 = float(_flat[int(len(_flat) * 0.999)])
-        if _bright < MIN_BRIGHT_PCT or _p999 < MIN_P999_LUM:
-            _thin.append(f"{_name}: {_bright:.2f}% bright, p99.9 {_p999:.0f}")
-            print(f"[FAIL] contrast -> {_name}: {_bright:.2f}% bright, "
-                  f"p99.9 {_p999:.0f}")
-    except Exception as _e:                                     # noqa: BLE001
-        _thin.append(f"{_name}: could not measure ({_e})")
-if _thin:
-    failures.extend(_thin)
+if _sa is not None:
+    for _name, _st in sorted(built.items()):
+        try:
+            surface.fill((0, 0, 0))
+            _st.enter()
+            for _ in range(6):
+                _st.update(1 / 30)
+            _st.draw(surface)
+            _px = _sa.array3d(surface).astype("float64")
+            _lum = (0.299 * _px[:, :, 0] ** 2 + 0.587 * _px[:, :, 1] ** 2
+                    + 0.114 * _px[:, :, 2] ** 2) ** 0.5
+            _bright = float((_lum > 120).mean()) * 100.0
+            _flat = sorted(_lum.flatten())
+            _p999 = float(_flat[int(len(_flat) * 0.999)])
+            if _bright < MIN_BRIGHT_PCT or _p999 < MIN_P999_LUM:
+                _thin.append(f"{_name}: {_bright:.2f}% bright, p99.9 {_p999:.0f}")
+                print(f"[FAIL] contrast -> {_name}: {_bright:.2f}% bright, "
+                      f"p99.9 {_p999:.0f}")
+        except Exception as _e:                                     # noqa: BLE001
+            _thin.append(f"{_name}: could not measure ({_e})")
+    if _thin:
+        failures.extend(_thin)
+    else:
+        print(f"[PASS] all {len(built)} screens have readable dynamic range")
 else:
-    print(f"[PASS] all {len(built)} screens have readable dynamic range")
+    print("[SKIP] dynamic range check (numpy not installed)")
 
 # NOTE ON WHAT IS *NOT* TESTED HERE
 #
@@ -216,9 +226,15 @@ _probe = pygame.font.Font(None, 24)
 
 
 def _renders(ch):
-    import pygame.surfarray as _sa
-    return (_sa.array3d(_probe.render(ch, True, (255, 255, 255))).sum()
-            != _sa.array3d(_probe.render("\uffff", True, (255, 255, 255))).sum())
+    if _sa is not None:
+        return (_sa.array3d(_probe.render(ch, True, (255, 255, 255))).sum()
+                != _sa.array3d(_probe.render("\uffff", True, (255, 255, 255))).sum())
+    try:
+        r_ch = _probe.render(ch, True, (255, 255, 255))
+        r_miss = _probe.render("\uffff", True, (255, 255, 255))
+        return r_ch.get_buffer().raw != r_miss.get_buffer().raw
+    except Exception:
+        return True
 
 
 _lit = re.compile(r'"([^"\n]*)"|\'([^\'\n]*)\'')

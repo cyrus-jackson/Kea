@@ -18,7 +18,7 @@
 // Servos want their OWN 5 V — never the Pi header.
 // ============================================================
 
-part = "monitor_left";  // "case" | "case_floor" | "turntable"
+part = "servo_pocket";  // "case" | "case_floor" | "turntable"
                 // | "monitor_left" | "monitor_right" | "monitor" (preview)
                 // | "servo_pocket"
                 // | "monitor_door" | "wedge" | "cam_cradle" | "assembly"
