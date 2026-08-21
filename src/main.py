@@ -320,8 +320,9 @@ def main():
     voice.init()
     voice.say_when_ready('wake')
     
-    # Boot into the Nexus home hub
-    manager.change_state('nexus')
+    # Boot into the configured state (defaults to Nexus home hub)
+    _start_state = os.getenv("KEA_START_STATE", "nexus").strip().lower()
+    manager.change_state(_start_state if _start_state in manager.states else 'nexus')
     
     # Initialize hardware button poller
     hw_buttons = HardwareButtons()

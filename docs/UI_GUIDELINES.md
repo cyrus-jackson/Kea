@@ -45,7 +45,27 @@ the hub.
 
 Before adding a card, ask: *would someone reach for this on purpose?*
 If the answer is "it's nice to look at", it is a drift station, not a
-destination. The smoke test fails the build if the rail exceeds two rows.
+destination.
+
+**The limit is the panel, not the row count.** The smoke test used to
+fail any rail over two rows. That was a proxy standing in for the real
+rule and it eventually blocked a third row that fits fine: the fault
+with sixteen cards was never "four rows", it was that half of them were
+off-screen and you had to scroll to find out. So the check now measures
+what actually matters — `NexusState.rail_bottom()` against the section
+rule at `s(390)`, plus a collision test against Kea's pixel face in the
+bottom-right corner. Add cards until one of those two fails.
+
+Cards are 56 px because the label font is 15 px and `LOGBOOK` renders 53
+px wide. Six columns would give 46 px cards and truncate seven of the
+twelve labels, so **the rail grows downward, never narrower.**
+
+FACE and CYBERDECK sit on a third row of their own. They are not
+instruments — there is no reading to take off either — but they are not
+drift stations either, because both have real controls and drift
+stations by definition have none. They are the machine's own
+personality, so they get a short shelf rather than being filed among the
+tools.
 
 Anything hosted inside drift must also be **exitable**: an ambient world
 has no controls of its own, so changing straight into one strands you

@@ -89,9 +89,8 @@ WORLDS = [
     # other instrument.
     ("pomodoro",  "FOCUS",   "DIAL", (228, 174, 86)),
     # ALERTS is deliberately NOT on the rail: it is reached by pressing
-    # on the DOCKET. Overview then detail is the right hierarchy, and an
-    # eleventh card would push the rail to three rows and reintroduce the
-    # scroll the whole cut was about.
+    # on the DOCKET. Overview then detail is the right hierarchy, and a
+    # card for it would be a second door to the same room.
     ("docket",    "DOCKET",  "R", (200, 60, 45)),
     ("transit",   "TRANSIT", "V", (250, 186, 60)),
     ("climate",   "WX.SYS",  "8", AMBER),
@@ -100,6 +99,18 @@ WORLDS = [
     ("logbook",   "LOGBOOK", "L", (172, 136, 68)),
     ("camera",    "CAMERA",  "K", (176, 138, 66)),
     ("console",   "CONSOLE", "C", (240, 176, 64)),
+    # ── the third row: Kea itself, rather than Kea's instruments ────────
+    # These two are not instruments — there is no reading to take off
+    # either. They are the machine's own personality, so they sit on a
+    # short shelf of their own instead of being filed among the tools.
+    # A third row is NOT the scroll the big cut was about: that was
+    # sixteen cards over four rows, half of them off-screen. These two
+    # centre at x 101..218, y 320..376 on the panel — clear of the section
+    # rule at 390, and nowhere near the pixel face over at x 284..308.
+    # Everything is still visible at once, which was the actual
+    # requirement. rail_bottom() and the smoke test hold that line.
+    ("face",      "FACE",    "F", NEON_CYAN),
+    ("cyberdeck", "CYBRDEK", "X", NEON_PINK),
 ]
 
 # Screens that stay OFF the cycle: reachable from this hub (and by their
@@ -186,11 +197,23 @@ class NexusState(State):
         self._clock_str = ""
         self._clock_surf = None
 
-        # layout: 5 across — nine instruments, two rows, no scrolling
+        # Layout: 5 across. Ten instruments fill two rows; FACE and
+        # CYBERDECK make a short third. Everything stays on screen — the
+        # rail must never scroll again.
+        #
+        # 5 columns is not free choice. The label font is 15 px and
+        # LOGBOOK renders 53 px wide, so a card cannot go below ~56 px
+        # without clipping it. Six columns gives 46 px cards and truncates
+        # SEVEN of the twelve labels — measured, not guessed. So the rail
+        # grows downward, never narrower.
         self.cols = 5
         self.rail_y = s(200)
         self.card_w = (SCREEN_WIDTH - s(16) - s(5) * (self.cols - 1)) // self.cols
         self.card_h = s(56)
+        # Row gap was 8. Three rows at 8 put the last card's bottom edge
+        # 6 px from the section rule — technically clear, visually a
+        # collision. 4 buys back 8 px and no row looks any tighter.
+        self.row_gap = s(4)
 
         self._drift_station = station_index_now()
         self._bg = self._build_background()
@@ -328,6 +351,28 @@ class NexusState(State):
             pygame.draw.circle(card, accent, (cx, cy), s(2))
             pygame.draw.line(card, dim, (cx, cy), (cx + s(10), cy + s(4)), 1)
             pygame.draw.circle(card, accent, (cx + s(10), cy + s(4)), s(3))
+        elif state == "face":             # visor band + two eyes
+            pygame.draw.rect(card, dim, (cx - s(12), cy - s(10), s(24), s(20)),
+                             1, border_radius=s(6))
+            pygame.draw.rect(card, accent, (cx - s(9), cy - s(5), s(18), s(7)),
+                             border_radius=s(3))
+            # The eyes are knocked OUT of the lit band, not drawn over it —
+            # at this size an eye painted on top just reads as noise.
+            for ex in (-4, 4):
+                pygame.draw.rect(card, CARD_BG,
+                                 (cx + s(ex) - s(2), cy - s(4), s(3), s(5)))
+            pygame.draw.line(card, dim, (cx - s(6), cy + s(7)),
+                             (cx + s(6), cy + s(7)), 1)
+        elif state == "cyberdeck":        # ICE core behind a breach line
+            for r, w in ((11, 1), (6, 1)):
+                pygame.draw.circle(card, dim, (cx, cy), s(r), w)
+            pygame.draw.circle(card, accent, (cx, cy), s(3))
+            # the slicer's probe, cutting in from the low left
+            pygame.draw.line(card, accent, (cx - s(14), cy + s(11)),
+                             (cx - s(3), cy + s(2)), 2)
+            for k in (-8, 0, 8):          # hex dump ticks
+                pygame.draw.line(card, dim, (cx + s(k), cy - s(13)),
+                                 (cx + s(k), cy - s(10)), 1)
         elif state == "abyssal":          # waves + fish
             for wy in (-4, 2):
                 pts = [(cx - s(13) + i * s(4),
@@ -368,10 +413,46 @@ class NexusState(State):
         row, col = divmod(index, self.cols)
         row_n = min(self.cols, len(WORLDS) - row * self.cols)
         gap = s(5)
+        # Each row is centred on its own count, so a short last row sits in
+        # the middle rather than hugging the left edge. That is also why the
+        # third row misses the pixel face: two cards centre at x 101..218,
+        # and the face lives at x 284..308.
         x0 = (SCREEN_WIDTH - row_n * self.card_w - (row_n - 1) * gap) // 2
         return pygame.Rect(x0 + col * (self.card_w + gap),
-                           self.rail_y + row * (self.card_h + s(8)),
+                           self.rail_y + row * (self.card_h + self.row_gap),
                            self.card_w, self.card_h)
+
+    def _face_sprite(self):
+        """Which pixel face the hub is wearing right now."""
+        try:
+            overdue = bool(self.reminders.overdue())
+        except Exception:                                    # noqa: BLE001
+            overdue = False
+        return (pixel_art.SPRITES["kea_alert"] if overdue
+                else pixel_art.SPRITES["kea_sleep"] if self.auto_pilot
+                else pixel_art.KEA_IDLE.at(self.time_alive))
+
+    def _face_rect(self):
+        """Where that face sits. One definition, three callers.
+
+        draw() blits here, handle_events() makes it a tap target, and the
+        smoke test asserts no rail card lands on it. The test used to
+        recompute these coordinates itself, which meant it was checking a
+        copy of the layout rather than the layout.
+        """
+        fp = max(2, int(2 * SCALE))
+        fw, fh = self._face_sprite().size(fp)
+        return pygame.Rect(SCREEN_WIDTH - fw - s(12), s(380) - fh, fw, fh)
+
+    def rail_bottom(self):
+        """Bottom edge of the last card.
+
+        Exists so the smoke test can assert the rail clears the section
+        rule instead of asserting "two rows" — that check passed for the
+        wrong reason. Two rows was never the requirement; fitting on the
+        panel was, and the row count is only ever a proxy for it.
+        """
+        return self._card_rect(len(WORLDS) - 1).bottom
 
     def move_cursor(self, delta):
         """Encoder turned: walk the world rail."""
@@ -401,6 +482,14 @@ class NexusState(State):
                 self.auto_pilot = not self.auto_pilot
                 self.dwell = 0.0
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                # Kea's own face in the corner is the door to FACE. It is
+                # already the thing on this screen that looks back at you,
+                # so making it inert and putting the real affordance in a
+                # card three rows down would be the wrong way round. The
+                # card stays too — this is a shortcut, not the only route.
+                if self._face_rect().inflate(s(8), s(8)).collidepoint(event.pos):
+                    self.manager.change_state("face")
+                    return
                 for i in range(len(WORLDS)):
                     if self._card_rect(i).collidepoint(event.pos):
                         self.cursor = i
@@ -568,16 +657,9 @@ class NexusState(State):
 
         # Kea itself, sitting on the hub: alert when something is overdue,
         # dozing on auto-pilot, otherwise idling with the odd blink.
-        try:
-            overdue = bool(self.reminders.overdue())
-        except Exception:
-            overdue = False
-        face = (pixel_art.SPRITES["kea_alert"] if overdue
-                else pixel_art.SPRITES["kea_sleep"] if self.auto_pilot
-                else pixel_art.KEA_IDLE.at(self.time_alive))
-        fp = max(2, int(2 * SCALE))
-        fw, fh = face.size(fp)
-        pixel_art.draw(surface, face, SCREEN_WIDTH - fw - s(12), s(380) - fh, fp)
+        face = self._face_sprite()
+        fr = self._face_rect()
+        pixel_art.draw(surface, face, fr.x, fr.y, max(2, int(2 * SCALE)))
 
         # ── NOW / NEXT transit board ─────────────────────────────────────
         by = s(398)

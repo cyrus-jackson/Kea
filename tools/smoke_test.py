@@ -277,14 +277,45 @@ for name in WORLD_NAMES:
         failures.append(f"Drift station '{name}' is not registered in main.py")
         print(f"[FAIL] station -> {name}")
 
-# the rail has to fit on one screen without scrolling — that was the whole
-# point of the cut, and it silently regresses the moment a card is added
-_cols, _rows = 5, -(-len(WORLDS) // 5)
-if _rows > 2:
-    failures.append(f"Nexus rail is {_rows} rows ({len(WORLDS)} cards) — it scrolls again")
-    print(f"[FAIL] rail -> {_rows} rows")
+# The rail has to fit on one screen without scrolling — that was the whole
+# point of the cut, and it silently regresses the moment a card is added.
+#
+# This used to assert "no more than two rows", which passed for the wrong
+# reason: two rows was a proxy for fitting, never the requirement itself.
+# The proxy then blocked a third row that fits perfectly well. Measure the
+# thing we actually care about — the last card's bottom edge against the
+# section rule underneath it — and let the row count fall out of that.
+_rail = built.get("nexus")
+if _rail is None:
+    failures.append("could not build NexusState to measure the rail")
+    print("[FAIL] rail -> no NexusState instance")
 else:
-    print(f"[PASS] rail is {len(WORLDS)} cards in {_rows} rows")
+    from config import SCREEN_HEIGHT                    # noqa: E402
+    _SCALE = SCREEN_HEIGHT / 480.0
+    _s = lambda v: max(1, int(v * _SCALE))               # noqa: E731
+    _bottom = _rail.rail_bottom()
+    _rule = _s(390)                    # section rule above the NOW/NEXT board
+    _rows = -(-len(WORLDS) // _rail.cols)
+    if _bottom > _rule:
+        failures.append(f"Nexus rail runs to y={_bottom}, past the section rule "
+                        f"at y={_rule} — {len(WORLDS)} cards no longer fit")
+        print(f"[FAIL] rail -> bottom {_bottom} > rule {_rule}")
+    else:
+        # Every card must also miss the pixel face in the bottom-right —
+        # its INFLATED tap area, not just the sprite, because the face is
+        # tested for a hit before the cards are and would silently swallow
+        # a press meant for a card. Asking _face_rect() rather than
+        # rebuilding the coordinates means this tests the real layout.
+        _face = _rail._face_rect().inflate(_s(8), _s(8))
+        _hit = [WORLDS[i][1] for i in range(len(WORLDS))
+                if _rail._card_rect(i).colliderect(_face)]
+        if _hit:
+            failures.append(f"rail cards overlap Kea's face sprite: {', '.join(_hit)}")
+            print(f"[FAIL] rail -> {len(_hit)} cards over the face")
+        else:
+            print(f"[PASS] rail is {len(WORLDS)} cards in {_rows} rows, "
+                  f"bottom y={_bottom} clears the rule at y={_rule} "
+                  f"and misses the face")
 
 if not failures:
     print(f"[PASS] all {len(WORLDS)} cards and {len(PHASES)} phases route correctly")
